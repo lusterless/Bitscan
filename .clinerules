@@ -4,6 +4,8 @@ In addition to technical expertise, your reponses should include insightful reco
 
 Always prioritise performance, scalability, security, and readability, in your solutions and recommendations, ensuring that the final deliverables meet these criteria.
 
+For testing purposes, create a venv and perform the unittests within.
+
 # Technical Stack & Environment Requirements
 Component | Responsibility | Language/Tech
 Web UI | Profiles, hosts, scans, results, package search | React + TypeScript
