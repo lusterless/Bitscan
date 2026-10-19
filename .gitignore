@@ -1,0 +1,28 @@
+# Python
+manager/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Web
+node_modules/
+web/dist/
+web/build/
+
+# Agent and packaging build output
+agent/bin/
+dist/
+*.deb
+
+# Local configuration and secrets
+.env
+.claude/settings.local.json
+.claude/worktrees/
+
+# OS
+Thumbs.db
+.DS_Store

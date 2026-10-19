@@ -9,7 +9,7 @@ Purpose: a working reference for designing, prompting, and running effective age
 ## 1. TL;DR
 
 - Agent teams = multiple independent Claude Code sessions. One **lead** coordinates; **teammates** each have their own context window and can message each other directly.
-- Enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (already set in this project's `.claude/settings.local.json`).
+- Enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (set in this project's shared `.claude/settings.json`).
 - Use them for **parallel, independent, well-bounded work** (research, review, debugging with competing hypotheses, separate modules). Do **not** use them for sequential work, same-file edits, or heavily dependent tasks.
 - They cost significantly more tokens than a single session. Default to 3-5 teammates, 5-6 tasks per teammate.
 - Teammates do **not** inherit the lead's conversation. Put everything they need in the spawn prompt.
@@ -48,7 +48,7 @@ Purpose: a working reference for designing, prompting, and running effective age
 ### Enable
 
 ```json
-// settings.json (or .claude/settings.local.json for per-project, uncommitted)
+// .claude/settings.json (shared with the repo) or .claude/settings.local.json (personal, gitignored)
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
@@ -160,8 +160,8 @@ What gets applied from the definition:
 | :- | :- | :- |
 | `tools` | Limits tools; `SendMessage` and Task tools auto-added | Limits tools |
 | `model` | Used if spawn prompt names none | Same |
-| `disallowedTools` | Removed (SendMessage/Task tools stay) | n/a per docs |
-| `effort` | Applied | n/a per docs |
+| `disallowedTools` | Removed (SendMessage/Task tools stay) | Not stated in docs |
+| `effort` | Applied | Not stated in docs |
 | `autoCompactWindow` | Applied (v2.1.296+) | Ignored |
 | Body | **Appended** to default system prompt | **Replaces** default system prompt |
 | `skills` | **Not applied** (loads from project/user settings) | Not applied |
@@ -335,7 +335,10 @@ Start with research/review/investigation (no code writing), then move to paralle
 ## 15. Project-specific notes (Bitscan)
 
 - Platform: Windows 11 + VS Code, so **in-process display mode only**.
-- Agent teams flag lives in `.claude/settings.local.json` (local, not shared).
+- The agent teams flag lives in the shared `.claude/settings.json`; `.claude/settings.local.json` is gitignored and personal.
+- Agent definitions in `.claude/agents/` created while a session is running may not register as agent types until the session restarts. If spawning by type fails, spawn a general-purpose agent and tell it to read `.claude/agents/<role>.md` first.
+- Teammates reach the main session as `main`; put that address in every spawn prompt (two teammates could not reach a teammate called `lead`).
+- Wait for an explicit `FINAL:` message from each teammate. A completion notification also fires when a teammate stops to wait for replies.
 - Before spawning a team here: confirm the task passes the section 2 decision guide, list disjoint file ownership per teammate, and write full spawn prompts using the section 7 checklist.
 
 ---
