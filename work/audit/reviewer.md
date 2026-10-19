@@ -1,66 +1,79 @@
-# Reviewer audit: accuracy against the spec
+# Reviewer audit (rounds 1–3, merged)
 
-Lens: every factual claim in `.claude/CLAUDE.md`, `.claude/rules/**` (17 files), `.claude/agents/*.md` and `.claude/skills/bitscan-team/SKILL.md`, checked against TS (`docs/spec/Technical_Specification.md`) and SR (`docs/spec/bit_Schema_Reference.md`). I read both specs and all of those files in full.
+Lens: every claim in `.claude/CLAUDE.md`, `.claude/rules/**`, `.claude/agents/*.md` and `SKILL.md`, checked against TS and SR, with the reviewer's slice TS §3.3–§3.7 and §8.1–§8.4 read in full. The per-round originals are `work/audit/archive/round1-reviewer.md`, `round2-reviewer.md` and `round3-reviewer.md`. `L###` refers to a spec file line.
 
-Summary: no blockers. The rules are very close to the spec. I checked every number, enum, table/column, grant, route, status/error code, BIT code, token prefix/TTL, file mode, unit directive, alert list and test gate, and they match. Every `TS §x.y` / `SR §x.y` citation points at a section that exists (checked by grep against the headings). The findings below are wording, citation and consistency problems, plus internal inconsistencies inside the spec itself (listed separately, report-only).
+## Done
 
-Files checked with no findings: agent/agent.md, manager/audit-and-alerts.md, manager/auth-and-users.md, manager/bit-format.md, manager/database.md, manager/enrolment-and-tokens.md, manager/importer.md, manager/inventory-and-packages.md, settings.local.json, agents/planner.md, agents/tester.md, agents/reviewer.md. I found no internal contradictions in docs/agent-teams-reference.md (I did not check it against the web).
+Everything in this section is applied in the working tree (uncommitted) and verified against the cited spec line in round 3. I reviewed every changed hunk. None is stricter than the spec, and none weakens `security-invariants.md`.
 
-## Findings on workspace documents
+- **Security invariants (5):** signing and the approval workflow restated as owner decisions, and ad-hoc commands, push and inventory-disable as spec prohibitions (R-08/R3-R-11, TS L210, L213, L1129). Viewers "never receive `stdout` or `stderr`" (R-11/R3-R-10, L1121). Plugin-socket accepted risk (R2-R-16, L276, L365). Citation fixes R-07 and R-09.
+- **Agent and runner (9):** state holds `issued_at`/`expires_at`, and a rotate replaces them (R2-R-10, L183, L1188). NTP prerequisite (R2-R-06, L212). `spool_overflow` goes in the results `error` field (R2-R-07 part, L1184). The agent, not the runner, reports `runner_unavailable` (R3-R-06, L152). Agent-test OS matrix (R3-R-07, L1279). 401 log wording "with a new enrolment token" applies only to `token_revoked`/`token_expired` (R3-I-06 narrowed, L191).
+- **Jobs and scans (6):** offline_sweep has four tasks and applies the 24 h never-started and 30 min inventory timeouts (R-01, R2-R-05, L218, L575, L244). Job-state transitions (R-02/R3-R-12), including inventory `dispatched → completed | failed` (R3-P-51, L230, L244). Cancel of dispatched and running jobs (R3-P-20). Pickup bound (R3-P-16). A scan never takes `dispatched`/`expired` (R3-P-50, L580).
+- **Format, importer and evaluator (8):** Sandbox on the bit-format Tests line (R2-R-09, L1280). Lengths are in characters (R3-P-12a). Display name vs `plugin_name_snap` (R3-P-40). Start-up order split into TS §4.1 and §4.2 (R3-P-15/-41). Host compliance score (R3-P-14). Re-evaluation route, TOTP and recorded columns (R3-P-17). Trimmed `eval_detail` (R3-P-21).
+- **API, enrolment, deploy and UI (9):** `/api-tokens` and the auth routes in RBAC (R-05). My round-1 wording "session or API token" was replaced by the #8 marker (R2-R-01). Config-and-cli DSN heading (R-04). Load level on the enrolment Tests line (R3-R-08). Runner helpers in the UI (R2-R-11, L484). Migrate unit started by the runbook (R3-I-05, L1346). Purge leads to offline, with no deregistration (R2-I-15). Cloned-image and pinning runbook lines (R2-I-13 trimmed, R2-I-14). `serve` in ExecStart (R3-R-09).
+- **Markers and pointers:** 44 `**Open spec question:**` lines, each on its own line (R3-R-04). Wording fixed for #2, #4 and #5 (R3-R-01, R3-R-02, R3-R-03). New markers #28–#31 for R2-R-07/-08/-12/-13. Markers for #2–#7 (R2-R-02). Every pointer resolves to an agreed entry.
+- **Team docs and Tests lines:** `impl-<area>` naming, `bits/samples/` vs `bits/tests/`, `work/reports/` ownership, `main` addressing, the testing.md `bits/tests/**` glob, and the G1 citation (R-03, R-06, R-12, R2-R-03, R2-R-04). Tests-line items now cite their real source, not only TS §8.3 (R-10). Implementer-report status corrections (R2-R-17/-18).
+- **Teammates' items reviewed and verified:** the planner's A1–A5 batches, the tester's R2-T-01..06 and R3-T-01, and the implementer's R2-I-01..20 and R3-I-01..07.
 
-R-01 | severity: should-fix | .claude/rules/manager/jobs-and-scans.md:27-30 | The rule says `offline_sweep` "does three things" (status, expire, fail/partial). That leaves out creating retries. | Doc: "`offline_sweep` (every 60 s) does three things". Spec TS §3.3: "The `offline_sweep` task (every 60 s) updates status, and also applies job timeouts and creates retries (§4.4)." | Change "three things" to "four things" and add a bullet: "creates the single retry for a job that ended `failed` or `partial` because its deadline passed (TS §3.3, §4.4)". | status: CONFIRMED (tester T-13)
+## Open items
 
-R-02 | severity: nit | .claude/rules/manager/jobs-and-scans.md:22 | The state line `queued → dispatched → running → completed | partial | failed | expired | cancelled` reads as if `expired` and `cancelled` come after `running`, and it hides `dispatched → failed`. | Spec TS §4.4 table: `expired` = "Not picked up before `pickup_by`" (comes from queued); `cancelled` can happen to queued, dispatched or running jobs; "A dispatched job that never starts fails 24 h after dispatch". | Replace with: "`queued → dispatched → running → completed | partial | failed`; `queued → expired`; `dispatched → failed` (never started, 24 h); `queued | dispatched | running → cancelled`; `failed | partial → completed | partial` through late results." | status: UNVERIFIED
+DECIDE (user; `work/open-questions.md` §4):
+- PD-3: the second approver for importer, auth, agent and runner changes (TS §8.2 L1268). From R2-R-14.
+- PD-5: test and coverage commands. TS §8.2/§8.3 name no test runner; only the ≥ 85 % gate comes from the spec. From R2-R-15.
+- PD-11: the memory file outside the repo still says "Go 1.22" (and its index once said "src/"). From R2-R-19 = planner P-41.
+- PD-1: re-test before re-review. reviewer.md:30 re-reviews directly, while SKILL.md:47 has the tester re-run first.
+- PD-2, PD-4, PD-6..PD-10, PD-12: raised by others; the reviewer has no objection.
 
-R-03 | severity: should-fix | .claude/skills/bitscan-team/SKILL.md:38 vs SKILL.md:26 and .claude/CLAUDE.md:110 | Implementer teammates are named two different ways. Also, no implementer is listed for the `bits/` and `deploy/` areas. | SKILL:38: "`impl-manager`, `impl-agent`, `impl-web` (agent type `implementer` ...)". SKILL:26 and CLAUDE.md:110: "`implementer-<area>` owns non-test files in `manager/`, `agent/`, `web/`, `bits/` or `deploy/`". SKILL:41 also says "Name teammates exactly as above". | Use one scheme everywhere: `impl-<area>`, which matches what SKILL:38 spawns. CLAUDE.md:110 and SKILL:26 `implementer-<area>` → `impl-<area>`. SKILL:38 list `impl-manager`, `impl-agent`, `impl-web`, `impl-bits`, `impl-deploy` ("only the areas the current wave needs"). tester.md:24 and reviewer.md:30 "message `implementer`" → "message the task's implementer (`impl-<area>`)". (Same as implementer's I-07/I-08.) | status: CONFIRMED (tester T-03; implementer I-07/I-08)
+ASK (spec owner; entries in `work/open-questions.md`):
+- Mine:
+  - #28 (R2-R-07): what the agent sends when the runner is down or restarts mid-job, and how `runner_unavailable` is reported.
+  - #29 (R2-R-08): the agent–runner socket format and `max_parallel_plugins`.
+  - #30 (R2-R-12): how the agent detects an enabled helper.
+  - #31 (R2-R-13): how a plugin finds its temp directory.
+- Confirmed by me (others' entries): #1–#18, #20–#27, #32, #33. #8 comes from my R-05/R2-R-01: the TS §6.2 L1099 row has no "session only" marker, but the owner could restrict it. For #13, only exponents, `.5` and `5.` are genuinely open, because `nan`, `inf` and `_` are not decimal numerals. For #17, only the trimming half is open. For #22, only the queued→running half is open.
 
-R-04 | severity: should-fix | .claude/rules/manager/config-and-cli.md:35 vs :16 and :41 | The section heading says every server CLI command reads its DSN from `app.dsn`. But the same file says `db migrate` / `db maintain` use `BITSCAN_MIGRATE_DSN_FILE` from their own units. | Doc:35: "Server CLI (`bitscan-manager`, run as root via `sudo`; DSN from `/etc/bitscan/secrets/app.dsn`)", then :41 lists `db migrate` and `db maintain`. Spec TS §8.7: "commands such as `users create-admin`, `users create-api-token`, `users reset-totp` and `bits rebuild` are run as root ... and read their DSN from `/etc/bitscan/secrets/app.dsn`"; "Only these two units load the migrate credential"; TS §8.6 `BITSCAN_MIGRATE_DSN_FILE` "loaded only by those two units". | Make the heading cover only `users …` and `bits rebuild`. Change :41 to: "`db migrate` and `db maintain`: run by `bitscan-manager-migrate.service` / `bitscan-manager-maintain.timer`, reading `BITSCAN_MIGRATE_DSN_FILE`, as `bitscan_migrate` with `SET ROLE bitscan_owner`". | status: CONFIRMED (tester T-10)
+Spec-internal inconsistencies (report only; never edit the spec):
+- S-01: TS §6.2 sensitive actions ("approving enrolment requests, revoking agents, rebuild, re-evaluation, and managing users, enrolment tokens and settings") omit `DELETE /policies/{id}`, which the route table (L1104 "admin, TOTP session") and §4.3 L550 put behind a TOTP session. So it is unclear whether policy delete is refused during an audit-sink outage (#1).
+- S-02: the TS §5.1 table map (Fleet: `agent`, `agent_tag`, `enrollment_token`, `enrollment_request`; System: `system_schedule`, `setting`, `app_user`, `user_token`, `audit_log`) omits `agent_ip_seen` and `task`, which the §5.2 DDL creates.
+- S-03: the TS §2.1 component table says "PostgreSQL 16 (`pg_trgm`, `debversion`)", but Figure 1, the §5.2 DDL and the Bootstrap also use `pgcrypto`.
+- S-04: TS §2.3 flow A says "configuration (`job_pull_seconds`) out". TS §3.3 L202 says the response "carries only configuration (`job_pull_seconds`, `max_parallel_plugins`) and the server time".
+- S-05: TS §4.5 L593 "runner error (`spool_overflow`, `runner_unavailable`)" and SR §2.4 L149 "runner lost the plugin". But the spool belongs to `bitscan-agent` (TS §3.3 L226).
+- S-06: TS §2.3 step 4 ("before its deadline") and §8.1 L1239 ("past their deadline") use "deadline" for the `pickup_by` check (TS §3.3 L212). Elsewhere, "deadline" means `deadline_at`, which is set at `running` (TS §4.4 L575).
+- S-07: TS §4.4 L571 defines `failed` only as "Deadline passed with no results". That leaves out the dispatched-never-started case (L575, 24 h) and the inventory cases (§3.4 L244).
+- S-08: TS §1.1 G6 says scans run "per host, group or fleet", but the spec has no groups; targets are tags (§4.4 L555).
+- S-09: TS §6.3 L1136 lists `/agent/enroll` among the "unauthenticated routes", yet §6.1 L1062 requires a `bse_` enrolment token.
+- S-10: the SR §4.1 rules table lists BIT101, BIT103, then BIT102.
+- S-11: TS §3.1 L162 (State row) and §3.6 L261 (`state_dir` comment) omit the `issued_at`/`expires_at` that TS §3.2 L183 says the agent stores.
+- S-12: TS §4.5 L600 gives a six-parameter `evaluate()` "with unit tests for every … ERROR case", but its ERROR cases include a runner error and output over the caps (L593, L599), which it has no input for (#12).
+- S-13: TS §4.3 L550 says a revived policy comes back "as a new version". SR §3.6 L240 adds 1 to `version` only "if the file hash differs from `source_sha256`" (#14).
+- S-14: in TS §3.5 L249 the runner applies `max_parallel_plugins`, but the §6.5 Job (L1165–1180) does not carry it (#29).
+- S-15: TS §3 L152 says "the agent reports `runner_unavailable`", but the heartbeat (L1163) has only `last_error`, and the results `error` (L1184) is per plugin (#28).
+- S-16: the "missing" halves of BIT010 and BIT011 (SR §4.1 L263–264) can never fire, because BIT002 fails first and the content rules are skipped (L250) (#2).
 
-R-05 | severity: should-fix | .claude/rules/manager/api.md:33-38 | The RBAC summary does not cover `DELETE /api-tokens` at all. `GET /api-tokens` is covered only indirectly by "the other GET routes". `/auth/login` and `/auth/logout` (no role) are not mentioned. | Spec TS §6.2 table: "GET, DELETE | `/api-tokens` | List and revoke your own API tokens | viewer"; "POST | `/auth/login`, `/auth/logout` | Start / end a session | —". | Add to the Viewer line: "`GET` / `DELETE /api-tokens` (own tokens only)". Add a line: "No role: `POST /auth/login`, `/auth/logout`". The spec does not say whether an API token may revoke API tokens, Round 3: TS:1085 bans API tokens only from creating tokens and changing TOTP, and the GET/DELETE row has no "session only" marker (the POST row TS:1098 does). Faithful wording is therefore "viewer, own tokens (session or API token)"; otherwise raise it as an Open spec question. Same gap as planner P-21. | status: CONFIRMED (tester T-14; planner P-21)
+## Decisions
 
-R-06 | severity: nit | .claude/CLAUDE.md:16 | G1 gives "300 s ± 30 s" under "Goals (TS §1.1)". TS §1.1 only says 5 minutes; the jitter comes from §3.3. | Doc: "heartbeats every 300 s ± 30 s". TS §1.1: "heartbeats every 5 minutes"; TS §3.3: "300 s ± 30 s jitter". | Append "(TS §3.3)" after the interval. | status: CONFIRMED (tester T-11)
+Verification stance (binding for future reviews of rule text):
+- The spec is the only authority. A rule line must restate a spec sentence and cite `TS §x.y`/`SR §x.y` with the line. If a wording says more than the spec, trim it. If the owner could answer differently, write a marker, not a rule.
+- Wording must never be stricter than the spec. Example: R3-I-06 was narrowed to the two token errors that TS §3.2 step 8 names.
+- A marker states the gap and must not pre-answer it. Example: the agent.md:34 `error`-field half of R2-R-07 was rejected and reverted, because it would have answered #28.
+- A self-check is not a confirmation. Every applied item needs its author plus one other agent (brief rule 4).
+- Never weaken `security-invariants.md`. A restatement that matches the spec more exactly (R3-R-10, R3-R-11) is not a weakening. Accepted risks are recorded, never "mitigated" with signing.
 
-R-07 | severity: nit | .claude/rules/security-invariants.md:13 | The "Never add automatic remediation" rule cites only SR §4.2. Remediation being out of scope is TS §1.2; SR §4.2 only supports the BIT102 "safety net" sentence. | Doc: "Automatic remediation. BIT102 is a safety net; the runner sandbox is the real control, and both must exist (SR §4.2)." TS §1.2: "Automatic remediation. Plugins only read and report state." | Change the citation to "(TS §1.2; SR §4.2)". | status: CONFIRMED (tester T-12)
+Rulings that still bind:
+- The redaction fixture superset in runner-sandbox.md is acceptable (from R-10/T-07): AKIA/ASIA come from TS §8.6 pattern 4, and testing.md follows it.
+- The coverage path note stays (from P-28): annotate `manager/services` = `manager/bitscan_manager/services/`, and keep the 85 % gate.
+- The rotation window ends at `expires_at` (from P-34, TS §3.2 steps 6 and 8).
+- web-ui.md's *Deleted* policy state is valid (from P-20): TS §4.3 and SR §3.2 `deleted_at` support it. "GET /policies omits deleted policies" is unsupported and became #9.
+- docs/agent-teams-reference.md:208 (`src/auth/`) stays as an upstream quote (from I-13).
+- The `float()` sentence I offered for R2-P-08 is not applied: `nan`/`inf`/`_` are now asked in #13, and a rule must not pre-answer it.
 
-R-08 | severity: nit | .claude/rules/security-invariants.md:10; .claude/agents/implementer.md:28 | Both files say these items were "removed by the owner on purpose" and give spec support. The spec only says jobs are unsigned (an accepted risk). "Policy approval workflow" is a CLAUDE.md owner decision and does not appear in TS. implementer.md also calls the ad-hoc command path, push channel and inventory disabling "removed by the owner", but the spec never had them: they are spec prohibitions. | security-invariants:10: "signing ... or a policy approval workflow. These were removed by the owner on purpose (TS §3.7, §8.1)". implementer.md:28: "Never add signing, an ad-hoc command path, a push channel or a way to disable inventory: these were removed by the owner on purpose." TS §3.3: "There is no API to queue an ad-hoc command"; TS §6.2: "There is deliberately no endpoint to disable inventory collection". | security-invariants:10 → "Owner decisions (CLAUDE.md); the resulting risks are accepted in TS §3.7, §8.1." implementer.md:28 → "Signing was removed by the owner on purpose; ad-hoc command paths, push channels and inventory disabling are forbidden by the spec (TS §3.3, §3.4, §6.2)." | status: UNVERIFIED
-
-R-09 | severity: nit | .claude/rules/security-invariants.md:25 | The journald part of the no-logging rule cites §5.3 and §8.4, but those sections talk only about application logs. | Doc: "Never write plugin stdout or stderr, or any token, to application logs or journald (TS §5.3, §8.4)". TS §3.1: "Logs | journald; plugin output and tokens are never logged"; TS §8.1: "never written to application logs or journald". | Change the citation to "(TS §3.1, §5.3, §8.1, §8.4)". | status: CONFIRMED (tester T-12)
-
-R-10 | severity: nit | .claude/rules/deploy/packaging-and-units.md:61; .claude/rules/web-ui.md:29; .claude/rules/testing.md:47; .claude/rules/agent/runner-sandbox.md:42-44 | These "Tests (TS §8.3)" lines include items that are not in the TS §8.3 matrix, so the citation overstates the source. | packaging:61 and testing:47 (lintian, install/upgrade/purge idempotency, reproducible builds, SBOM) come from TS §3.1. web-ui:29 (strict typecheck, ESLint, Prettier, OpenAPI client regen; `<script>` hostname test) comes from TS §8.2 / §6.3. runner-sandbox:43 adds "AKIA and ASIA keys" and named unchanged outputs; TS §8.3 lists only "a shadow line, a full and a cut-off private key, `key=value`, a `bsa_` token, and normal check output". | Cite the real source next to each extra item, e.g. "(TS §3.1)", "(TS §8.2, §6.3)", "(project addition, from TS §8.6 pattern 4)". Gates themselves need no change. Round 3: tester also found "500 pairs" (TS §7.2) and CSV escaping (TS §6.3) under "Tests (TS §8.3)" lines. The redaction-fixture superset in runner-sandbox.md is acceptable; align testing.md:18-19 to it, citing TS §8.6 pattern 4 for AKIA/ASIA (same as planner P-29). | status: CONFIRMED (tester T-08, T-07)
-
-R-11 | severity: nit | .claude/rules/security-invariants.md:26 vs .claude/rules/web-ui.md:14 | What viewers may see is worded differently in the two files. | security-invariants:26: "viewers get verdicts only". web-ui:14: "Viewers see verdicts, `eval_detail` and scores". TS §6.2 restricts only `stdout` and `stderr` ("included only for operator and admin"). | security-invariants:26 → "viewers never receive `stdout`/`stderr` (TS §6.2)". | status: UNVERIFIED
-
-R-12 | severity: nit | .claude/CLAUDE.md:110; .claude/skills/bitscan-team/SKILL.md:26 | Ownership of `work/reports/` is incomplete. CLAUDE.md lists no owner for it at all. SKILL gives the tester `work/reports/*-test.md`, but neither file gives the implementer `work/reports/*-impl.md`, which .claude/agents/implementer.md:18 tells it to write. | implementer.md:18: "one report file per task: `work/reports/TASK-###-impl.md`". | Add "implementer → `work/reports/TASK-###-impl.md`; tester → `work/reports/TASK-###-test.md`" to both ownership lists. | status: CONFIRMED (tester T-05; implementer I-09; planner P-04)
-
-## Internal inconsistencies inside the spec (report only; never edit docs/spec/)
-
-S-01 | severity: should-fix (owner question) | TS §6.2 | The sensitive-action list does not include policy delete. The same section's route table, and §4.3, require a TOTP session for it. As a result it is unclear whether policy delete is also refused during an audit-sink outage (TS §5.3). This is already raised as an **Open spec question** in auth-and-users.md:21. | TS §6.2: "Sensitive actions need a TOTP-verified session ...: approving enrolment requests, revoking agents, rebuild, re-evaluation, and managing users, enrolment tokens and settings." Route table: "DELETE | `/policies/{id}` | ... | admin, TOTP session". TS §4.3: "`DELETE /policies/{id}` (TOTP session)". | Owner decides; no doc change needed beyond the existing Open spec question. | status: UNVERIFIED
-
-S-02 | severity: nit | TS §5.1 | The table map leaves out `agent_ip_seen` and `task`, which are both created in the TS §5.2 DDL. | TS §5.1 Fleet row: "`agent`, `agent_tag`, `enrollment_token`, `enrollment_request`"; System row: "`system_schedule`, `setting`, `app_user`, `user_token`, `audit_log`". TS §5.2: `CREATE TABLE agent_ip_seen`, `CREATE TABLE task`. | Report to owner. | status: CONFIRMED (tester T-23)
-
-S-03 | severity: nit | TS §2.1 | The component table lists only two extensions. The figure, the §5.2 DDL and the Bootstrap also include `pgcrypto`. | TS §2.1: "PostgreSQL 16 (`pg_trgm`, `debversion`)". Figure 1: "pg_trgm · pgcrypto · debversion". | Report to owner. | status: CONFIRMED (tester)
-
-S-04 | severity: nit | TS §2.3 flow A | The flow says the heartbeat returns only `job_pull_seconds`. §3.3 and §6.5 return more. | TS §2.3: "configuration (`job_pull_seconds`) out". TS §3.3: "carries only configuration (`job_pull_seconds`, `max_parallel_plugins`) and the server time". | Report to owner. | status: UNVERIFIED
-
-S-05 | severity: nit | TS §4.5, SR §2.4 | `spool_overflow` is called a runner error, but the spool belongs to `bitscan-agent`. evaluator.md:24 repeats the spec wording. | TS §4.5: "runner error (`spool_overflow`, `runner_unavailable`)". SR §2.4: "runner lost the plugin (`spool_overflow`, ...)". TS §3.3: the agent's "Finished results are spooled on disk ... each dropped plugin is reported as ERROR `spool_overflow`". | Report to owner. | status: UNVERIFIED
-
-S-06 | severity: nit | TS §2.3 step 4, TS §8.1 | "Deadline" is used for the agent and runner job check, but that check is on `pickup_by`. Everywhere else, "deadline" means `deadline_at`. | TS §2.3: "check the job is for this host, before its deadline". TS §8.1: "reject jobs ... past their deadline". TS §3.3: "has `pickup_by` in the future". TS §4.4: "`deadline_at` is set once, when the job moves from `dispatched` to `running`". | Report to owner. | status: UNVERIFIED
-
-S-07 | severity: nit | TS §4.4 job-state table | The table defines `failed` as "Deadline passed with no results". It leaves out the dispatched-never-started case (24 h) and the inventory-job cases. | TS §4.4: "A dispatched job that never starts fails 24 h after dispatch". TS §3.4: "An inventory job that is dispatched but not uploaded within 30 minutes, or whose upload is rejected (413 or 422), becomes `failed`". | Report to owner. | status: UNVERIFIED
-
-S-08 | severity: nit | TS §1.1 G6 vs TS §4.4 | G6 says scans run per "group", but the spec has no group concept; scan targets use tags. | TS §1.1: "per host, group or fleet". TS §4.4: `{"tags": [...]}`. CLAUDE.md:21 already says "tag". | Report to owner. | status: CONFIRMED (tester)
-
-S-09 | severity: nit | TS §6.3 vs TS §6.1 | `/agent/enroll` is called an unauthenticated route, but it requires a `bse_` token. | TS §6.3: "unauthenticated routes (`/auth/login`, `/agent/enroll`) 10 req/min per source IP". TS §6.1: "POST | `/agent/enroll` | `bse_` enrolment token". | Report to owner. | status: UNVERIFIED
-
-S-10 | severity: nit | SR §4.1 | The rules table lists `BIT102` after `BIT103`. | SR §4.1 rows: "... `BIT101` ... `BIT103` ... `BIT102`". | Report to owner. | status: CONFIRMED (tester)
-
-## Cross-check log (rounds 2-3)
-
-- tester: CONFIRMED R-01, R-03, R-04, R-05, R-06, R-07, R-09, R-10, R-12, S-02, S-03, S-08 and S-10 (T-03, T-05, T-07, T-08, T-10, T-11, T-12, T-13, T-14, T-23). Tester reports that all 209 TS/SR citations resolve and 54 numeric facts agree with the spec. I answered T-14 (an API-token self-revoke is not forbidden; see R-05) and T-07 (fixture superset OK).
-- Still UNVERIFIED by a peer (self-checked against the quoted spec lines only): R-02, R-08, R-11, S-01, S-04, S-05, S-06, S-07, S-09.
-- planner: I CONFIRMED P-10, P-11, P-13, P-14, P-21 (= R-05), P-28 (annotate the path, keep the gate) and P-34 (the window ends at `expires_at`). P-20 is split: api.md:40 "GET /policies omits deleted policies" is CONFIRMED unsupported; the web-ui.md:27 "Deleted" state is REFUTED as invented (TS §4.3, SR §3.2 `deleted_at`). P-03 = implementer I-10 needs a user decision.
-- implementer: I CONFIRMED I-07, I-08 and I-09 (= R-03, R-12) as accurate wording. I-13: leave as an upstream quote. I-10: needs a user decision. implementer is not editing `.claude/**` itself and is writing before/after patches for lead to apply with user approval. That applies to every confirmed fix here, because all of them are in `.claude/**`.
-
-## Outside the in-scope files (for lead)
-
-- The user's auto-memory index (`~/.claude/projects/.../memory/MEMORY.md`) still describes the "layout under src/". That conflicts with CLAUDE.md's top-level layout and with the lead's note. It is not a workspace document, so this is not a finding, but it may mislead future sessions.
+Rejected, with reason:
+- R2-R-15 as a FIX: TS §8.2/§8.3 name no test runner, so the command text is not from the spec. It became PD-5.
+- R2-P-04 (resolve #8 from the spec): the owner could reasonably restrict tokens, so it stays ASK.
+- #19 (scan-level score): TS §4.5 L602 defines only the host score, so there is nothing to build or decide.
+- #17 "chars or bytes" half: SR says "chars" and the DDL uses `VARCHAR(n)`, so the spec answers it (R3-P-12a).
+- #22 "dispatched/expired" half: TS §4.4 L580 derives scan state exhaustively, so the spec answers it (R3-P-50).
+- R2-I-09: `docs/agent-teams-patterns.md` is the lead's file and out of scope.
+- R3-P-23(c) (import history in the UI): TS §2.1 L101 limits the UI to profiles, hosts, scans, results and package search.
+- R3-I-06 as first proposed (all three 401 types): stricter than TS §3.2 L188 and L191.
+- R3-P-51 extras ("no `running` state", "a late upload does not change the job"): inference, so they were left out.

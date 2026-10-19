@@ -1,156 +1,96 @@
 # Agent Teams: Workspace Audit Summary and Patterns
 
-Date: 2026-10-19. Goal given to the team: clean up the workspace and make sure every document is accurate and has no holes. Full reports are in `work/audit/` (`planner.md`, `reviewer.md`, `tester.md`, `implementer.md`). Finding ids (P-, R-, T-, I-, S-) refer to those reports.
+Date: 2026-10-19. Goal given to the team: clean up the workspace, apply the round-2 fixes that are right, and make sure every document is accurate and has no holes. The audit ran in three rounds with the four roles in `.claude/agents/`. Each role's merged report is `work/audit/<role>.md` (sections Done, Open items, Decisions); the per-round originals are `work/audit/archive/round1-<role>.md`, `round2-<role>.md` and `round3-<role>.md`, plus `round3-brief.md`; that folder is history and is ignored unless someone asks for it. Spec questions and process decisions live in `work/open-questions.md`. Nothing is committed.
 
-**Status: the team itself changed no workspace document.** Every confirmed fix was a proposal, because all of them touch `.claude/**` instruction files and the implementer declined to edit them without your approval. After the audit you approved them and the lead applied them; see section 11. Sections 2 to 8 describe the state at audit time.
+## 1. Result in one table
 
-## 1. How the team ran (lead)
-
-| Item | What happened |
+| Item | Outcome |
 | --- | --- |
-| Team | `planner`, `reviewer`, `tester`, `implementer`, plus one unnamed helper (`claude-code-guide`) that fact-checked Claude Code feature claims |
-| Deviation | The four custom agent types from `.claude/agents/` were not registered in the running session, so each was started as a general-purpose agent that first read its own role file. The helper confirmed the cause: `.claude/agents/` was created mid-session, and that case needs a restart (or a trusted folder) before the types load |
-| Lenses | planner = coverage and holes; reviewer = accuracy against the spec; tester = mechanical verification; implementer = workspace hygiene and applying confirmed fixes |
-| Protocol | Round 1 independent audit; round 2 mandatory cross-check (each teammate messages the other three and answers requests); round 3 status update; each ends with one `FINAL:` message |
-| Result | 4 reports, about 100 findings in total (41 + 22 + 23 + 14), large overlap between agents, no peer claim refuted except one half of P-20 |
-| Cost | Roughly 196k (planner), 239k (reviewer), 232k (tester), 102k (implementer) and 79k (helper) subagent tokens; 11 to 22 minutes each |
+| Round 1 | Independent audit, about 100 findings, large overlap between agents. All confirmed fixes applied after your approval and committed as 01748b2 |
+| Round 2 | Cross-check of the applied fixes plus each agent's spec slice. Tester stopped to wait for the user and delivered nothing |
+| Round 3 | Tester's missing report delivered, every UNVERIFIED round-2 claim ruled on, confirmed fixes applied (not committed), spec-silent items logged as questions |
+| Applied in round 3 | 50 fix ids in 27 files (about 80 hunks); 44 `**Open spec question:**` markers and 35 pointers in `.claude/`; `git diff --stat` 33 files, +656/-662 on the final tree (includes the merged reports and `work/open-questions.md`) |
+| Verification | 328 citations in the first scope and 469 in the full scope, none missing; front matter valid in 21 of 21 files; fences balanced; all files LF; no stale `lead` addressing; every pointer resolves to an agreed entry; the reviewer found no applied line stricter than the spec |
+| Left for you | 33 numbered spec-owner questions (#19 withdrawn), 12 process decisions PD-1 to PD-12, spec-internal inconsistencies S-01 to S-16, the stale memory file, `settings.local.json`, and the commit. See section 8 |
 
-Lead's own check of `docs/agent-teams-reference.md` against the official page (no changes made):
-- Lines 12, 51 and 338 call `.claude/settings.local.json` "uncommitted / local, not shared", but it is tracked in git (commit `8d6f42f`). The helper adds that Claude Code only adds the file to git excludes when Claude Code creates it, not when it is made by hand.
-- The "n/a per docs" cells in the section 5 table (`disallowedTools`, `effort` for split-pane teammates) should read "not stated in docs".
-- The guide does not mention that agent definitions created mid-session are not loaded until restart, or that the lead is addressed as `main` by teammates (see section 7).
-- Everything else matched the source page, and the helper found no wrong Claude Code claims in the agent, skill, rules and settings files.
+## 2. How the team ran (lead)
 
-## 2. Planner: coverage and holes
+- **Team:** `planner`, `reviewer`, `tester`, `implementer`, now registered as real agent types (the restart fixed the round-1 problem). The lead is addressed as `main`.
+- **Lenses:** planner = coverage and holes in SR and TS §4; reviewer = accuracy against the spec in TS §3.3 to §3.7 and §8.1 to §8.4; tester = TS §5 to §7 and everything mechanical; implementer = TS §1, §2, §3.1, §3.2, §8.5 to §8.7, hygiene, and the only writer of the documents.
+- **Shared brief:** `work/audit/archive/round3-brief.md` fixed five things: the classes FIX / ASK / DECIDE / REJECT / DUP; a single writer per file; "nothing is applied until a second agent confirms it against a quoted spec line"; the message protocol; one finding format.
+- **No SendMessage tool:** none of the four role types had it. Every agent said so and wrote its rulings into a "Rulings for implementer" table in its own report. The lead relayed requests (it has SendMessage), resumed finished agents with new instructions, and the implementer polled the report files. A confirmed line in a teammate's file counted as the second confirmation. This worked, but the planner's patch batches only reached the implementer after the lead read its report and relayed them.
+- **Cost:** about 280k (planner), 320k (reviewer), 282k (tester) and 339k (implementer) subagent tokens by the end of verification; the first pass of each took 14 to 58 minutes. The implementer was the long pole.
+- **Resumes:** a completed agent resumes when it gets a message, with its transcript. The lead used that for the planner's second pass, for post-apply verification, and for the merge task.
+- **Harness note:** one tool result (the implementer's last report) was tagged as matching an instruction-shaped pattern ("settings-json"). It only quoted `settings.local.json` text; nothing was acted on.
 
-41 findings (1 blocker, about 20 should-fix, the rest nits); 20 CONFIRMED by peers, 1 split, the rest are judgement calls left UNVERIFIED.
+## 3. Planner (coverage and holes)
 
-**Good news:** goals G1 to G6 each trace to at least one rule file, and every TS and SR section is cited by at least one rule or by CLAUDE.md. The holes are at the level of individual requirements.
+- **Round 3:** ruled on all 26 round-2 items and the round-1 leftovers; 18 FIX (5 already in the tree, the rest applied after confirmation), 18 new ASK entries #10 to #27, 11 process decisions, 4 REJECT, 10 DUP. After the other rulings came in: #19 withdrawn, #13, #15 to #17, #20 to #23, #25, #27 to #33 agreed.
+- **Owns `work/open-questions.md`:** reworked into numbered questions with a status column, a table of all 44 marker lines in the rules, the TS §8.5 questions, PD-1 to PD-12 and the spec-internal list. A fresh grep matched the table exactly.
+- **Findings worth knowing:** `bit-format.md` said the display name "is never stored" although `scan_result.plugin_name_snap` stores it (fixed). The start-up steps in `importer.md` were numbered in an order TS §4.2 never gives (fixed; order is question #27). Rules were missing: cancel also cancels dispatched and running jobs, the "≤ `job_pull_seconds` + 30 s" pickup bound, re-evaluation needs a TOTP session and is audit-logged, `eval_detail`, list filters and the package click-through (all added).
+- **Own mistakes corrected:** it told the implementer to append markers mid-bullet (tester caught it, R3-T-01); it first kept `nan`/`inf` in question #13 against the reviewer's trim (both versions choose no behaviour).
 
-| Area | Findings |
+## 4. Reviewer (accuracy against the spec)
+
+- **Diff review:** every changed hunk of the uncommitted round-2 edits was checked against the spec. Three new marker lines overclaimed and were rewritten: `bit-format.md` #2 (only BIT010's "missing" half is unreachable), `agent.md` #4 (wrong section for the spool limit; no invented `log_level` clash), `api.md` #5 (TS §8.4 does name `/healthz` and `/readyz`).
+- **Rulings:** R2-R-08, R2-R-12 and R2-R-13 became questions #29 to #31; R2-R-07 split (the spec's `error` field is a FIX, "resend to a restarted runner" is a question #28); the second approver and the test commands are process decisions because TS §8.2 and §8.3 name no test runner. Its own round-2 command text was therefore withdrawn.
+- **Fixes it authored (12):** a `serve` subcommand fix, the cgroup v2 statement, the OS matrix, the plugin-socket accepted risk, viewers never receive `stdout` or `stderr`, the job-state transitions, and similar.
+- **Last pass:** all applied lines VERIFIED; the invariants in `security-invariants.md` were restated more exactly, not weakened. It narrowed one implementer line: "with a new enrolment token" applies only to `token_revoked` and `token_expired` (TS §3.2 step 8), not to `enrollment_rejected`.
+- **Spec-internal inconsistencies for the owner:** S-01 to S-16 (six new in round 3, for example TS §4.3 vs SR §3.6 on a revived policy's version, and the `evaluate()` signature vs its own ERROR cases).
+
+## 5. Tester (mechanical verification)
+
+- **Round 2 delivered late:** hole-hunt of TS §5 to §7 and every "Tests" line against TS §8.3: eight fixes (error `type` values on agent routes, schema owner and `USAGE` grants, enrolment-token create and revoke, ten "Tests" lines with sources, and others) and two questions (#32 package type-ahead has no route; #33 whether the manager recomputes `list_sha256`).
+- **Mechanical results (final tree):** 79 of 79 round-3 spec quotes and all round-2 quotes exist at their cited lines (three are close paraphrases); no `lead` or `implementer-<area>` addressing left; markers each on their own line; `*.preseed`, `install.env` and `settings.local.json` ignored with no tracked file newly ignored.
+- **Experiments:** in a throwaway repo, `* text=auto eol=lf` turned CRLF into LF in committed CSV and stdout fixtures, while a file with a lone CR was treated as binary and kept. That settled the implementer's round-2 question: CRLF normaliser inputs must be built in code or the fixture paths marked `-text` (the choice is PD-8).
+- **Found:** four markers embedded mid-bullet (R3-T-01), stale line numbers in the marker table (R3-T-02), missing TS/SR prefixes on some citations (R3-T-03). All fixed and re-verified.
+- **Lesson on itself:** in round 2 it paused for the user and blocked the exchange. The brief's "never stop for the user" fixed that.
+
+## 6. Implementer (applier and hygiene)
+
+- **Authorised exception:** `work/decisions.md` records that for this task the implementer is the single writer of `.claude/**`, `README.md`, `.gitignore`, `.gitattributes` and `docs/agent-teams-reference.md`. Round 1 showed it declines such edits otherwise.
+- **Applied:** the 9 ready-list fixes (offline_sweep timeouts, NTP prerequisite, token rotation replacement, purge and no deregistration call, TS §8.5 caveats, Sandbox gate, `bits/samples/` vs `bits/tests/`, CRLF fixtures, audit statuses); 14 planner, 12 reviewer and 7 tester ids; 5 hygiene items (build outputs in `.gitignore`, README pointer to the open questions, layout block with `docs/spec/` and `work/`, glossary terms in CLAUDE.md, a stray `lead` in the reference guide); 32 marker lines and pointers; later the last three appends.
+- **Reverted on a ruling:** `agent.md:34` ("in the results `error` field") was applied, then reverted because it would pre-answer question #28.
+- **Hygiene:** no stale paths, no empty or CRLF files, balanced fences, every rule reference resolves.
+- **Outside the repo:** it did not edit the user's memory file (stale "Go 1.22"; the rotation line is right only for the default token lifetime). That is PD-11.
+
+## 7. Where the agents agreed and where a peer corrected another
+
+| Issue | Outcome |
 | --- | --- |
-| Workflow holes | P-01 implementer has three names (blocker). P-02 no `impl-bits` or `impl-deploy`. P-03 `bits/` co-owned by implementer and tester. P-04 nobody owns `work/reports/`. P-05 no re-test step after CHANGES_REQUESTED. P-06 with no commits, the reviewer's working-tree diff cannot isolate one task. P-07 the two-approval rule cannot be met with one reviewer. P-08 nobody updates rules after an Open spec question is answered. P-09 CLAUDE.md commands lack test, coverage, Prettier and OpenAPI commands, and Linux-only suites have no stated place to run on Windows |
-| New spec ambiguities | P-10 BIT010 and BIT011 "missing" can never fire (BIT002 shadows them) (confirmed). P-11 a scan whose target resolves to zero agents (confirmed). P-13 `agent.yaml` keys vs values fixed elsewhere (confirmed). P-14 no auth defined for `/healthz`, `/readyz` and metrics (confirmed). P-15 manager install and web UI serving. P-16 initial passwords. P-17 to P-19, P-38, P-39 smaller gaps |
-| Rules vs spec | P-20 `api.md:40` "GET /policies omits deleted policies" is unsupported by the spec (confirmed); the `web-ui.md:27` "Deleted" state is supported (refuted). P-34 the rotation-window question is answerable: it ends at `expires_at` |
-| Uncovered requirements | P-21 `GET`/`DELETE /api-tokens`. P-22 list and filter parameters. P-23 cancel of dispatched and running jobs. P-24 `eval_detail`. P-25 hostname trigram index. P-26 UI items (runner helpers, host click-through, import history). P-27 NTP prerequisite. P-28 coverage gate path `manager/services` does not exist in the layout (confirmed) |
-| Cleanup | P-29 fixture lists differ. P-30 no `.gitignore`. P-31 empty README. P-32 layout block omits `work/` and `docs/`. P-33 out-of-scope heading cites too few sections. P-35 duplicated open questions |
+| offline_sweep also applies the 24 h never-started and 30 min inventory timeouts | reviewer and planner found it independently; applied |
+| NTP prerequisite, rotation replaces `token`/`issued_at`/`expires_at`, purge has no deregistration call | confirmed by two or three agents; applied |
+| `api.md` stated the API-token revoke question as fact | reviewer and planner converged on a marker (#8) instead |
+| Run-time rule `agent.md:34` | planner rejected, reviewer accepted, implementer reverted |
+| Planner's mid-bullet markers | tester caught, implementer split, planner owned the error |
+| Reviewer's overclaiming markers (#2, #4, #5) | reviewer corrected its own round-2 text during the diff review |
+| Tester's "all values agree" in round 1 missed invented rule text | planner flagged in round 2; round 3 added the "does the spec say this?" check for words like "never", "only", "must" |
 
-## 3. Reviewer: accuracy against the spec
+## 8. Decisions and work that need you
 
-12 findings on workspace documents (R-01 to R-12) and 10 inconsistencies inside the spec (S-01 to S-10). No blockers. The reviewer read both specs and every in-scope file in full and found every number, enum, table and grant, route, status and error code, BIT code, token rule, file mode, unit setting, alert list and test gate consistent with the spec.
+1. **Commit:** everything since 01748b2 is uncommitted (`.claude/**`, README, `.gitignore`, `.gitattributes`, `docs/agent-teams-reference.md`, `work/`).2. **Spec owner:** 33 numbered questions (#19 withdrawn). The ones that block the most behaviour: #12 (`evaluate()` has no input for runner errors or oversize output), #14 (TS and SR disagree on a revived policy's version), #18 (does disabling a policy cancel its queued jobs), #28 and #29 (the agent-runner contract), #33 (`list_sha256`).
+3. **Process decisions PD-1 to PD-12:** re-test after CHANGES_REQUESTED, review baseline, second approver, who updates markers, test commands in CLAUDE.md, a PLAN task, loader fallback, CRLF fixture mechanism, build output paths, `settings.local.json`, the memory file, and the build files with no loading rule.
+4. **Spec-internal inconsistencies S-01 to S-16:** reported to the owner, never edited.
+5. **Outside the repo:** the memory file `bitscan-project-decisions.md` is stale (PD-11).
 
-| Id | Severity | Finding | Status |
-| --- | --- | --- | --- |
-| R-01 | should-fix | `jobs-and-scans.md:27-30` says `offline_sweep` does three things; TS §3.3 adds "creates retries" | confirmed |
-| R-03 | should-fix | Implementer named three ways; no implementer for `bits/` or `deploy/` | confirmed |
-| R-04 | should-fix | `config-and-cli.md:35` says every CLI command reads `app.dsn`; `db migrate` and `db maintain` use the migrate credential from their own units | confirmed |
-| R-05 | should-fix | No rule for `GET`/`DELETE /api-tokens`. The spec does not forbid an API token revoking tokens, so the faithful wording is "viewer, own tokens (session or API token)" | confirmed |
-| R-06, R-07, R-09, R-10 | nit | Citation scope fixes: jitter is TS §3.3 not §1.1; remediation is TS §1.2; journald is TS §3.1 and §8.1; "Tests (TS §8.3)" lines include items from §3.1, §6.3, §7.2, §8.2 | confirmed |
-| R-12 | nit | `work/reports/` ownership incomplete | confirmed |
-| R-02, R-08, R-11 | nit | State-line wording; "removed by the owner" overstates for ad-hoc commands and push channels (those are spec prohibitions); viewers "verdicts only" vs web-ui wording | unverified |
+## 9. Patterns for running agent teams (lessons, updated)
 
-Spec-internal items (report to the owner; never edited): S-01 policy delete missing from the TS §6.2 sensitive-action list although the route table and §4.3 require a TOTP session (already an Open spec question). S-02 §5.1 table map omits `agent_ip_seen` and `task`. S-03 §2.1 omits `pgcrypto`. S-04 heartbeat response described as only `job_pull_seconds` in §2.3. S-05 `spool_overflow` called a runner error though the spool is the agent's. S-06 "deadline" used for `pickup_by` in §2.3 and §8.1. S-07 `failed` definition omits the 24 h never-started and inventory cases. S-08 "group" in G6 but only tags exist. S-09 `/agent/enroll` called unauthenticated but needs a `bse_` token. S-10 BIT102 listed after BIT103.
-
-## 4. Tester: mechanical verification
-
-23 findings, all mechanically CONFIRMED, no blockers. The tester treated the docs as code and ran read-only grep and node checks.
-
-**Passed with no finding:**
-- All 209 `TS §` and `SR §` citations resolve to real spec headings.
-- 54 numeric and enum facts agree with the spec.
-- Front matter, names and tool lists in all 21 front-matter files are valid; code fences are balanced; `settings.local.json` is valid JSON; all files are LF.
-- Identical across docs and spec: the error `type` values, the 14 operators, the 18 BIT codes, G1 to G6, the agent status values, the 11 D-Bus methods, the CSP header and milestones M0 to M8.
-- Every layout directory is covered by a rule `paths:` glob.
-
-**Findings worth acting on:** T-01 out-of-scope heading citation. T-02 coverage gate path. T-03 and T-04 implementer naming and missing areas. T-05 `work/reports/` owner. T-06 `settings.local.json` is tracked and there is no `.gitignore`. T-07 redaction fixture lists differ between `testing.md` and `runner-sandbox.md`. T-09 nine references write `rules/...` without the `.claude/` prefix. T-10 CLI DSN. T-14 `/api-tokens`. T-15 `bits/` ownership. T-16 a few build files (`pyproject.toml`, `requirements.txt`, `go.mod`) fall under no path-scoped rule. T-19 `testing.md` test locations omit web tests and `bits/` fixtures. T-20 the upstream `src/auth/` example contradicts this project. T-21 two pointers outside the repo in `SKILL.md`.
-
-## 5. Implementer: workspace hygiene
-
-14 findings. The implementer made **no edits** and wrote before/after patches instead.
-
-| Id | Finding | Needs your decision |
-| --- | --- | --- |
-| I-04 | `.claude/**` and `docs/spec/` are untracked while the stale `.CLAUDE.md` template is still in HEAD; a fresh clone gets the template and none of the real rules | yes (commit) |
-| I-01 | `settings.local.json` is tracked, but docs call it local. Recommended: move the flag to a shared `.claude/settings.json`, untrack and ignore the local file, reword the three doc lines | yes |
-| I-02 | No `.gitignore` (entries listed in the report); decide whether `work/` is committed | yes |
-| I-03 | `README.md` is 0 bytes | yes (content) |
-| I-05 | Drop the "copy specs from `~/Downloads`" step in `SKILL.md` after specs are committed | depends on I-04 |
-| I-06 | `SKILL.md:17` points at a machine-local plan file that also contains stale schema and token-lifecycle content; inline the M0 to M8 order instead | no |
-| I-07, I-08, I-09 | Implementer naming, missing `impl-bits` and `impl-deploy`, `work/reports/` ownership | no |
-| I-10 | `bits/` split, e.g. `bits/samples/` and `bits/tests/` | yes |
-| I-11 | Add `.gitattributes` with `eol=lf` | yes |
-| I-12 | Memory index says "layout under src/" | fixed by lead |
-| I-13 | `src/auth/` upstream example in the reference guide | leave as upstream quote |
-| I-14 | Trust the exact repo folder so custom agent types load | yes |
-
-## 6. Where the agents agreed
-
-| Issue | Found by |
-| --- | --- |
-| Implementer has three names (`implementer-<area>`, `impl-*`, `implementer`) | planner P-01, reviewer R-03, tester T-03, implementer I-07 |
-| No implementer for `bits/` or `deploy/` | P-02, T-04, I-08 |
-| `work/reports/` ownership gap | P-04, R-12, T-05, I-09 |
-| `bits/` co-owned, no subfolders | P-03, T-15, I-10 |
-| `settings.local.json` tracked but documented as local | T-06, I-01, lead and helper |
-| `GET`/`DELETE /api-tokens` uncovered | P-21, R-05, T-14 |
-| Coverage gate path does not exist | P-28, T-02 |
-| No `.gitignore` or README | P-30, P-31, T-22, I-02, I-03 |
-| Old plan pointer is stale and machine-local | I-06, T-21 |
-| `offline_sweep` omits retries | R-01, T-13 |
-| CLI DSN heading wrong | R-04, T-10 |
-| Redaction fixture lists differ | P-29, T-07 |
-| "Tests (TS §8.3)" lines mislabelled | R-10, T-08 |
-| Stale memory index | P-41, I-12, reviewer |
-
-## 7. Decisions needed from you
-
-1. **Teammate names:** approve `impl-<area>` everywhere and add `impl-bits` and `impl-deploy` (patches P-I07a-e, P-I08, P-I09a-b in `work/audit/implementer.md`).
-2. **`bits/` layout:** choose subfolder names (suggested `bits/samples/` for implementers and `bits/tests/` for tester fixtures) before M0.
-3. **Settings file:** shared `.claude/settings.json` plus untracked, ignored `settings.local.json` (recommended), or keep it local and untrack it, or reword the docs to "committed".
-4. **Repo files:** `.gitignore` contents, whether `work/` or `work/audit/` is committed, `.gitattributes`, and README content.
-5. **Commit:** `.claude/**`, `docs/spec/`, the `.CLAUDE.md` deletion and whichever fixes you approve, as one change. The lead has not committed anything.
-6. **Open spec questions for the owner:** policy delete as a sensitive action and during an audit-sink outage (S-01); BIT010 and BIT011 "missing" (P-10); scan with zero resolved agents (P-11); `agent.yaml` keys vs fixed values (P-13); auth for health and metrics routes (P-14); manager install and web UI serving (P-15); initial passwords (P-16); whether an API token may revoke its own tokens (R-05); whether `GET /policies` lists deleted policies (P-20). Close the rotation-window question as "ends at `expires_at`" (P-34).
-7. **Review workflow rules** the planner left open: a baseline for per-task diffs (one commit per approved task, or saved per-task patches) (P-06); a re-test step after CHANGES_REQUESTED (P-05); who is the second approver (P-07); who updates rules once a question is answered (P-08); a fallback when custom agent types do not load (P-37).
-
-## 8. Confirmed fixes ready to apply once you approve
-
-All have exact before/after text in `work/audit/implementer.md` or the reporting agent's file.
-- Naming and ownership: `CLAUDE.md:110`, `SKILL.md:26`, `SKILL.md:38`, `tester.md:17` and `:24`, `reviewer.md:30`.
-- `SKILL.md:17`: replace the plan pointer with the inline milestone order.
-- Rules: `jobs-and-scans.md:27` (add retries), `config-and-cli.md:35` and `:41` (DSN), `api.md:38` (`/api-tokens`, login and logout), `testing.md:21` and `evaluator.md:30` (coverage path annotation), `testing.md:18-19` (fixture superset), `testing.md:15` (test locations), `security-invariants.md:13` and `:25` (citations), `CLAUDE.md:16` (jitter citation), `CLAUDE.md:23` (out-of-scope citations), `.claude/rules` bare `rules/` references (T-09), duplicated open questions (P-35), and the "Tests (TS §8.3)" citations (R-10).
-- Guide: `docs/agent-teams-reference.md` lines 12, 51 and 338 once the settings decision is made, and the "n/a per docs" cells.
-
-## 9. Patterns for running agent teams (lessons from this run)
-
-1. **Start in a fresh session after creating `.claude/agents/`.** Definitions created mid-session did not load. If it happens, spawn general-purpose agents and tell each to read `.claude/agents/<role>.md` first. Role tool limits are then honour-system only; Claude Code has no path restriction for subagent definitions anyway.
-2. **Tell teammates to address the lead as `main`.** Two teammates could not reach `lead` and sent their FINAL message to `main`. Put the exact address in every spawn prompt.
-3. **A completion notification is not a FINAL message.** Teammates that stop to wait for replies still trigger one. Require an explicit `FINAL:` message from each teammate and wait for all of them before synthesizing.
-4. **Distinct lenses plus a mandatory cross-check give confidence quickly.** Four agents independently reported the same naming defect; the tester mechanically confirmed 20 or more peer claims; the reviewer split one planner finding (P-20), which a single-agent audit would have missed.
-5. **Split mechanical from semantic checking.** Citations, paths, globs, counts and front matter were verified by grep and node (tester); wording against the spec was judged by the reviewer. Neither lens alone would have found everything.
-6. **Use one finding format with ids and statuses** (UNVERIFIED, CONFIRMED, REFUTED, APPLIED), and one report file per agent. The synthesis then becomes a merge.
-7. **Plan an "apply approved patches" step.** The implementer correctly refused to edit instruction and configuration files on a teammate's request. Ask teammates for exact before/after patches up front, and have the lead apply them after the user approves.
-8. **Keep an owner-decisions list separate from fixes.** Roughly half the findings needed a decision (layout, settings, commits, spec questions), not an edit.
-9. **Audit the workflow as well as the content.** Most should-fix findings were about the team's own process: naming, ownership, review baseline, re-test and approval rules. Check these before the first real run.
+1. **Start in a fresh session after creating `.claude/agents/`.** Mid-session definitions do not load. If it happens, use general-purpose agents and tell each to read its role file first.
+2. **Address the lead as `main`** in every spawn prompt and role file.
+3. **Do not assume teammates can message each other.** The role types here had no SendMessage tool. Design for it up front: a shared brief file, one "Rulings for implementer" table per report that others poll, and the lead as relay and resumer. Check the tool list before promising a protocol.
+4. **A completion notice is not a FINAL, and a finished agent is not gone.** Messages resume it with its transcript, so late rulings can be routed to it. Require an explicit FINAL text and wait for all of them.
+5. **One writer per file.** The implementer as the only writer of docs, the planner of the question list, each agent of its own reports, avoided every edit conflict across about 80 hunks.
+6. **Two-key rule for edits.** "Nothing is applied until a second agent confirms against a quoted spec line" caught real errors (overclaiming markers, an invented sentence about recomputing a hash, a result-field rule that pre-answered an open question).
+7. **Default spec-silent behaviour to a question, not a rule.** Most round-2 proposals chose behaviour the spec leaves open. Marker lines (`**Open spec question:**` with a pointer) keep implementers from building it.
+8. **Split mechanical from semantic checking.** The tester's greps, node checks and throwaway-repo experiments found structure problems the reviewer's reading missed, and the reviewer found overclaims no grep can.
+9. **Never let an agent stop for the user.** The tester's round-2 pause cost a round. Tell agents the user is unreachable and to route needs through the lead.
+10. **Keep decisions apart from fixes.** About half the findings needed a decision. A numbered list with a status (agreed, withdrawn) and a table of marker lines keeps the two from drifting; regenerate the table by grep after every batch.
+11. **Merge after the run.** Per-round reports are useful while the run is live and noise afterwards. Merge them into one report per role with Done, Open items and Decisions, and move the per-round originals to `work/audit/archive/`, which agents ignore unless asked.
+12. **Audit the workflow as well as the content.** Many should-fix findings were about process (naming, ownership, review baseline, re-test and approval rules).
 
 ## 10. Report index
 
-- `work/audit/planner.md`: coverage, holes, open questions (P-01 to P-41)
-- `work/audit/reviewer.md`: accuracy and spec-internal inconsistencies (R-01 to R-12, S-01 to S-10)
-- `work/audit/tester.md`: mechanical checks, appendices of 54 fact checks and a glob test (T-01 to T-23)
-- `work/audit/implementer.md`: hygiene, patch list, decisions (I-01 to I-14)
-
-## 11. Applied after your approval (lead)
-
-Decisions taken: `impl-<area>` names; `bits/samples/` and `bits/tests/`; shared `.claude/settings.json`; `.gitignore`, `.gitattributes` and README created; all confirmed fixes applied; open spec questions logged unanswered; one local commit.
-
-| Area | Change |
-| --- | --- |
-| Names and ownership | `impl-<area>` (agent type `implementer`) in `CLAUDE.md`, `SKILL.md`, `tester.md`, `reviewer.md`; `impl-bits` and `impl-deploy` added; `work/reports/` ownership added for implementer and tester (P-01, P-02, P-04) |
-| `bits/` | Split into `bits/samples/` (impl-bits) and `bits/tests/` (tester) in the layout, ownership lines, role files and `testing.md` (P-03) |
-| Settings | New shared `.claude/settings.json` with the agent-teams flag; `settings.local.json` untracked and gitignored; wording fixed in `agent-teams-reference.md` and `SKILL.md` (I-01) |
-| Rules | `jobs-and-scans.md` retries; `config-and-cli.md` DSN split; `api.md` `/api-tokens`, login and logout, unsupported "omits deleted" sentence replaced by an Open spec question; `testing.md` and `evaluator.md` coverage path, fixture list and test locations; citations in `security-invariants.md`, `packaging-and-units.md`, `web-ui.md`, `runner-sandbox.md`; rotation window question closed; two duplicate open questions turned into pointers; bare `rules/...` paths now `.claude/rules/...` |
-| CLAUDE.md and SKILL.md | Heartbeat and out-of-scope citations; plan pointer replaced by the inline milestone order; the `~/Downloads` copy step removed |
-| Repo files | `.gitignore`, `.gitattributes` (`eol=lf`), `README.md`, `work/open-questions.md` (nine owner questions, unanswered) |
-| Reference guide | "n/a per docs" cells reworded; the three gotchas from this run added to section 15 |
-
-Not applied (unverified judgement calls, left for you): P-05 re-test step, P-06 review baseline, P-07 second approver, P-08 who updates rules after a decision, P-37 loader fallback, R-02, R-08, R-11, P-22 to P-27, P-32, P-40, T-16, T-20. The nine spec-owner questions in `work/open-questions.md` remain open.
+- `work/audit/planner.md`, `reviewer.md`, `tester.md`, `implementer.md`: merged reports (Done, Open items, Decisions).
+- `work/open-questions.md`: numbered spec questions, marker table, TS §8.5 questions, PD-1 to PD-12, spec-internal inconsistencies.
+- `work/decisions.md`, `work/status.md`: the lead's decisions and status.
+- `work/audit/archive/`: history only (`round1-<role>.md`, `round2-<role>.md`, `round3-<role>.md` and `round3-brief.md`). Do not read it unless asked.

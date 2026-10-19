@@ -25,7 +25,7 @@ Table map: TS §5.1. Schema, grants and bootstrap: TS §5.2 (implement the DDL e
 - `bitscan_app` must never DELETE `scan`, `scan_job`, `agent`, `policy` or `system_schedule`.
 - On `scan_job`, the app may UPDATE only `state, dispatched_at, started_at, deadline_at, finished_at`. On `scan`, only `state, finished_at`.
 - `bitscan_retention` may SELECT everything (also via default privileges), may DELETE only from `scan`, `scan_job`, `scan_result`, `scan_result_reeval`, `inventory_snapshot`, `enrollment_request`, `user_token`, `audit_log` and `package`, and may INSERT `audit.checkpoint` rows into `audit_log` (with `USAGE` on `audit_log_audit_id_seq`).
-- Bootstrap (once, superuser, before the first migration): `bitscan_owner` NOLOGIN; `bitscan_app`, `bitscan_retention` LOGIN; `bitscan_migrate` LOGIN IN ROLE `bitscan_owner`; database `bitscan` owned by `bitscan_owner`, `REVOKE ALL … FROM PUBLIC`, CONNECT only for app, retention and migrate; extensions created there.
+- Bootstrap (once, superuser, before the first migration): `bitscan_owner` NOLOGIN; `bitscan_app`, `bitscan_retention` LOGIN; `bitscan_migrate` LOGIN IN ROLE `bitscan_owner`; database `bitscan` owned by `bitscan_owner`, `REVOKE ALL … FROM PUBLIC`, CONNECT only for app, retention and migrate; schema `public` owned by `bitscan_owner`, with `USAGE` for app and retention; extensions created there.
 - Never weaken these grants to make code work. Change the code instead, for example `INSERT … ON CONFLICT DO NOTHING` and then a SELECT, because the app has no UPDATE on `package`.
 - The role split guards against bugs and injection in the API, not against a compromise of the whole manager (both DSNs live in its process).
 
@@ -67,4 +67,4 @@ Table map: TS §5.1. Schema, grants and bootstrap: TS §5.2 (implement the DDL e
 
 - `package.version` is text. Compare it with `version::debversion`, which uses `ix_package_name_debver`. Never compare Debian versions as text.
 
-Tests (TS §8.3): Integration on a freshly migrated database (grant probes in `.claude/rules/testing.md`, including a newly created partition; partition maintenance; trigger and CHECK rejections; retention deletes and checkpoint).
+Tests (TS §8.3): Integration on a freshly migrated database (grant probes in `.claude/rules/testing.md`, including a newly created partition; partition maintenance; trigger and CHECK rejections (TS §5.2); retention deletes and checkpoint (TS §5.3)).

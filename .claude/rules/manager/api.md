@@ -28,19 +28,21 @@ Spec: TS §6 (routes, auth, conventions, agent wire contract) and §3.2 (enrolme
   - other JSON: 1 MB.
 
   Larger bodies get 413; decompress as a stream with hard caps.
-- Error `type` values are exactly: `pending_approval`, `enrollment_rejected`, `token_revoked`, `token_expired`, `machine_id_mismatch`, `job_not_acceptable`, `too_large`, `rate_limited`.
+- Agent-route error `type` values (TS §6.5) are exactly: `pending_approval`, `enrollment_rejected`, `token_revoked`, `token_expired`, `machine_id_mismatch`, `job_not_acceptable`, `too_large`, `rate_limited`. User routes also use 409 `policy_managed_on_server` (TS §4.1, §4.3).
 
 ## User routes (TS §6.2 table)
 
 - TOTP-verified session only (API tokens refused): `DELETE /policies/{id}`, `POST /policies/rebuild` (async, returns a task id), `POST /agents/{id}/revoke`, `POST /enrollment-requests/{id}/approve` and `/reject`, CRUD `/enrollment-tokens`, `POST /scans/{id}/reevaluate`, CRUD `/users` (delete means disable) and `PATCH /settings`; all admin.
 - Session only, any signed-in user: `POST /auth/totp/enrol`, `POST /auth/password` (current password required), `POST /api-tokens` (viewer).
 - Admin, session or API token: `PATCH /policies/{id}`, `POST /policies/import` (one `.bit`, `bsu_` or `bsk_`), `GET /tasks/{id}`, `/imports`, `/enrollment-requests`, `/settings`, `/audit-log`. Only admins create or update policies, and there is no route that edits plugins or commands.
-- Operator: `PUT /agents/{id}/tags`, `POST /scans`, `POST /scans/{id}/cancel`, CRUD `/scan-schedules`. Viewer: `GET` and `DELETE /api-tokens` (your own tokens, session or API token) and the other `GET` routes in the table. No role: `POST /auth/login` and `/auth/logout`.
+- Operator: `PUT /agents/{id}/tags`, `POST /scans`, `POST /scans/{id}/cancel`, CRUD `/scan-schedules`. Viewer: `GET` and `DELETE /api-tokens` (your own tokens) and the other `GET` routes in the table. No role: `POST /auth/login` and `/auth/logout`.
+- **Open spec question:** whether an API token may itself call `DELETE /api-tokens`; the TS §6.2 row has no "session only" marker (`work/open-questions.md` #8).
+- Lists (TS §6.2): `GET /policies` takes `?status=enabled`; `GET /scans` filters by policy, host, state and date; `GET /scans/{id}/results` and `/results.csv` filter by status and host; `GET /agents` returns hosts with status, OS, last heartbeat and inventory.
 - `GET /scans/{id}/results` and `/results.csv` include `stdout` and `stderr` only for operator and admin. They use the latest re-evaluation per job and plugin and return both `result` and `original_result`.
 - Policies: `PATCH` with `{"policy_status": …}` sets `status_overridden = true`; `{"status_overridden": false}` restores `policy_status` from `file_status`. Re-enabling a disabled policy alerts. `DELETE` of a server-folder policy returns 409 `policy_managed_on_server`.
 - A scan of a disabled policy returns 409. A scan of a deleted policy must be refused too: no jobs can be built from it (TS §3.3, §4.3).
 - **Open spec question:** which status a scan of a deleted policy returns (404 or 409).
-- **Open spec question:** whether `GET /policies` lists deleted policies; TS §4.3 says only that a deleted policy disappears from selection.
+- **Open spec question:** whether `GET /policies` lists deleted policies; TS §4.3 says only that a deleted policy disappears from selection (`work/open-questions.md` #9).
 - `POST /scans` returns 202 with `{scan_id, state, policy_version, jobs}` (TS §6.4). An all-hosts scan started with an API token alerts.
 - There is no endpoint to disable inventory or to run an ad-hoc command.
 
@@ -61,7 +63,8 @@ Spec: TS §6 (routes, auth, conventions, agent wire contract) and §3.2 (enrolme
   - `q` needs at least 3 characters;
   - `status` defaults to `installed`;
   - responses are `{items, next_cursor}`; `group_by` pages hold at most 500 groups.
+- **Open spec question:** TS §8.4 names `/healthz` and `/readyz` but not their prefix or authentication, and gives no route for the Prometheus metrics, while TS §2.3 says every call carries a bearer token (`work/open-questions.md` #5).
 - Health: `/healthz` is liveness; `/readyz` fails unless the DB is reachable, migrations are current and the `system_schedule` rows (including `inventory`) are present.
 - Alerts are audit entries with `detail.alert = true` plus the metric `bitscan_alerts_total{kind}`. TS §8.4 lists which events alert.
 
-Tests (TS §8.3): Integration (every endpoint, `/readyz` with the `inventory` row missing), Contract (agent route schemas), Security (tokens on the wrong route group, API tokens on TOTP-session routes, non-admin policy upload and delete, first result wins under concurrent retries).
+Tests (TS §8.3): Integration (every endpoint, `/readyz` with the `inventory` row missing, TS §3.4), Contract (agent route schemas), Security (tokens on the wrong route group, API tokens on TOTP-session routes, non-admin policy upload and delete, first result wins under concurrent retries).

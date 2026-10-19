@@ -6,20 +6,32 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
+*.egg-info/
 
-# Web
+# Web (the generated OpenAPI client stays committed: CI regenerates it and checks for no diff)
 node_modules/
 web/dist/
 web/build/
+web/coverage/
+*.tsbuildinfo
+npm-debug.log*
 
 # Agent and packaging build output
 agent/bin/
 dist/
 *.deb
+*.buildinfo
+*.changes
+*.test
+coverage.out
+*.coverprofile
 
-# Local configuration and secrets
+# Local configuration and secrets (install preseed and install.env carry the bse_ enrolment token, TS §3.1)
 .env
+install.env
+*.preseed
 .claude/settings.local.json
 .claude/worktrees/
 

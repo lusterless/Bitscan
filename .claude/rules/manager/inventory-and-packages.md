@@ -14,7 +14,8 @@ Spec: TS §3.4 (mandatory inventory), §6.5 (inventory body), §7 (search), §6.
 - Accept at most one upload without `job_id` per agent per 10 minutes; answer 429 otherwise.
 - With a valid `job_id` the upload completes that job (204). A later upload carrying a `job_id` whose job already failed is still stored, as an unscheduled snapshot.
 - **Open spec question:** TS §3.4 does not say whether such a late `job_id` upload counts against the one-unscheduled-upload-per-10-minutes limit.
-- Every upload replaces `os_info` and sets `agent.last_inventory_at`. Recompute `list_sha256` (hex SHA-256 of the sorted UTF-8 lines `name\tversion\tarchitecture\tstatus\n`, same as the agent). If it differs from the last snapshot: upsert `agent_package`, delete rows for packages no longer listed, and write an `inventory_snapshot` with what was added and removed.
+- Every upload replaces `os_info` and sets `agent.last_inventory_at`. If `list_sha256` (hex SHA-256 of the sorted UTF-8 lines `name\tversion\tarchitecture\tstatus\n`, TS §6.5) differs from the last snapshot: upsert `agent_package`, delete rows for packages no longer listed, and write an `inventory_snapshot` with what was added and removed.
+- **Open spec question:** TS §3.4 compares the uploaded `list_sha256` with the last snapshot but does not say whether the manager recomputes it from `packages` or uses the agent's value (`work/open-questions.md` #33).
 - `package` rows are shared: insert with `INSERT … ON CONFLICT DO NOTHING` then SELECT (the app has no UPDATE on `package`). Unreferenced rows are pruned by the retention task.
 - Alert when one agent adds more than 1,000 previously unseen packages in a day.
 
@@ -29,4 +30,4 @@ Spec: TS §3.4 (mandatory inventory), §6.5 (inventory body), §7 (search), §6.
 - CSV export of the current result set escapes formula cells as in TS §6.3 (prefix `'`).
 - The < 1 s search target (TS §7) has no TS §8.3 gate: see the open question in `.claude/rules/testing.md` before adding a CI performance gate.
 
-Tests (TS §8.3): Property/fuzz (inventory decoder with oversized and malformed input, including gzip bombs: no crash, no partial import), Unit (version compare against `dpkg --compare-versions`, ≥ 500 pairs; CSV escaping), Integration (every limit, 429, snapshot diff).
+Tests (TS §8.3): Property/fuzz (inventory decoder with oversized and malformed input, including gzip bombs: no crash, no partial import), Unit (version compare against `dpkg --compare-versions`, ≥ 500 pairs; CSV escaping, TS §6.3), Integration (every limit, 429, snapshot diff; TS §3.4).

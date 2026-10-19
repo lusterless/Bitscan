@@ -18,7 +18,8 @@ Spec: TS §2.3 (tokens), §6.2 (auth rules and route table) and §8.1 (controls)
 ## Sensitive actions
 
 - Need a TOTP-verified session and refuse API tokens: approving or rejecting enrolment requests, revoking agents, rebuild, re-evaluation, and managing users, enrolment tokens and settings (TS §6.2). Refuse them after 15 minutes of audit-sink outage until the queue drains (TS §5.3).
-- `DELETE /policies/{id}` needs an admin TOTP session too (TS §4.3, route table). **Open spec question:** it is not in the TS §6.2 sensitive-action list; ask whether it is also refused during an audit-sink outage.
+- `DELETE /policies/{id}` needs an admin TOTP session too (TS §4.3, route table).
+- **Open spec question:** `DELETE /policies/{id}` is not in the TS §6.2 sensitive-action list; ask whether it is also refused during an audit-sink outage (`work/open-questions.md` #1).
 - Policy upload is not sensitive: an admin's `bsk_` token may upload, with no TOTP.
 - An API token can never create API tokens or enrol or replace TOTP; those need a web session. Replacing TOTP also needs the current password and a current code.
 
@@ -36,8 +37,9 @@ Spec: TS §2.3 (tokens), §6.2 (auth rules and route table) and §8.1 (controls)
 - A lost TOTP device is reset by another admin or with `bitscan-manager users reset-totp <user>`; both alert and are audit-logged.
 - A password change, role change or TOTP reset ends the user's sessions. Disabling or demoting a user, or revoking their tokens, revokes every API token they created. Admins can revoke any user's tokens; disabling a user revokes all of their tokens at once, sessions included.
 - The last active admin cannot be disabled or demoted.
+- **Open spec question:** how the initial password is set for `users create-admin <name>` and for users created with `POST /users` (TS §6.2 gives no source); ask before choosing (`work/open-questions.md` #7).
 - Users are never deleted, only disabled (`DELETE /users` disables); `*_by` columns hold `app_user` ids without foreign keys.
 - Roles are `viewer`, `operator`, `admin` (default `viewer`); every change is recorded in the hash-chained audit log.
 - Alerts: API token created; TOTP enrolled, replaced or reset; user created, role granted or admin created.
 
-Tests (TS §8.3): Security (API tokens refused for sensitive actions, `DELETE /policies/{id}`, token creation and TOTP changes; non-admins refused for policy upload and delete), Integration (every auth and user route), Unit (back-off, TOTP single use).
+Tests (TS §8.3): Security (API tokens refused for sensitive actions, `DELETE /policies/{id}`, token creation and TOTP changes; non-admins refused for policy upload and delete), Integration (every auth and user route), Unit (back-off, TOTP single use; TS §6.2).

@@ -16,6 +16,7 @@ Spec: TS §5.3 (audit log integrity), §8.4 (observability and alerts), §8.6 (`
 ## Sink (`BITSCAN_AUDIT_SINK`, syslog or HTTPS)
 
 - Stream every entry to the sink as it is written.
+- Wire format: open, see `.claude/rules/manager/config-and-cli.md` (`work/open-questions.md` #24).
 - If the sink is unreachable: queue entries on disk in `/var/lib/bitscan/audit-queue`, alert at once, and after 15 minutes of outage refuse sensitive actions (TS §6.2) until the queue drains.
 
 ## Alerts
@@ -31,4 +32,4 @@ Spec: TS §5.3 (audit log integrity), §8.4 (observability and alerts), §8.6 (`
 - Structured JSON logs with `request_id`, `agent_id` and `job_id`; never stdout, stderr or tokens.
 - Prometheus metrics: agents by status, heartbeat latency, jobs queued/expired, import failures, plugin ERROR rate, and `bitscan_alerts_total{kind}`.
 
-Tests (TS §8.3): Integration (chain verification across a checkpoint; concurrent writers; fake sink outage queues, alerts and blocks sensitive actions after 15 minutes; each alert writes `detail.alert = true`).
+Tests (TS §8.3): Integration (chain verification across a checkpoint; concurrent writers; fake sink outage queues, alerts and blocks sensitive actions after 15 minutes; each alert writes `detail.alert = true`; TS §5.3, §8.4).

@@ -9,7 +9,7 @@ Bitscan is a manager + agent platform that inventories Ubuntu/Debian endpoints a
 - Never edit the spec files as part of a code change. If code and spec disagree, or the spec is silent, stop and ask; do not guess.
 - A rule line starting **Open spec question** marks behaviour the spec leaves undecided: stop and ask the owner before implementing it.
 - The DDL in TS §5.2 is the schema. Alembic migrations must reproduce it exactly, including grants.
-- Terms (TS §1.3): "agent" means the `bitscan-agent` and `bitscan-runner` services installed from one `.deb`; a job is one inventory collection or one compliance scan unit for one agent.
+- Terms (TS §1.3): "agent" means the `bitscan-agent` and `bitscan-runner` services installed from one `.deb`; a job is one inventory collection or one compliance scan unit for one agent. A Policy (a `<Policy>`, shown in the UI as a compliance profile) belongs to one Family (the standard it implements, for example `CIS Ubuntu 24.04` or `Clustermax`) and holds Plugins (one check = one line item in the standard, with the shell command to run), displayed as `<family name> - <plugin name>` (TS §1.4).
 
 ## Goals (TS §1.1)
 
@@ -75,6 +75,8 @@ bits/tests/           # .bit test fixtures: malformed, XXE, billion-laughs, over
 deploy/{systemd,dbus,debian,runbooks,tests}/
 e2e/                  # nightly end-to-end and load tests
 .github/workflows/
+docs/spec/            # TS and SR; never edited as part of a code change
+work/                 # agent-team output (see "Agent team" below)
 ```
 
 ## Stack
@@ -109,4 +111,5 @@ e2e/                  # nightly end-to-end and load tests
 - Ids: `REQ-###` requirements, `TASK-###` micro-tasks; every TASK links at least one REQ. A micro-task is one PR-sized change: about 200 lines or fewer, at most 5 files, independently testable.
 - Each TASK is tracked as `TASK-012 IMPL`, `TASK-012 TEST`, `TASK-012 REVIEW`, in that dependency order. TEST completes only with PASS and REVIEW only with APPROVED.
 - Ownership: `planner` owns `work/requirements.md`, `work/tasks.md`, `work/plans/`, `work/open-questions.md`; `impl-<area>` (agent type `implementer`) owns non-test files in `manager/`, `agent/`, `web/`, `bits/samples/` or `deploy/`, plus `work/reports/TASK-###-impl.md`; `tester` owns all test files and fixtures (`manager/tests/`, `*_test.go`, `*.test.ts(x)`, `agent/test/`, `deploy/tests/`, `e2e/`, `bits/tests/`) plus `work/reports/TASK-###-test.md`; `reviewer` owns `work/reviews/`; the lead owns `work/status.md` and `work/decisions.md`. Need a change elsewhere: message the owner.
-- Durable output goes in `work/` (plans, reports, reviews), not only in messages. Ambiguity or an **Open spec question**: message the lead, who asks the user. Never guess.
+- Durable output goes in `work/` (plans, reports, reviews), not only in messages. Ambiguity or an **Open spec question**: message the lead (teammates address it as `main`), who asks the user. Never guess.
+- `work/audit/archive/` is history; do not read it unless asked.

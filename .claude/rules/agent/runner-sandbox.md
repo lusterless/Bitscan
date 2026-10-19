@@ -15,6 +15,7 @@ Spec: TS §3.5 (job execution) and §3.7 (privilege model and units). Default re
 
 - **Privileges:** runs as `bitscan-runner`, non-root (never uid 0), with only `CAP_DAC_READ_SEARCH`. Its unit stops it and its plugins writing outside the private `/tmp`, using devices, opening IP sockets, executing outside system binary paths, tracing processes, calling non-read-only D-Bus methods, gaining privileges or loading kernel modules (TS §3.7).
 - **Socket:** systemd activates it from `/run/bitscan/runner.sock` (`root:bitscan`, 0660, in a root-owned 0755 directory that neither runner nor plugin can replace). Accept only peers with uid `bitscan` (`SO_PEERCRED`), and only whole jobs; there is no "run this string" call.
+- **Open spec question:** the agent–runner socket format is not specified beyond "whole jobs in the job format" (TS §3.7); the §6.5 Job does not carry the `max_parallel_plugins` the runner must apply (TS §3.5), and no result-return format is given (`work/open-questions.md` #29).
 - **Job checks:** re-check the job's `agent_id` against `/var/lib/bitscan-agent/agent_id`, `pickup_by` (future, at most 25 h away) and the job ids seen in memory. These checks catch mistakes, not attacks; that is an accepted risk (TS §3.7).
 - **Process hygiene:** set `PR_SET_DUMPABLE` to 0. Make every descriptor close-on-exec. Accepted: a plugin can signal the runner, which only restarts it (`Restart=always`).
 - **Plugin environment:** each plugin gets only stdin from `/dev/null` and its stdout and stderr pipes, plus:
@@ -23,12 +24,13 @@ Spec: TS §3.5 (job execution) and §3.7 (privilege model and units). Default re
   - its own empty temp directory;
   - its `timeout_s`;
   - at most `max_parallel_plugins` running at once.
+- **Open spec question:** how a plugin finds its temp directory (`TMPDIR`, the working directory, or both); TS §3.5 sets only `PATH` (`work/open-questions.md` #31).
 - **Running a plugin:** run it with `/bin/sh -c <execute>`. Move the runner into its own leaf cgroup (`supervisor`) and put each plugin in a fresh child cgroup. Pass a cancellable `context.Context` through each job.
 - **Cleanup:**
   - when a plugin exits or times out, write `cgroup.kill` for its cgroup and delete its temp directory;
   - after each job, kill every process in the runner's subtree except itself, including a plugin that moved itself elsewhere in the subtree;
   - no plugin process may outlive its job.
-- **Start-up:** refuse to start unless the host uses unified cgroup v2. Report `runner_unavailable` otherwise.
+- **Start-up:** refuse to start unless the host uses unified cgroup v2; the agent then reports `runner_unavailable` (TS §3).
 - **Captured per plugin** (TS §3.5): exit code, redacted stdout and stderr, start and end times, timed-out flag, truncated flag.
 
 ## Redaction (before anything leaves the runner)
@@ -52,4 +54,4 @@ Spec: TS §3.5 (job execution) and §3.7 (privilege model and units). Default re
 - Each request runs by absolute path with an empty environment, a 10 s timeout and a 1 MB output cap, one at a time.
 - It never takes a command line. Never give these capabilities to the runner or to plugins.
 
-Tests (TS §8.3): Unit (redaction fixtures above), Agent (runner timeouts, output caps, redaction), Sandbox (every item in `.claude/rules/testing.md`), Security (expired, foreign and replayed jobs rejected by the runner); amd64 and arm64.
+Tests (TS §8.3): Unit (redaction fixtures above), Agent (runner timeouts, output caps, redaction), Sandbox (every item in `.claude/rules/testing.md`), Security (expired, foreign and replayed jobs rejected by the runner); Agent tests on Ubuntu 22.04, 24.04 and Debian 12, amd64 and arm64.

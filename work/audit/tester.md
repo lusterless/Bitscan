@@ -1,115 +1,68 @@
-# Tester audit: mechanical verification of the Bitscan docs
+# Tester audit (rounds 1–3, merged)
 
-Lens: I treated the docs as code and tested them mechanically. Every command below is read-only and was run from the repo root in Git Bash (node v24, no Python). Spec files were read only, never edited.
+Lens: the docs treated as code and tested mechanically. All commands are read-only, run from the repo root in Git Bash with node v24. The checker scripts live outside the repo, in `%TEMP%\bitscan-audit\`: `check.js`, `final.js`, `quotes.js`, `quotes3.js`. They take the repo root as their only argument. Round-1 original: `work/audit/archive/round1-tester.md`.
 
-## Summary of passing checks (no finding)
+## Done
 
-| Check | Command (shortened) | Result |
+Verified fixes, grouped (all VERIFIED on the final tree):
+- Addressing and ownership: `main` addressing; `impl-<area>` naming; `impl-bits` and `impl-deploy`; the `bits/samples/` and `bits/tests/` split; `work/reports/` owners; `.claude/rules/` path prefixes.
+- Citation scope: CLAUDE.md out-of-scope and G1 citations; security-invariants remediation and journald; Tests-line sources in 14 rules (lintian, SBOM, Prettier, AKIA, CSV, 500 pairs, `/readyz`, checkpoint, settings, cron, re-evaluation and others).
+- Rule content restated from the spec:
+  - coverage path annotated;
+  - redaction fixture superset;
+  - `GET`/`DELETE /api-tokens`;
+  - CLI DSN split;
+  - offline_sweep duties;
+  - agent-route error types plus 409 `policy_managed_on_server`;
+  - Bootstrap schema owner and `USAGE`;
+  - enrolment tokens created and revoked;
+  - list filters;
+  - package click-through;
+  - the invented "manager recomputes `list_sha256`" removed.
+- Markers: every **Open spec question** is on its own line and ends with a pointer to an agreed entry. The `work/open-questions.md` part-2 table matches the grep. This closed R3-T-01 (embedded markers), R3-T-02 (stale part-2 table) and R3-T-03 (TS/SR prefixes); `docs/agent-teams-patterns.md` cites all three.
+- Hygiene: README written; `.gitignore` covers `*.preseed`, `install.env`, `.claude/settings.local.json` and the build outputs; `.gitattributes` has `*.gz binary`; `settings.local.json` is untracked.
+
+Mechanical checks that pass on the final tree:
+
+| Check | Command | Final result |
 | --- | --- | --- |
-| Every `TS §x.y` / `SR §x.y` citation resolves to a spec heading | node one-liner: collect `^#{2,3} \d` headings from both specs, then tokenise every `TS`/`SR` and `§n(.n)*` per line in `.claude/**/*.md` + `docs/agent-teams-reference.md`, with the last prefix as context | **209 citations, 0 missing, 0 without a TS/SR prefix** |
-| Fact spot-checks (numbers, codes, lists) | Read TS/SR sections against each rule line | 54 checked (list in Appendix A); all values agree. Citation-scope mismatches are T-01, T-08, T-11, T-12 |
-| YAML front matter | node: first line `---`, closing `---`, keys, duplicate keys, tabs, quoted globs | All 21 front-matter files are well formed. CLAUDE.md, security-invariants.md and agent-teams-reference.md have no front matter (intended) |
-| Agent/skill `name` = file/folder name; `description` present | same node pass | implementer, planner, reviewer, tester, bitscan-team: all match, all have description |
-| `tools` are real Claude Code tool names | same node pass, checked against {Read, Grep, Glob, Write, Edit, Bash, ...} | all valid (reviewer has no Edit, planner has no Bash: both intended) |
-| Fenced code blocks balanced | count of lines starting with ``` | CLAUDE.md 2, agent-teams-reference.md 22, others 0: all even |
-| `.claude/settings.local.json` is valid JSON | `node -e 'JSON.parse(...)'` | valid |
-| Line endings | node `/\r\n/` test | all LF |
-| Rule file count | `find .claude/rules -type f \| wc -l` | 17 |
-| Error `type` values identical (TS §6.5, agent.md:18, api.md:31) | `grep -oE '`pending_approval`, `enrollment_rejected`.*`rate_limited`' f \| md5sum` | same hash for all 3 |
-| 14 operators (DDL enum, SR §2.4, evaluator.md:14-18) | grep + sort | identical sets of 14 |
-| BIT codes (SR §4.1 vs bit-format.md:29) | `grep -oE 'BIT[0-9]+' \| sort -u` | identical 18 codes: 001-005, 007, 008, 010-017, 101-103 |
-| Goals G1-G6 (TS §1.1 vs CLAUDE.md) | `grep -oE '^\| G[0-9]'` / `grep -cE '^- G[0-9]'` | 6 = 6 |
-| `agent_status` values | grep DDL vs database.md:40 | identical |
-| D-Bus allowed methods | `grep -oE 'send_member="..."'` vs packaging-and-units.md:26 | identical 11 |
-| CSP header string | string compare TS §6.3 vs api.md:55 | identical |
-| "exactly the six" agent endpoints | count `^\| (POST\|GET\|PUT) ` rows in TS §6.1 | 6 |
-| Milestones M0-M8 | `grep -ohE 'M0 scaffolding.*M8 end-to-end/load/observability' SKILL.md planner.md \| sort \| uniq -c` | the 2 copies are identical |
-| Numbers with units that never appear in the spec | node: extract `\d+ (MB\|KB\|s\|min\|h\|days\|%\|rows\|...)` from `.claude/**`, after removing commas | only 7 hits and all are rewordings (`50,000 rows` vs "50,000 package rows", `30 requests/min` vs "30 req/min", `32 chars`, `86,400 s`, `500 pairs` vs "500 version pairs"). No value conflicts |
-| `paths:` globs vs layout | node glob-to-regex over 51 sample paths built from the CLAUDE.md layout | every layout directory is covered. `**/*.socket`, `**/*.timer`, `**/*.sql` and `web/**/*.test.ts` had no sample, but they will match real files (they are not dead globs). Gaps are in T-16 |
-| Old plan and spec copies referenced by SKILL.md exist | `ls ~/.claude/plans/`; `cmp ~/Downloads/<spec> docs/spec/<spec>` | `...cozy-music.md` exists; both Downloads specs are byte-identical to docs/spec |
+| Citations resolve to spec headings | `R1=1 node check.js .` / `node check.js .` | 331 in the round-1 scope (`.claude/**` + agent-teams-reference), 0 missing. Full scope 472, 0 missing (2 unprefixed hits cite report sections, not the spec) |
+| Front matter (keys, no duplicates, `paths`, `name` = file) | `node check.js .` | 21/21 |
+| Fences balanced; all LF | `node check.js .` | pass |
+| No stale `lead` or `implementer-<area>` addressing | `node final.js .` | 0 in `.claude/` and README. The 4 hits in agent-teams-reference.md (:90, :186, :340, :351) describe the lead's role or quote the upstream example; they are not addresses |
+| `paths:` globs against the layout | `node check.js .` (60 sample paths) | every layout directory matched, 0 dead globs; 7 build and config files unmatched (PD-12) |
+| Spec facts restated in the rules | `grep -cF` of the 8 error types (TS §6.5, agent.md, api.md); the operator enum (TS L645–L646) diffed with evaluator.md; the CSP string (TS §6.3, api.md); `agent_status` (DDL, database.md); `find .claude/rules -type f \| wc -l` | identical in every file; 14 operators; 17 rule files. The BIT codes are SR §4.1's 18 codes, plus the retired BIT006, BIT009 and BIT018–BIT020, named only as retired (bit-format.md:36) |
+| Live files that cite round-report paths | `grep -rnE 'work/audit/(round[123]-\|archive)' .claude README.md work/open-questions.md` | 1 hit: open-questions.md:154 "(history: `work/audit/archive/round1-reviewer.md`)", a history pointer in the planner's file, now pointing into `work/audit/archive/`. `.claude/` and README: 0 |
+| Markers on their own line; count | `node final.js .` | 44, 0 embedded |
+| Pointers resolve to **agreed** entries | `node final.js .` | 35 pointers, 0 bad; #19 withdrawn, nothing points at it |
+| Part-2 table matches the markers | diff of the part-2 `file:line` column against `grep -rn '\*\*Open spec question:\*\*' .claude` | match (44 = 44) |
+| Ignore rules; nothing tracked is ignored | `git check-ignore -v bitscan.preseed deploy/runbooks/install.env .claude/settings.local.json`; `git ls-files -ci --exclude-standard` | 3 matches; the second command prints nothing |
+| Binary attributes | `git check-attr text diff -- bits/tests/bomb.gz x.deb` | text and diff unset for both |
+| Spec untouched | `git diff --stat -- docs/spec` | empty |
+| Quoted spec sentences at their cited lines | `node quotes.js .`; `node quotes3.js .` | 79/79 round-3 quotes. Round-2: none refuted; 3 are paraphrases (a table row, JSON quotes dropped, a unit-file line) |
 
-## Findings
+Final counts (rounds 1–3): 23 round-1 findings (19 fixed, 4 carried below). Then 8 FIX, 2 ASK, 1 DECIDE and 1 DUP authored. All 8 FIX were applied and verified; nothing was refuted and nothing rejected.
 
-T-01 | severity: should-fix | .claude/CLAUDE.md:23,29 | The "Out of scope (TS §1.2, §7.4)" heading covers OIDC/external IdP, agent client certificates (mTLS) and a UI policy editor. | `sed -n '20,25p' TS` lists only agentless scanning, Windows/macOS, CVE, remediation and the signed APT repo. The other three are elsewhere: `grep -n 'no OIDC\|There is no OIDC' TS` gives line 1056 (§6); "agents prove who they are with a token, not a certificate" is at line 111 (§2.2) and "Agents have no certificates of their own" at line 194 (§3.2); "There is no policy editor in the UI" is at line 513 (§4.1). | Change the heading citation to "(TS §1.2, §7.4; OIDC §6, client certs §2.2, policy editor §4.1)", or put the citations on line 29. | status: CONFIRMED
+Final-tree re-run, after IMPLEMENTER-DONE and the implementer's 3 appends (jobs-and-scans.md:23, packaging-and-units.md:51, agent.md:25): every check above passes. `git diff --stat`: 33 files changed, 656 insertions(+), 662 deletions(-).
 
-T-02 | severity: should-fix | .claude/rules/testing.md:21; .claude/rules/manager/evaluator.md:30 | The coverage gate is "≥ 85 % line coverage on `manager/services`". | `grep -rn 'manager/services' .claude` gives exactly these 2 lines. The layout (CLAUDE.md:47,52-63) puts services at `manager/bitscan_manager/services/`, so a path `manager/services` will never exist. TS line 1275 says `manager/services` (spec wording, written before the package layout). | Write "`manager/bitscan_manager/services/` (TS §8.3 `manager/services`)" in both lines, so the gate is measured on a path that exists. Planner (round 3): annotate it rather than replace it, i.e. "`manager/services` (= `manager/bitscan_manager/services/` in this layout)", keeping the TS §8.3 wording. The M0 coverage config must use `--cov=manager/bitscan_manager/services --cov-fail-under=85`. (Same as P-28.) | status: CONFIRMED (fix agreed with planner)
+## Open items
 
-T-03 | severity: should-fix | .claude/CLAUDE.md:110; SKILL.md:26,38,42; .claude/agents/tester.md:17,24; .claude/agents/reviewer.md:30 | The implementer teammate name is inconsistent. | `grep -n 'implementer-<area>\|impl-manager\|`implementer`' ...`: CLAUDE.md:110 and SKILL.md:26 say `implementer-<area>`; SKILL.md:38 spawns `impl-manager`, `impl-agent`, `impl-web`; tester.md:17,24 and reviewer.md:30 say "message `implementer`", but no teammate has that name. | Pick one convention (SKILL.md:38 says "Name teammates exactly as above"), e.g. `impl-<area>`. Use it in CLAUDE.md:110 and SKILL.md:26, and write "message the `impl-<area>` that owns the task" in tester.md and reviewer.md. (Same as P-01, I-07, R-03.) | status: CONFIRMED
+- PD-12 (DECIDE, from T-16 and R2-T-07): no rule's `paths:` loads `manager/pyproject.toml`, `manager/requirements*.txt`, `manager/alembic.ini`, `agent/go.mod`, `agent/go.sum`, `agent/.golangci.yml` or `manager/bitscan_manager/services/__init__.py` (7 of 60 layout samples). Options: add the globs to testing.md, or rely on CLAUDE.md and security-invariants, which always load.
+- PD-5 (DECIDE, carries T-17): CLAUDE.md "Commands" has no test, coverage, Prettier or OpenAPI-regen command, and no stated place to run the Linux-only suites. The coverage gate must measure `manager/bitscan_manager/services/`.
+- PD-8 (DECIDE; R2-T-08 extended it to CSV golden files): how CRLF fixtures and CSV golden files are kept (see Decisions). `*.gz binary` is already applied.
+- Other DECIDE items for the user: PD-1 to PD-4, PD-6, PD-7, PD-9 to PD-11 (`work/open-questions.md` §4).
+- ASK entries from my slice:
+  - #25 (P-18; I confirmed it): heartbeat fields with no column; `agent_ip_seen` writers; the age of a never-heartbeating agent.
+  - #32 (R2-T-04, marker at web-ui.md): package type-ahead has no route.
+  - #33 (R2-T-05, marker at inventory-and-packages.md): whether the manager recomputes `list_sha256`.
+- T-20: agent-teams-reference.md:208–210 keeps the upstream `src/auth/` / httpOnly-cookie example on purpose. It is not a project rule; no action.
+- T-23 (spec-internal, report only): the TS §5.1 table map omits `agent_ip_seen` and `task`. Logged in `work/open-questions.md` §5.
 
-T-04 | severity: should-fix | SKILL.md:38 | No implementer is spawned for `bits/` or `deploy/`, although SKILL.md:26, CLAUDE.md:110 and implementer.md:3,8 list 5 areas. | `sed -n '38p' SKILL.md` lists only impl-manager, impl-agent and impl-web. | Add `impl-bits` and `impl-deploy` (or state which implementer covers them). (Same as P-02, I-08.) | status: CONFIRMED
+## Decisions
 
-T-05 | severity: should-fix | .claude/CLAUDE.md:110; SKILL.md:26 | Nobody is given ownership of `work/reports/` in CLAUDE.md, and SKILL.md omits the implementer's reports. | `grep -n 'work/reports' CLAUDE.md` has no hit. implementer.md:18 writes `work/reports/TASK-###-impl.md`, tester.md:16,23 writes `-test.md`, reviewer.md:12 reads both, and SKILL.md:26 lists only "tester -> ... `work/reports/*-test.md`". | Add "`impl-<area>` also writes `work/reports/TASK-###-impl.md`; `tester` writes `work/reports/TASK-###-test.md`" to CLAUDE.md:110 and SKILL.md:26. (Same as P-04, I-09, R-12.) | status: CONFIRMED
-
-T-06 | severity: should-fix | docs/agent-teams-reference.md:12,51,338 | These lines say `.claude/settings.local.json` is "per-project, uncommitted" and "local, not shared". | `git ls-files -s .claude/settings.local.json` gives `100644 b360c69... 0 .claude/settings.local.json` (the file is tracked). `git check-ignore -v` returns rc=1 (not ignored). `find . -name .gitignore -not -path './.git/*'` finds nothing. | This needs an owner decision. Either untrack the file and add a `.gitignore` with `.claude/settings.local.json` (the git actions are the user's), or reword the 3 lines to "committed in this repo". (Same as I-01.) | status: CONFIRMED
-
-T-07 | severity: should-fix | .claude/rules/testing.md:17-19 vs .claude/rules/agent/runner-sandbox.md:42-44 | The two redaction-fixture lists disagree. | `grep -n 'AKIA\|ASIA' testing.md runner-sandbox.md` has hits only in runner-sandbox.md:40,43. testing.md lists a shadow line, full and cut-off key, `key=value`, `bsa_` token and "normal check output". runner-sandbox.md adds AKIA and ASIA keys, plus concrete must-stay-unchanged strings (`install ok installed`, `PasswordAuthentication no`, `passwd: files`). TS §8.3 (line 1275) matches testing.md. The AKIA/ASIA case comes from TS §8.6 pattern 4 (line 1335). | Make testing.md:18 the superset, "..., a `bsa_` token, AKIA and ASIA key ids (TS §8.6)", and point runner-sandbox.md:42-44 at it, or keep the two lists identical. (Same as P-29.) Reviewer (round 3): the superset is spec-consistent; align testing.md:18-19 to "a shadow line, a full and a cut-off private key, `key=value`, a `bsa_` token (TS §8.3), and AKIA/ASIA key ids (TS §8.6 pattern 4); must stay unchanged: normal check output such as `install ok installed`, `PasswordAuthentication no`, `passwd: files`". | status: CONFIRMED (fix agreed with reviewer)
-
-T-08 | severity: nit | testing.md:47-48; packaging-and-units.md:61; web-ui.md:29; runner-sandbox.md:42-43; inventory-and-packages.md:32 | Content labelled "Tests (TS §8.3)" includes items that are not in the TS §8.3 table. | `sed -n '1271,1283p' TS \| grep -ioE 'lintian\|SBOM\|reproducible\|Prettier\|AKIA\|ASIA'` returns nothing, and `... \| grep -cE '500\|CSV\|escap'` returns 0. The sources are: lintian TS:175 (§3.1); reproducible/SBOM TS:177 (§3.1) and :1258 (§8.1); Prettier TS:1266 (§8.2); AKIA/ASIA TS:1335 (§8.6); 500 pairs TS:1219 (§7.2); CSV escaping TS:1142 (§6.3). | Keep the content and add the real section after each item, e.g. "lintian (TS §3.1)". (Overlaps R-10.) | status: CONFIRMED
-
-T-09 | severity: nit | CLAUDE.md:103; runner-sandbox.md:55; packaging-and-units.md:61; api.md:9 (x2); config-and-cli.md:41; database.md:70; enrolment-and-tokens.md:43; importer.md:8 | 9 references write `rules/...` without the `.claude/` prefix, while 10 others write `.claude/rules/...`. | `grep -rnoE '(^\|[^./a-z])`?rules/[a-z/_-]+\.md' .claude` gives 9 hits. `grep -rnoE '\.claude/rules/' .claude` gives 10 hits, in agents/*.md, CLAUDE.md:7 and SKILL.md. `rules/testing.md` does not exist at the repo root, so the 9 bare references only resolve relative to `.claude/`. | Replace with `.claude/rules/...` everywhere. | status: CONFIRMED
-
-T-10 | severity: should-fix | .claude/rules/manager/config-and-cli.md:35 | The section heading says every CLI command reads its DSN from `/etc/bitscan/secrets/app.dsn`. | `sed -n '16p;35p;41p'`: line 16 says `BITSCAN_MIGRATE_DSN_FILE` is read only by `db migrate` and `db maintain`, and line 41 runs them as `bitscan_migrate`. TS:1347 (§8.7) limits app.dsn to `users create-admin`, `users create-api-token`, `users reset-totp` and `bits rebuild`. | Move "DSN from app.dsn" off the heading onto the users/bits bullets. State that `db migrate`/`db maintain` run in the migrate/maintain units with `BITSCAN_MIGRATE_DSN_FILE`. (Same as R-04.) | status: CONFIRMED
-
-T-11 | severity: nit | .claude/CLAUDE.md:16 | G1 "heartbeats every 300 s ± 30 s" sits under "Goals (TS §1.1)". | TS:13 (§1.1) says "every 5 minutes". The ± 30 s jitter is only at TS:202 (§3.3). The values agree; only the citation scope is off. | Write "every 5 min (300 s ± 30 s, TS §3.3)". (Same as R-06.) | status: CONFIRMED
-
-T-12 | severity: nit | .claude/rules/security-invariants.md:13,25 | Line 13 cites only SR §4.2 for "no automatic remediation". Line 25 cites TS §5.3, §8.4 for "never ... journald". | `grep -n remediation TS SR` finds only TS:24 (§1.2). `grep -n journald TS` finds lines 163 (§3.1), 1244, 1249 and 1255 (§8.1), none in §5.3 or §8.4 (those sections say "application logs"). | Line 13: "(TS §1.2; BIT102 safety net SR §4.2)". Line 25: "(TS §3.1, §5.3, §8.1, §8.4)". (Same as R-07, R-09.) | status: CONFIRMED
-
-T-13 | severity: nit | .claude/rules/manager/jobs-and-scans.md:27-31 | The rule says `offline_sweep` "does three things" and leaves out "creates retries". | TS:218 (§3.3): "The `offline_sweep` task (every 60 s) updates status, and also applies job timeouts and creates retries (§4.4)". Line 31 describes the retry but does not say who creates it. | Add a 4th sub-bullet "creates the single retry for jobs that failed or went `partial` at their deadline". (Same as R-01.) | status: CONFIRMED
-
-T-14 | severity: should-fix | .claude/rules/manager/api.md:35-38; auth-and-users.md | No rule covers `GET, DELETE /api-tokens` (list and revoke your own tokens, viewer). | `grep -rn 'api-tokens' .claude` finds only `POST /api-tokens` (api.md:36, auth-and-users.md:15). TS:1099 has `GET, DELETE /api-tokens ... viewer`. api.md:38 "Viewer: the other `GET` routes in the table" covers the GET but not the DELETE. | Add to api.md:38 "viewer: `GET`/`DELETE /api-tokens` (own tokens; session or API token)". (Same as R-05, P-21.) Reviewer (round 3): the spec does not forbid an API token from revoking tokens (TS:1085 bans only creating tokens and TOTP changes; the GET/DELETE row at TS:1099 lacks the "web session only" marker that TS:1098 has). Faithful wording: "`GET`/`DELETE /api-tokens`: viewer, own tokens (session or API token)". Never write "session only". | status: CONFIRMED (fix agreed with reviewer)
-
-T-15 | severity: should-fix | .claude/CLAUDE.md:73,110; tester.md:16; implementer.md:16; SKILL.md:26 | Ownership of `bits/` is ambiguous. The tester owns "test fixtures under `bits/`" and `impl-<area>` owns "non-test files in `bits/`", but the layout has a single `bits/  # sample and test .bit files` with no subfolder that separates them. | `grep -rn 'fixture' .claude` shows tester.md:16 (malformed, XXE, billion-laughs, oversize) and CLAUDE.md:110 "`bits/` test fixtures", and no path names them. Pre-commit, any `bits/*.bit` matches both owners' descriptions. | Add `bits/tests/` (or `bits/fixtures/`) to the layout and name that path in the ownership lines. This conflicts with SKILL.md:26 "Two teammates never own the same file". Planner (round 3): a real hole, the same as P-03 and I-10. Fix the layout before M0, e.g. `bits/samples/` (implementer) and `bits/tests/` (tester fixtures). The folder names need a user decision, so it goes to lead. | status: CONFIRMED (a real hole; the names are a user decision)
-
-T-16 | severity: nit | .claude/rules/** `paths:` | Some layout files fall under no path-scoped rule, and one glob pair is redundant. | node glob test (Appendix B): `manager/pyproject.toml`, `manager/requirements.txt`, `agent/go.mod` and `manager/bitscan_manager/services/__init__.py` load only security-invariants. database.md's `manager/**/db/**` and `manager/**/migrations/**` both match `db/migrations/`. | Optional: add `manager/*.toml`, `manager/requirements*.txt` and `agent/go.*` to testing.md (CI gates) or a new build rule. Drop `manager/**/migrations/**` or keep it as harmless. | status: CONFIRMED
-
-T-17 | severity: nit | .claude/CLAUDE.md:85-93 vs .claude/rules/testing.md:48; web-ui.md:29 | The Commands section has no test-run command (pytest, `go test`, `npm test`), no coverage command, no Prettier command and no OpenAPI-regen command. testing.md:48 says CI runs Prettier and an OpenAPI regeneration with no diff, and tester.md:22 expects the coverage gate to be checkable. | `sed -n '85,93p' CLAUDE.md \| grep -ciE 'pytest\|go test\|npm test\|coverage\|prettier\|openapi'` returns 0. | Add the commands once M0 creates them, or add an M0 TODO line. (Same as P-09.) | status: CONFIRMED (the commands do not exist yet, so this is expected pre-M0; low severity)
-
-T-18 | severity: nit | auth-and-users.md:30 = audit-and-alerts.md:27; inventory-and-packages.md:30 ≈ testing.md:51 | The same Open spec question appears twice in each pair. | `grep -rn 'repeated failures alert' .claude` finds both lines. "< 1 s ... no TS §8.3 gate" appears in both inventory-and-packages.md:30 and testing.md:51. | Keep one copy and add a cross-reference in the other, so the planner does not log duplicate questions. (Same as P-35.) | status: CONFIRMED
-
-T-19 | severity: nit | .claude/rules/testing.md:15 | The "Test locations" list leaves out web `*.test.ts(x)` and the `bits/` fixtures, although testing.md's own `paths:` (lines 8-9) and CLAUDE.md:110 / tester.md:16 include them. | `sed -n '15p' testing.md` lists manager/tests, `*_test.go`, agent/test/sandbox, deploy/tests and e2e only. | Append "web tests as `web/**/*.test.ts(x)`, `.bit` fixtures in `bits/<fixture dir>` (see T-15)". | status: CONFIRMED
-
-T-20 | severity: nit | docs/agent-teams-reference.md:208 | The example spawn prompt uses `src/auth/` and "JWT tokens stored in httpOnly cookies". This is a verbatim upstream example, but both details contradict this project: there is no `src/`, and tokens are opaque and kept in memory, never in cookies (web-ui.md:11). | `grep -n 'src/' docs/agent-teams-reference.md` gives line 208. | Optional: label it "(upstream example)", or rewrite it as `manager/bitscan_manager/auth/` with opaque bearer tokens. | status: CONFIRMED
-
-T-21 | severity: nit | SKILL.md:16-17 | Two pointers lead outside the repo: `~/Downloads/` (spec copies) and `~/.claude/plans/*cozy-music.md`. | `ls ~/.claude/plans/` shows `c-users-kaiquan-koh-downloads-aic-bitsc-cozy-music.md`, and `cmp` shows both Downloads specs byte-identical to docs/spec. The M0-M8 list the plan is used for is already inline in SKILL.md:17 and planner.md:30. The plan also says "All code lives under `src/`, per the `.CLAUDE.md` guardrail" and "pulls signed jobs" (grep lines 5 and 12), which SKILL.md already flags as superseded. | Optional: drop the plan pointer (the inline list is enough) and the Downloads fallback (docs/spec is in the repo). (Same as I-06.) | status: CONFIRMED
-
-T-22 | severity: nit | README.md; repo root | README.md is empty and there is no .gitignore. | `wc -c README.md` gives 0. `ls .gitignore .gitattributes` reports no such files. | Add a short README (purpose, pointer to `.claude/CLAUDE.md` and `docs/spec/`) and a `.gitignore` (`manager/.venv/`, `node_modules/`, build output, and see T-06). (Same as P-30, P-31.) | status: CONFIRMED
-
-T-23 | severity: nit (spec-internal; do not edit the spec) | docs/spec/Technical_Specification.md:621-633 | The TS §5.1 table map omits `agent_ip_seen` and `task`, which §5.2 creates. | `sed -n '621,633p' TS \| grep -cE 'agent_ip_seen\|\btask\b'` gives 0. `grep -nE 'CREATE TABLE (agent_ip_seen\|task) '` gives lines 734 and 941. database.md:12 cites §5.1 as the "Table map". | Record it in work/open-questions.md as a spec note for the owner. The rules can say "table map: TS §5.1 (plus `agent_ip_seen`, `task` from §5.2)". (Same as S-02.) | status: CONFIRMED
-
-## Appendix A: fact spot-checks (54, all values agree with the spec)
-
-agent.md: :11 §3.1-§3.6/§6.5; :14 TLS 1.2+/1.3, ca_file, optional pin (TS:194); :22 enrol fields (TS:1161); :25 rotation formula (TS:190); :29 300 s ± 30 s, clamps 60-3,600 / 1-8 (TS:202,206); :30 10 jobs, < 0.1 % CPU / < 30 MB (TS:214,216); :31 25 h, 7 days (TS:212); :34 50 results / 1.5 MB (TS:253); :36 400/404/409/413/422 drop (TS:224); :39 10 s to 5 min (TS:226); :40 50 MB spool (TS:226); :46 inotify, 10 min debounce (TS:239).
-runner-sandbox.md: :17 socket root:bitscan 0660 / dir 0755 (TS:281); :36-38 1 MB read, 64 KB / 16 KB (TS:251); :52 capread 10 s / 1 MB (TS:484); :40 five patterns (TS:1332-1336).
-packaging-and-units.md: :22 MemoryMax=256M, TasksMax=64, CPUQuota=25% (TS:355-357); :25 capread.service has no [Install], UMask= or SystemCallErrorNumber= (TS:451-482); :27 manager ReadWritePaths and ExecReload (TS:1360,1377); :55-57 folder owners and modes (TS:1344).
-api.md: :17 six endpoints; :25-28 size caps (TS:1138); :48 RFC 9457, limit 500 (TS:1133-1134); :51-54 rate limits (TS:1136); :55 CSP (identical); :43 202 body (TS:1154).
-audit-and-alerts.md: :12 advisory lock (TS:1051); :19 15 min (TS:1051).
-auth-and-users.md: :14 8 h / 24 h; :15 90 / 365 days (TS:122-123); :29 1 s doubling to 15 min (TS:1088).
-bit-format.md: :18 element limits (SR:99-122); :24 control_ref 32 (SR:202); :32 retired codes (SR:250).
-config-and-cli.md: :25-31 settings table (TS:1321-1327).
-database.md: :23 UPDATE/DELETE grants (TS:1007-1013); :34 system_schedule seeds and CHECKs (TS:827-833); :58 retention periods (TS:1047).
-enrolment-and-tokens.md: :14 max_uses 1-10,000, default 1, 24 h (TS:181, DDL:751); :38 + 10 min (TS:190).
-evaluator.md: :21 126/127/≥128 (TS:593); :27 score and NULL (TS:602).
-inventory-and-packages.md: :23 < 1 s at 10,000 × 2,000 (TS:1194); :32 ≥ 500 pairs (TS:1219).
-jobs-and-scans.md: :26 deadline formula (TS:575); :28 10 / 30 min thresholds (TS:218).
-testing.md: :36 nightly, 3 VMs; :37 p95 < 200 ms (TS:1281-1282).
-CLAUDE.md: :36 bse_ token rules (TS:181); :12 terms (TS:32,37); :81 extensions (DDL:638-640); :99 review counts (TS:1268); :101 "agent supports manager N and N-1" (TS:1267).
-security-invariants.md: :10 (TS §3.7 "jobs are not signed" TS:285); :34 defusedxml (TS:517); :37 CSV escaping (TS:1142).
-web-ui.md: :26 type-ahead top 10 (TS:1223).
-
-## Appendix B: glob test
-
-The node glob-to-regex converter (`**/` = `(?:.*/)?`, `*` = `[^/]*`) was run over 51 sample paths built from the CLAUDE.md layout. Rule hits per sample:
-- every `manager/bitscan_manager/{api,auth,services/*,config,repositories,db,cli}` path is matched by its intended rule;
-- `api/agent` loads api.md and enrolment-and-tokens.md; `api/user` loads api.md and auth-and-users.md; `services/importer` loads bit-format.md and importer.md. This matches the claims in api.md:9 and importer.md:8;
-- all 3 `agent/cmd/*` and all 6 `agent/internal/*` paths are matched; `agent/test/sandbox` loads testing.md;
-- `web/**`, `bits/**`, `deploy/**`, `e2e/**` and `.github/workflows/**` are all matched;
-- no rule matches: `manager/pyproject.toml`, `manager/requirements.txt`, `agent/go.mod` and `manager/bitscan_manager/services/__init__.py` (T-16).
-
-## Round 2/3 log
-
-- Verification requests answered: reviewer (R-01, R-03, R-04, R-05, R-06, R-07/R-09, R-10, R-12, S-02), planner (P-01, P-02, P-04, P-09, P-28, P-29, P-30, P-31, P-35), implementer (I-01, I-06, I-07, I-08, I-09). All CONFIRMED, with the notes sent in messages.
-- Sent to reviewer: request to judge T-14 (may an API token revoke itself?) and T-07 (fixture list). Reviewer answered both (folded into T-14 and T-07). In a second exchange I mechanically confirmed reviewer's spec items S-03 (TS:106 lists no pgcrypto), S-08 (TS:18 "group"; no group target in the spec) and S-10 (SR:271-273 order BIT101, BIT103, BIT102).
-- Sent to planner: request to judge whether T-15 (bits/ fixture path) and T-02 (coverage path) are real holes. Planner answered: T-15 is a real hole (user picks the names); T-02 should be annotated, and the M0 coverage config must point at the real path.
-- Sent to implementer: the list of unambiguous doc fixes. Implementer recorded them as before/after patches in work/audit/implementer.md and applied none, because `.claude/` instruction files need lead/user approval. Lead must apply them.
-- Peer claims I re-checked and found sound: P-20 is already split CONFIRMED/REFUTED in planner.md (`grep -c omit` returns 0 on both specs). P-10's reviewer split (BIT010 can still fire for a bad value; the missing-element halves are shadowed by BIT002) matches SR:250,257,263-264.
-- Refuted claims: none. I found no peer claim that was mechanically wrong.
+- **The spec wins; quotes are checked mechanically.** A finding counts only if its quoted spec sentence exists verbatim at the cited line (whitespace, `**` and backticks normalised; `…` splits segments). A paraphrase of a table row is acceptable when stated as such. Rule sentences with "only", "never", "must", "always" or "omits" need a spec source, or they become an **Open spec question**.
+- **Pointer format** is "(`work/open-questions.md` #N)", with backticks. A rule may point only at an entry marked **agreed**. Numbers are never reused.
+- **CRLF fixtures.** `.gitattributes` has `* text=auto eol=lf`. This was demonstrated in a throwaway repo: CRLF in a committed text fixture (normaliser stdout, CSV golden file) becomes LF on checkout, so a test of "CRLF becomes LF" (SR §2.4 L151) passes without testing anything. Until PD-8 is decided, testers build CRLF inputs as in-code literals (`"\r\n"`) or compare parsed CSV rows. A file with a lone CR is detected as binary and kept. `.bit` files are unaffected, because XML end-of-line handling normalises them.
+- **CSV line endings** are not specified (TS §6.3 L1142 covers escaping only). Do not assert CRLF or LF in export tests without asking.
+- **Tests-line labels** (T-08, R2-T-06). A case listed under "Tests (TS §8.3)" that is not in the §8.3 table carries its own TS section in parentheses.
+- **Embedded markers are defects** (R3-T-01). Every **Open spec question** is its own bullet starting `- **Open spec question:**`, so a grep finds them all.

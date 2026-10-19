@@ -23,7 +23,7 @@ Manage the team and help the user break requirements into micro-tasks, then driv
 - Micro-task = one PR-sized change, <= ~200 LOC, <= 5 files, independently testable.
 - Each TASK becomes three team tasks named `TASK-012 IMPL`, `TASK-012 TEST`, `TASK-012 REVIEW`, with dependencies IMPL -> TEST -> REVIEW. TEST completes only with PASS; REVIEW only with APPROVED.
 - Durable output goes in `work/`: `requirements.md`, `tasks.md`, `plans/`, `reports/`, `reviews/`, `decisions.md`, `open-questions.md`, and your `status.md`.
-- File ownership: planner -> `work/requirements.md`, `tasks.md`, `plans/`, `open-questions.md`. `impl-<area>` -> non-test files in its top-level `<area>/` (`manager/`, `agent/`, `web/`, `bits/`, `deploy/`) plus `work/reports/*-impl.md`. tester -> all test files and fixtures plus `work/reports/*-test.md`. reviewer -> `work/reviews/`. lead -> `work/status.md`, `decisions.md`. Two teammates never own the same file.
+- File ownership: planner -> `work/requirements.md`, `tasks.md`, `plans/`, `open-questions.md`. `impl-<area>` -> non-test files in its top-level `<area>/` (`manager/`, `agent/`, `web/`, `bits/samples/`, `deploy/`) plus `work/reports/*-impl.md`. tester -> all test files and fixtures (including `bits/tests/`) plus `work/reports/*-test.md`. reviewer -> `work/reviews/`. the lead (this session; teammates address it as `main`) -> `work/status.md`, `decisions.md`. Two teammates never own the same file.
 - Nobody commits or pushes unless the user asks.
 
 ## Phase A: PLAN (before any code)
@@ -35,11 +35,11 @@ Manage the team and help the user break requirements into micro-tasks, then driv
 ## Phase B: EXECUTE (after approval)
 1. Create the shared task list: three tasks per TASK with the IMPL -> TEST -> REVIEW dependencies and cross-task dependencies from `work/tasks.md`.
 2. Spawn the team (3-5 teammates; keep the planner only if replanning is likely, otherwise shut it down):
-   - `impl-manager`, `impl-agent`, `impl-web`, `impl-bits`, `impl-deploy` (agent type `implementer`; only the areas the current wave needs; Sonnet), each told its area `<area>/` and that tests are not theirs.
+   - `impl-manager`, `impl-agent`, `impl-web`, `impl-bits`, `impl-deploy` (agent type `implementer`; only the areas the current wave needs; Sonnet), each told its area `<area>/` (`impl-bits`: `bits/samples/`) and that tests are not theirs.
    - `tester` (agent type `tester`).
    - `reviewer` (agent type `reviewer`).
-   Name teammates exactly as above so messages are predictable.
-3. **Spawn prompt checklist** (teammates do not inherit this conversation): role and the task ids to claim; the exact area/files they own and what is off-limits; the spec paths and sections; "read `.claude/CLAUDE.md`, `.claude/rules/security-invariants.md`, the rule files for your area, and `work/tasks.md` first"; the deliverable and report path; who to message on pass/fail (implementer -> tester, tester -> implementer + lead, reviewer -> implementer + lead); when to stop (task completed with the right verdict); "ambiguity -> message `lead`, never guess"; model.
+   Name teammates exactly as above so messages are predictable. Every spawn prompt must say: "the lead is addressed as `main`".
+3. **Spawn prompt checklist** (teammates do not inherit this conversation): role and the task ids to claim; the exact area/files they own and what is off-limits; the spec paths and sections; "read `.claude/CLAUDE.md`, `.claude/rules/security-invariants.md`, the rule files for your area, and `work/tasks.md` first"; the deliverable and report path; who to message on pass/fail (impl-<area> -> tester, tester -> impl-<area> + `main`, reviewer -> impl-<area> + `main`); when to stop (task completed with the right verdict); "ambiguity -> message `main`, never guess"; model.
 4. Run in waves: a wave is the set of tasks whose dependencies are met and whose files are disjoint. Let teammates self-claim by role. Pre-approve routine permissions (Read/Edit/Write in the repo, the venv, `go`, `npm`, `git diff|status`) before spawning to avoid prompt storms.
 5. Monitor: keep `work/status.md` current (task, owner, state, round count). Check blocked tasks, stuck "completed" statuses and idle teammates. If the lead's own work starts, say "Wait for your teammates to complete their tasks before proceeding."
 

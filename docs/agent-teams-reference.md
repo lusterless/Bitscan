@@ -216,7 +216,7 @@ httpOnly cookies. Report any issues with severity ratings."
 - [ ] Exact files or directories it owns (and which are off-limits)
 - [ ] Background facts it can't infer (stack, decisions, constraints)
 - [ ] Concrete deliverable and format (report, patch, test file, findings doc)
-- [ ] Who to message and when (e.g. "send findings to `lead`; challenge `perf`'s conclusions")
+- [ ] Who to message and when (e.g. "send findings to the lead, addressed as `main`; challenge `perf`'s conclusions")
 - [ ] Definition of done / when to stop
 - [ ] Model (if not the lead's)
 

@@ -11,7 +11,7 @@ Spec: TS §3.2 (enrolment, approval, token check, rotation), §2.3 (token table)
 
 ## Enrolment tokens (`bse_`)
 
-- Only an admin creates them, from a TOTP session: `max_uses` 1–10,000 (default 1 = single use), a required expiry (default 24 h), optional `allowed_cidrs` (NULL = any source), `auto_approve` default off. A token may be shared by many installs, for example in an org install script; a multi-use token should have `max_uses` = expected host count and `allowed_cidrs` set (UI hint, not a hard rule).
+- Only an admin creates and revokes them (CRUD `/enrollment-tokens`), from a TOTP session: `max_uses` 1–10,000 (default 1 = single use), a required expiry (default 24 h), optional `allowed_cidrs` (NULL = any source), `auto_approve` default off. A token may be shared by many installs, for example in an org install script; a multi-use token should have `max_uses` = expected host count and `allowed_cidrs` set (UI hint, not a hard rule).
 - Creating a token with `auto_approve` or more than 100 uses alerts. More than `enrolment_alert_per_hour` enrolments on one token alerts.
 
 ## `POST /agent/enroll`
@@ -22,6 +22,7 @@ Spec: TS §3.2 (enrolment, approval, token check, rotation), §2.3 (token table)
   - Held re-enrolment: return the existing `agent_id`; keep the new token hash in `enrollment_request.new_token_hash` (usable only after approval); the token check looks there to answer 403 `pending_approval`.
   - Approve (admin, TOTP session): a re-enrolment re-links to the existing `agent` row, keeping history, and revokes the old token; approving a re-enrolment alerts.
   - Reject: keep the request; set a new agent row to `decommissioned` (never delete it); the agent gets 401 `enrollment_rejected`.
+  - **Open spec question:** TS §3.2 step 5 does not say what a rejected *re-enrolment* does to the existing agent row and its old token; the host has already replaced its token on disk (step 4) (`work/open-questions.md` #26).
 - The approval API returns hostname, source IP, OS, and any agent with the same hostname or machine-id (cloned images show up this way).
 
 ## Agent token check (every agent route)
@@ -29,6 +30,7 @@ Spec: TS §3.2 (enrolment, approval, token check, rotation), §2.3 (token table)
 - Missing, unknown, revoked or expired token: 401 (revoked and expired tokens use `token_revoked` and `token_expired`). Awaiting approval: 403 `pending_approval` on every route.
 - Valid token with a different `X-Bitscan-Machine-Id`: 401 `machine_id_mismatch`, revoke the token and alert.
 - Heartbeat: alert when `clock` and `server_time` differ by more than 5 minutes; store `runner_helpers`, and audit-log and alert on any change.
+- **Open spec question:** the TS §6.5 heartbeat fields `last_error`, `spool_bytes`, `current_job_id`, `last_pull_at` and `uptime_s` have no `agent` column, no writer is named for `agent_ip_seen`, and an `enrolled` agent that never heartbeats has no age for the TS §3.3 status thresholds (`work/open-questions.md` #25).
 
 ## Lifetime and rotation (TS §3.2 step 7)
 
@@ -42,4 +44,4 @@ Spec: TS §3.2 (enrolment, approval, token check, rotation), §2.3 (token table)
 - The rotation window ends at `expires_at`: after it every call, including rotate, gets 401 `token_expired` (TS §3.2 steps 6 and 8), and the host must re-enrol.
 - Agent fleet (`services/agents/`): `POST /agents/{id}/revoke` (admin, TOTP session) revokes the token and forces re-enrolment; `PUT /agents/{id}/tags` is operator. Status (`online`/`stale`/`offline`) and decommission are set by `offline_sweep` (TS §3.3; see `.claude/rules/manager/jobs-and-scans.md`).
 
-Tests (TS §8.3): Integration (enrolment checks, concurrent `max_uses`, approval and rejection, rotation window and reuse with clock control), Security (tokens on the wrong route group, API tokens refused for approve/reject/revoke/enrolment tokens), End-to-end (enrol → approve enrolment → heartbeat).
+Tests (TS §8.3): Integration (enrolment checks, concurrent `max_uses`, approval and rejection, rotation window and reuse with clock control), Security (tokens on the wrong route group, API tokens refused for approve/reject/revoke/enrolment tokens), End-to-end (enrol → approve enrolment → heartbeat), Load (10,000 simulated agents heartbeating, p95 < 200 ms).

@@ -16,6 +16,7 @@ Bitscan is a manager + agent platform that inventories Ubuntu/Debian endpoints a
 | `docs/agent-teams-reference.md` | How Claude Code agent teams work |
 | `docs/agent-teams-patterns.md` | Summary of the first workspace audit and lessons for running teams |
 | `work/` | Team output: requirements, tasks, plans, reports, reviews, open questions, and `work/audit/` reports |
+| `work/open-questions.md` | Questions waiting for the spec owner; do not implement the affected behaviour until they are answered |
 
 ## Planned layout
 

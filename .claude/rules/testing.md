@@ -5,6 +5,7 @@ paths:
   - "agent/test/**"
   - "deploy/tests/**"
   - "e2e/**"
+  - "bits/tests/**"
   - "web/**/*.test.ts"
   - "web/**/*.test.tsx"
   - ".github/workflows/**"
@@ -14,14 +15,14 @@ paths:
 
 The full matrix is in TS §8.3. Do not lower a gate, skip a test or mark one expected-to-fail to get a change through; ask first. Test locations: Python in `manager/tests/`, Go unit and agent tests as `*_test.go`, sandbox and security VM suites in `agent/test/sandbox/`, package tests in `deploy/tests/`, end-to-end and load in `e2e/`, web tests as `web/**/*.test.ts(x)`, and `.bit` fixtures (malformed, XXE, billion-laughs, oversize) in `bits/tests/`.
 
-- **Unit:** cover the parser, normaliser (CRLF, trimming), validators (one case per BIT code), Debian version comparison (against `dpkg --compare-versions`, at least 500 pairs), `evaluate()` (every one of the 14 operators and every ERROR case) and the BIT102 lexer (the SR §1.1 example, a corpus of common CIS commands and the allowed read-only uses must pass), plus CSV formula escaping for every export. Redaction fixtures:
+- **Unit:** cover the parser, normaliser (CRLF, trimming; `.gitattributes` has `* text=auto eol=lf`, so build CRLF inputs as in-code literals such as `"\r\n"`, or mark their fixture paths `-text` in `.gitattributes`), validators (one case per BIT code), Debian version comparison (against `dpkg --compare-versions`, at least 500 pairs, TS §7.2), `evaluate()` (every one of the 14 operators and every ERROR case) and the BIT102 lexer (the SR §1.1 example, a corpus of common CIS commands and the allowed read-only uses must pass), plus CSV formula escaping for every export (TS §6.3). Redaction fixtures:
   - must be redacted: a shadow line, a full and a cut-off private key, `key=value`, a `bsa_` token (TS §8.3), AKIA and ASIA key ids (TS §8.6 pattern 4);
   - must stay unchanged: normal check output such as `install ok installed`, `PasswordAuthentication no`, `passwd: files`.
 
   Gate: at least 85 % line coverage on `manager/services` (= `manager/bitscan_manager/services/` in this layout; the M0 coverage config must point there). The SR §1.1 canonical example must import successfully.
 - **Property and fuzz:** the `.bit` parser with random and malformed XML, and the inventory decoder with oversized and malformed input, including gzip bombs. Gate: no crash and no partial import.
 - **Contract:** the JSON Schemas for every agent route are shared by the Python manager and the Go agent, and both pass the same fixtures.
-- **Integration:** API plus PostgreSQL 16 through Testcontainers. Cover every endpoint, a rebuild of a corrupted catalog, partition maintenance, and `/readyz` failing when the `inventory` `system_schedule` row is missing. Grant probes, run on a freshly migrated database:
+- **Integration:** API plus PostgreSQL 16 through Testcontainers. Cover every endpoint, a rebuild of a corrupted catalog, partition maintenance, and `/readyz` failing when the `inventory` `system_schedule` row is missing (TS §3.4). Grant probes, run on a freshly migrated database:
   - `bitscan_app` cannot UPDATE or DELETE results through the parent, the default partition or a newly created partition;
   - it cannot delete scans, jobs, agents or the audit log, or move a job to another host or scan;
   - `bitscan_retention` can delete only from the retention tables.

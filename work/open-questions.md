@@ -1,19 +1,175 @@
-# Open questions for the spec owner
+# Open questions for the spec owner, and process decisions for the user
 
-Logged from the 2026-10-19 workspace audit (`work/audit/`). None of these is answered yet. Do not implement the affected behaviour until the owner decides; record each decision in `work/decisions.md` and then update the matching "Open spec question" line in `.claude/rules/`.
+The 2026-10-19 workspace audit collected these. Only the planner edits this file. The file is self-contained: the audit ids in the tables (P-, R-, S-, T-, I-, R2-*, R3-*) are history only. They refer to reports in `work/audit/archive/`, which are history and need not be read unless someone asks. It has five parts:
+1. Numbered spec questions (#1 onwards).
+2. Every **Open spec question** marker that is in `.claude/` now.
+3. The spec's own open questions (TS §8.5).
+4. Process decisions for the user, which are not spec questions.
+5. Spec-internal inconsistencies, reported only; the spec is never edited here.
 
-| # | Question | Sections | Audit id | Suggested answer (not a decision) |
-| --- | --- | --- | --- | --- |
-| 1 | Is policy delete (`DELETE /policies/{id}`) a sensitive action? It needs a TOTP session per the route table and §4.3 but is missing from the §6.2 sensitive-action list, so it is unclear whether it is also refused during an audit-sink outage | TS §6.2, §4.3, §5.3 | S-01 | Treat it as sensitive: TOTP session, refused during an outage |
-| 2 | BIT010 and BIT011 say "missing", but a missing element already fails BIT002 and the content rules are then skipped, so the "missing" halves can never fire | SR §4, §4.1 | P-10 | Report a missing `<Operator>` or `<ExpectedResult>` as BIT010 or BIT011; keep BIT002 for the other elements |
-| 3 | What happens when a scan target resolves to zero agents? Both "completed" and "failed" would apply, and `POST /scans` has no stated refusal | TS §4.4, §6.4 | P-11 | Refuse with 422; skip and log a scheduled run |
-| 4 | Several `agent.yaml` keys clash with fixed values elsewhere: `state_dir`, `heartbeat_seconds` (300 ± 30 s), `spool_max_mb` (max 50), `log_level` values | TS §3.6 vs §3.3, §3.5, §3.7 | P-13 | `state_dir` fixed; heartbeat fixed or clamped to 270 to 330 s; spool at most 50 MB; log levels debug, info, warn, error |
-| 5 | Which authentication do `/healthz`, `/readyz` and the Prometheus metrics route use? §2.3 says every call carries a bearer token | TS §2.3, §6, §8.4 | P-14 | Health routes unauthenticated and outside `/api/v1`; metrics need an admin `bsk_` token or bind to localhost |
-| 6 | How is the manager installed, and how does it serve the built web UI? | TS §8.7, §2, §6.3 | P-15 | FastAPI serves `web/dist` from the same origin; manager shipped as a Python wheel with an entry point |
-| 7 | How is the initial password set for `users create-admin` and for `POST /users`? | TS §6.2 | P-16 | CLI prompts on a TTY; `POST /users` takes an initial password of at least 12 characters with a forced change at first sign-in |
-| 8 | May an API token revoke its own API tokens (`DELETE /api-tokens`)? The spec bans API tokens only from creating tokens and changing TOTP | TS §6.2 | R-05 | Allowed (viewer, own tokens), as the row has no "session only" marker |
-| 9 | Does `GET /policies` list deleted policies (for example with `?status=deleted`)? The spec says only that a deleted policy disappears from selection | TS §4.3, §6.2 | P-20 | Not selectable for scans; visible where old results reference it |
+This file is not guaranteed to be complete. `grep -rn "Open spec question" .claude` gives the current markers; part 2 was rebuilt from that grep in round 3. Entries are never renumbered or reused, and a withdrawn entry keeps its number.
 
-Smaller open items from the audit (see `work/audit/planner.md`): P-12 scan `running` threshold, P-17 vault and audit-sink wire formats, P-18 heartbeat diagnostics storage and `agent_ip_seen` writers, P-19 rejecting a re-enrolment, P-38 alerts for skipped imports, P-39 expected 429s on large jobs.
+Status values:
+- **agreed**: the author and one confirmer agree it is an open question, so a rule may carry a marker that points at it.
+- **proposed**: it still needs a confirmer, and no rule marker may point at it.
+- **withdrawn**: rejected as a question. It keeps its number, and no marker may point at it.
 
-Spec-internal inconsistencies for the owner (the spec is never edited here; see `work/audit/reviewer.md` S-02 to S-10): table map omits `agent_ip_seen` and `task`; component table omits `pgcrypto`; heartbeat response described as only `job_pull_seconds` in §2.3; `spool_overflow` called a runner error; "deadline" used for `pickup_by`; `failed` definition omits the 24 h never-started and inventory cases; G6 says "group" but only tags exist; `/agent/enroll` called unauthenticated but needs a `bse_` token; BIT102 listed after BIT103.
+None of these has been answered. When the owner answers one:
+1. Record the decision in `work/decisions.md`.
+2. The `.claude/` writer replaces the rule's marker line (the line that points at `#N`, or the part-2 "own question" line) with the decided behaviour.
+3. The planner marks the entry "answered, D-##".
+
+## Status summary
+
+Every agreed entry (#1–#18 and #20–#33) has its marker or pointer in `.claude/` (part 2). #19 is **withdrawn** and has no marker. Next free number: **#34**.
+
+## 1. Numbered questions
+
+| # | Question | Sections (spec line) | Audit id (history) | Suggested answer (not a decision) | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Is `DELETE /policies/{id}` also refused during an audit-sink outage? It needs a TOTP session (route table and TS §4.3) but is missing from the TS §6.2 sensitive-action list | TS §6.2 (L1084, L1104), TS §4.3, TS §5.3 | S-01 | Treat it as sensitive: TOTP session, and refused during an outage | agreed |
+| 2 | BIT010 and BIT011 say "missing". A missing element already fails BIT002, and the content rules are then skipped, so the "missing" halves can never fire | SR §4 (L250), SR §4.1 (L263, L264) | P-10 | Report a missing `<Operator>` or `<ExpectedResult>` as BIT010 or BIT011, and keep BIT002 for the other elements | agreed |
+| 3 | What happens when a scan target resolves to zero agents? Both "completed" and "failed" would apply, and `POST /scans` has no stated refusal | TS §4.4 (L555, L580), TS §6.4 | P-11 | Refuse with 422; skip and log a scheduled run | agreed |
+| 4 | Which `agent.yaml` keys are really configurable, and in what range? `state_dir`, `heartbeat_seconds` (300 ± 30 s) and `spool_max_mb` (max 50) clash with fixed values elsewhere, and no `log_level` values are listed | TS §3.6 vs TS §3.1, §3.3, §3.7 | P-13, R3-R-02 | `state_dir` fixed; heartbeat fixed or clamped to 270–330 s; spool at most 50 MB; log levels debug, info, warn, error | agreed |
+| 5 | TS §8.4 names `/healthz` and `/readyz` but not their prefix or authentication, and gives no route for the Prometheus metrics. TS §2.3 says every call carries a bearer token | TS §2.3 (L118), TS §8.4 (L1288, L1292) | P-14, R3-R-03 | Health routes unauthenticated and outside `/api/v1`; metrics need an admin `bsk_` token or bind to localhost | agreed |
+| 6 | How is the manager installed, and how does it serve the built web UI? Any method must provide `/usr/bin/bitscan-manager` and the `bitscan-manager` user, as the TS §8.7 units fix them. Who creates that user, `/etc/bitscan/secrets/` and the TS §8.7 folders? | TS §8.7 (L1359), TS §2, TS §6.3 (L1140) | P-15, R2-I-18 | FastAPI serves `web/dist` from the same origin; the manager ships as a Python wheel with an entry point; the install runbook creates the user and folders | agreed |
+| 7 | How is the initial password set for `users create-admin` and for `POST /users`? | TS §6.2 (L1089) | P-16 | The CLI prompts on a TTY. `POST /users` takes an initial password of at least 12 characters, with a forced change at first sign-in | agreed |
+| 8 | May an API token revoke its own API tokens (`DELETE /api-tokens`)? The spec bans API tokens only from creating tokens and changing TOTP | TS §6.2 (L1085, L1099) | R-05, R2-R-01 | Allowed (viewer, own tokens), as the row has no "session only" marker | agreed |
+| 9 | Does `GET /policies` list deleted policies (for example `?status=deleted`)? The spec says only that a deleted policy disappears from selection | TS §4.3 (L550), TS §6.2 (L1100) | P-20 | Not selectable for scans; visible where old results reference it | agreed |
+| 10 | TS §8.5 asks: "Can one `.bit` file hold more than one `<Family>`? This spec assumes one." The rules implement that assumption: a second `Family` fails BIT002 | TS §8.5 (L1297); SR §2.1, SR §4.1 (L257) | R2-I-12 | Keep exactly one `Family` per file | agreed (implementer, planner) |
+| 11 | TS §8.5 says: "Confirm the 14 operators and the output-normalisation rules with whoever writes the `.bit` content." The rules implement them as written | TS §8.5 (L1296), TS §4.5; SR §2.4 | R2-I-12 | Keep them as written | agreed (implementer, planner) |
+| 12 | `evaluate(operator, expected, stdout, exit_code, timed_out, truncated)` has no input for the runner `error` or for stderr size, yet TS §4.5 lists both as ERROR cases and requires "unit tests for every operator and every ERROR case". Where are these two decided? Which `eval_detail` values are used? How do such results re-evaluate? | TS §4.5 (L593, L599, L600, L601); TS §5.2 (L901); TS §6.5 (L1184) | R2-P-07, R2-P-17, P-24 | Result intake stores `eval_code` 2 before `evaluate()` is called, with `eval_detail` = the `error` value or `oversize`; the signature stays as specified; these results stay ERROR on re-evaluation | agreed (reviewer) |
+| 13 | SR §2.4: "Numbers are decimal integers or floats with an optional sign". Are exponents (`1e3`), `.5`, `5.`, `nan`/`inf` and `_` separators numbers? This applies to stdout and to BIT012 checks of `ExpectedResult` | SR §2.4 (L153), SR §4.1 BIT012 (L265) | R2-P-08 | One strict pattern for both: no exponent, no `nan`, `inf` or `_`; compare as exact decimals | agreed (reviewer). The reviewer finds `nan`, `inf` and `_` answerable as "not numbers". The planner keeps them in the question, because "floats" can be read as IEEE floats, which include `inf` and `nan` |
+| 14 | TS §4.3 says re-uploading a deleted policy's name "brings it back as a new version". SR §3.6 adds 1 to `version` only "if the file hash differs from `source_sha256`", so re-uploading the identical file keeps the old version. Which applies? Do disabled schedules and `status_overridden` survive the revival? | TS §4.3 (L550); SR §3.6 step 2 (L240) | R2-P-09 | A revival always adds 1; schedules stay disabled; `status_overridden` is kept | agreed (reviewer) |
+| 15 | Two server-folder files share a `PolicyName` and neither is imported yet (first start-up or a rebuild). No processing order is given, so which file gets BIT007 is undefined | SR §4.1 BIT007 (L261); TS §4.1 (L528), TS §4.2 (L540) | R2-P-10 | Files already recorded as a `source_file` first, then byte-wise path order; or reject both | agreed (reviewer) |
+| 16 | Which code does an empty `<PluginsGroups/>` get (BIT002 or BIT017)? Which code does a non-integer `@timeout` such as `30s` or `1.5` get? | SR §2.1 (L103), SR §2.3 (L115, L120), SR §4.1 BIT002 (L257), BIT017 (L270) | R2-P-11 | Empty → BIT002; non-integer timeout → BIT017 | agreed (reviewer) |
+| 17 | SR §2 says "trimmed" only for `PolicyName`, `Execute` and `ExpectedResult`. Are `FamilyName`, `PluginName` and the two descriptions also trimmed before the length and empty checks? If not, a whitespace-only `FamilyName` passes. (The reviewer ruled that the "chars or bytes" half is answerable: SR says "chars", and the DDL uses `VARCHAR(n)`. That half is now stated in `bit-format.md`.) | SR §2.1 (L99), SR §2.2 (L109), SR §2.3 (L116–L122) | R2-P-12 | Trim every text element | agreed (reviewer), trimming half only |
+| 18 | Does disabling a policy cancel its jobs that are still `queued`? TS §4.3 says only that disabling "blocks new scans with it. Running scans finish." | TS §4.3 (L547) | R2-P-13 | No: disabling cancels nothing, and queued jobs still run | agreed (reviewer) |
+| 19 | ~~Is there a scan-level or fleet compliance score?~~ | TS §4.5 (L602) | R2-P-14 | — | **withdrawn**. The reviewer rejected it: TS §4.5 defines only the host score, and nothing may be invented. `evaluator.md` says "Host compliance score" |
+| 20 | A rebuild rejects some files but commits as a whole. Does `task.state` end `succeeded` or `failed`? | TS §4.2 (L540); TS §5.2 `task` (L944, L946) | R2-P-18 | `succeeded`, with the rejected files in `task.result`; `failed` only if the rebuild itself errors | agreed (reviewer) |
+| 21 | How are `plugins_added`, `plugins_updated` and `plugins_retired` counted? SR §3.5 says only "Counts" | SR §3.5 (L231) | R2-P-19 | added = a new uuid; updated = an existing uuid with any stored column changed; retired = moved to `retired` by this import | agreed (reviewer) |
+| 22 | When does a scan move from `queued` to `running`? TS §4.4 says only "otherwise `queued` or `running`". (The reviewer ruled that the "do scans use `dispatched` or `expired`" half is answerable: no. That half is now stated in `jobs-and-scans.md`.) | TS §4.4 (L580) | P-12 | `running` once any job has left `queued` | agreed (reviewer), queued→running half only |
+| 23 | Do `skipped` automatic imports, and each file of a rebuild, raise the immediate "policy imported" alert? If they do, every start-up reconcile and rebuild floods the alert stream | TS §4.1 (L530, L532), TS §8.4 (L1290) | P-38 | `skipped` writes only `bit_import`; a rebuild raises one "rebuilt" alert plus one per changed policy | agreed (reviewer) |
+| 24 | Which vault product and API? What is the audit-sink wire format (syslog flavour; HTTPS body and authentication)? | TS §8.6 (L1310, L1312, L1315), TS §5.3 | P-17 | HashiCorp Vault; syslog RFC 5424 over TLS, or an HTTPS POST of the JSON audit row | agreed (implementer) |
+| 25 | The heartbeat fields `last_error`, `spool_bytes`, `current_job_id`, `last_pull_at` and `uptime_s` have no `agent` column: are they stored, used for metrics only, or dropped? Which calls write `agent_ip_seen`? When does an `enrolled` agent that never heartbeats become `offline`? | TS §6.5 (L1163); TS §5.2 `agent`; TS §3.3 (L218) | P-18 | Logs and metrics only; upsert `agent_ip_seen` on every authenticated agent call; age a never-seen agent from `enrolled_at` | agreed (tester) |
+| 26 | Rejecting a re-enrolment: TS §3.2 step 5 says only "a new agent row is set to `decommissioned`". What happens to the existing agent row and its old token? The host has already replaced its token on disk (step 4) | TS §3.2 (L184, L188) | P-19 | The existing row is unchanged; the new token gets 401 `enrollment_rejected`; the host re-enrols with a new `bse_` token | agreed (implementer) |
+| 27 | TS §4.2 gives no order for the start-up integrity check relative to the TS §4.1 reconcile. If the check runs before the reconcile, every file that changed while the manager was down alerts | TS §4.1 (L528); TS §4.2 (L540, L542) | R3-P-41 | After the reconcile | agreed (reviewer) |
+| 28 | The runner is down or restarts mid-job (`Restart=always`). What does the agent post for plugins with no result: `error: "runner_unavailable"`, a resend to the restarted runner, or both? How does the agent "report" a runner that refused to start, given the heartbeat has only `last_error`? | TS §3 (L152); TS §3.7 (L283); TS §6.5 (L1163, L1184); SR §2.4 (L149) | R2-R-07 | Post each plugin with no result as `error: "runner_unavailable"` in a final batch, with no resend; also set `last_error` while the runner is unavailable | agreed (reviewer, planner) |
+| 29 | Agent–runner socket format: TS §3.7 says only "whole jobs in the job format". The runner must apply `max_parallel_plugins` (TS §3.5), but the TS §6.5 Job lacks it, and no result-return format is given | TS §3.5 (L249); TS §3.7 (L282); TS §6.5 (L1165–L1184) | R2-R-08 | The TS §6.5 Job plus `max_parallel_plugins`; results as TS §6.5 Results items | agreed (reviewer, planner) |
+| 30 | How does the unprivileged agent detect an enabled runner helper? It cannot connect to `capread.sock` (`root:bitscan-runner` 0660) | TS §3.7 (L484, L493) | R2-R-12 | The socket path exists (`/run/bitscan/` is 0755, L491) | agreed (reviewer, planner) |
+| 31 | How does a plugin find its private temp directory, given that its environment holds only `PATH`? | TS §3.5 (L249) | R2-R-13 | The working directory | agreed (reviewer, planner) |
+| 32 | TS §7.3 asks for package type-ahead (top 10 names), but TS §6.2 has no route for it, and `/packages/search` rows are per version or per host, never per distinct name (`q` needs at least 3 characters). How does the UI get the names? | TS §7.3 (L1223); TS §6.2 (L1117); TS §7.1 (L1200, L1214) | R2-T-04 | (tester to supply) | agreed (tester, planner) |
+| 33 | TS §3.4 compares `list_sha256` with the last snapshot. Does the manager recompute it from `packages` or trust the agent's value? TS §6.1 says the manager re-checks size caps, not the hash | TS §3.4 (L241); TS §6.5 (L1186); TS §6.1 (L1072) | R2-T-05 | Recompute, and treat a mismatch as 422 | agreed (tester, planner) |
+
+Next free number: #34.
+
+## 2. Open spec question markers in `.claude/` (from a fresh grep, end of audit)
+
+These lines only mention the term and are not markers: CLAUDE.md:10, CLAUDE.md:114, agents/implementer.md:28, agents/planner.md:13, agents/reviewer.md:20. All 44 markers start their own `- **Open spec question:**` line; enrolment-and-tokens:25 is a sub-bullet.
+
+| File:line | Question in one line | Entry |
+| --- | --- | --- |
+| `.claude/CLAUDE.md:104` | TS §8.2 "agent supports manager N and N-1": must agent N also be tested against manager N−1? | own question |
+| `.claude/rules/testing.md:52` | The package-search and agent-idle performance targets (TS §7, TS §3.3) have no TS §8.3 gate: add CI performance gates? | own question |
+| `.claude/rules/deploy/packaging-and-units.md:60` | How the manager is installed and serves the web UI | #6 |
+| `.claude/rules/web-ui.md:27` | Package type-ahead has no route | #32 |
+| `.claude/rules/agent/agent.md:17` | Which `agent.yaml` keys are configurable, and in what range | #4 |
+| `.claude/rules/agent/agent.md:31` | How the agent detects an enabled runner helper | #30 |
+| `.claude/rules/agent/agent.md:36` | What the agent sends when the runner is down or restarts mid-job; how a refused start is reported | #28 |
+| `.claude/rules/agent/runner-sandbox.md:18` | Agent–runner socket format; `max_parallel_plugins` | #29 |
+| `.claude/rules/agent/runner-sandbox.md:27` | How a plugin finds its temp directory | #31 |
+| `.claude/rules/agent/runner-sandbox.md:43` | Cut-off private-key redaction is runner behaviour (TS §3.5) or default pattern 2 (TS §8.6); does it still apply if an admin removes that pattern? | own question |
+| `.claude/rules/manager/api.md:39` | May an API token call `DELETE /api-tokens`? | #8 |
+| `.claude/rules/manager/api.md:44` | Which status a scan of a deleted policy returns (404 or 409) | own question |
+| `.claude/rules/manager/api.md:45` | Does `GET /policies` list deleted policies? | #9 |
+| `.claude/rules/manager/api.md:66` | Prefix and authentication of `/healthz` and `/readyz`; the metrics route | #5 |
+| `.claude/rules/manager/audit-and-alerts.md:27` | Numeric thresholds for "repeated 401s" and "floods of 409 result posts" (TS §8.4) | own question |
+| `.claude/rules/manager/auth-and-users.md:22` | Is `DELETE /policies/{id}` refused during an audit-sink outage? | #1 |
+| `.claude/rules/manager/auth-and-users.md:31` | Threshold for the login "repeated failures alert" (TS §6.2) | own question |
+| `.claude/rules/manager/auth-and-users.md:40` | How the initial password is set | #7 |
+| `.claude/rules/manager/config-and-cli.md:15` | Vault product and API; audit-sink wire format | #24 |
+| `.claude/rules/manager/bit-format.md:19` | Are the other text elements trimmed before the length and empty checks? | #17 |
+| `.claude/rules/manager/bit-format.md:22` | Is an uppercase `PluginId` rejected (BIT004) or lower-cased? | own question |
+| `.claude/rules/manager/bit-format.md:32` | Code for an empty `<PluginsGroups/>` and a non-integer `@timeout` | #16 |
+| `.claude/rules/manager/bit-format.md:34` | BIT007 winner when two new files share a name | #15 |
+| `.claude/rules/manager/bit-format.md:37` | The "missing" halves of BIT010 and BIT011 vs BIT002 | #2 |
+| `.claude/rules/manager/bit-format.md:38` | Are Warn findings (BIT101, BIT103) written to `bit_import.errors` on a successful import? | own question |
+| `.claude/rules/manager/bit-format.md:49` | Does BIT102 match path-qualified names, wrappers, `mkfs.ext4`, and words inside substitutions, subshells and pipelines? | own question |
+| `.claude/rules/manager/bit-format.md:61` | CIS control numbers are unconfirmed (TS §8.5, the spec's own question) | own question |
+| `.claude/rules/manager/enrolment-and-tokens.md:25` | A rejected re-enrolment's effect on the existing row and token | #26 |
+| `.claude/rules/manager/enrolment-and-tokens.md:33` | Heartbeat fields with no column; `agent_ip_seen` writers; age of a never-heartbeating agent | #25 |
+| `.claude/rules/manager/importer.md:22` | How the `bit_import` plugin counters are counted | #21 |
+| `.claude/rules/manager/importer.md:27` | Do `skipped` imports and rebuild files raise the "imported" alert? | #23 |
+| `.claude/rules/manager/importer.md:35` | Does a 413-rejected `.bit` upload write a `bit_import` row? | own question |
+| `.claude/rules/manager/importer.md:40` | Does the integrity check run before or after the reconcile? | #27 |
+| `.claude/rules/manager/importer.md:45` | `task.state` of a rebuild with rejected files | #20 |
+| `.claude/rules/manager/importer.md:54` | Revival version, schedules and override | #14 |
+| `.claude/rules/manager/evaluator.md:19` | Number grammar (exponents, `nan`/`inf`, `_`, `.5`, `5.`) | #13 |
+| `.claude/rules/manager/evaluator.md:28` | Is truncation of stderr alone an ERROR? | own question |
+| `.claude/rules/manager/evaluator.md:29` | `evaluate()` has no input for runner errors or stderr size | #12 |
+| `.claude/rules/manager/jobs-and-scans.md:17` | Does disabling a policy cancel its queued jobs? | #18 |
+| `.claude/rules/manager/jobs-and-scans.md:38` | When a scan moves from `queued` to `running` | #22 |
+| `.claude/rules/manager/jobs-and-scans.md:39` | A target that resolves to zero agents | #3 |
+| `.claude/rules/manager/jobs-and-scans.md:40` | The scan state when a scan is cancelled after some results arrived | own question |
+| `.claude/rules/manager/inventory-and-packages.md:16` | Does a late `job_id` upload count against the 10-minute unscheduled limit? | own question |
+| `.claude/rules/manager/inventory-and-packages.md:18` | Does the manager recompute `list_sha256` or trust the agent's value? | #33 |
+
+That is 44 marker lines: 30 numbered and 14 own questions. Every agreed entry except #10 and #11 has exactly one marker (#10 and #11 are carried as pointers, below). Five more lines carry a `#N` pointer but are not markers:
+- `bit-format.md:16` (#10)
+- `evaluator.md:13` and `:14` (#11)
+- `audit-and-alerts.md:19` (#24, a cross-reference)
+- `config-and-cli.md:40` (#7, a cross-reference)
+
+That makes 35 pointers in all, and all resolve to **agreed** entries. No pointer goes to #19 (withdrawn) or to a number above #33.
+
+## 3. The spec's own open questions (TS §8.5, L1294–L1298)
+
+| TS §8.5 question | Where the rules carry it | Entry |
+| --- | --- | --- |
+| "Confirm the 14 operators and the output-normalisation rules with whoever writes the `.bit` content." | `evaluator.md:13` and `:14`, "implement as written" | #11 |
+| "Can one `.bit` file hold more than one `<Family>`? This spec assumes one." | `bit-format.md:16`, "implement one and ask before relaxing it" | #10 |
+| "Confirm CIS control numbers (e.g. `1.3.1.1`) against the CIS Ubuntu 24.04 benchmark copy used to write the `.bit` files." | `bit-format.md:61` marker | own question (part 2) |
+
+## 4. Process decisions for the user (not spec questions)
+
+Each item needs the user's choice. The lead then records it in `work/decisions.md`, and the `.claude/` writer applies it. Unless an item says otherwise, the choice has not been made. A hygiene part already applied in the tree is noted on its row.
+
+| Id | Decision needed | Raised by (history) | Options |
+| --- | --- | --- | --- |
+| PD-1 | Re-test after REVIEW CHANGES_REQUESTED. The TEST task is already completed with PASS, so the second review is not gated on a fresh PASS. reviewer.md:30 says "re-review after the fix", and SKILL.md:47 has the tester re-run first | planner P-05, reviewer §5 | (a) the lead creates `TASK-### RETEST-n` that blocks the re-review; (b) reopen the TEST task |
+| PD-2 | Review baseline. Nobody commits and waves run in parallel, so `git diff` cannot isolate one task | planner P-06 | (a) allow one commit per APPROVED task; (b) the implementer saves `git diff -- <files>` as `work/reports/TASK-###-impl.patch` |
+| PD-3 | Second approver. TS §8.2 L1268: importer, auth, agent or runner changes "need two" approvals, and the team has one reviewer | planner P-07, reviewer R2-R-14 | (a) the lead; (b) the user at PR time; (c) a second reviewer |
+| PD-4 | Who updates a rule marker after the owner answers, and in what form | planner P-08 | (a) the lead, or the implementer it names, replaces it with "Decided (work/decisions.md D-##): …"; (b) keep the marker and add a pointer |
+| PD-5 | Test and coverage commands in CLAUDE.md "Commands", and where the Linux-only suites run on a Windows 11 dev box | planner P-09, reviewer R2-R-15, tester T-17 | (a) placeholders now (pytest with `--cov=manager/bitscan_manager/services --cov-fail-under=85`, `go test ./...`, `npm test`), fixed in M0; (b) add them in M0. Either way: WSL2, a Linux VM or CI only, plus a "not run locally: <reason>" convention |
+| PD-6 | The planner brief says "mark your planning task completed", but SKILL.md Phase A creates none | planner P-36 | (a) Phase A creates `PLAN <milestone>`; (b) drop the sentence |
+| PD-7 | Fallback when a custom agent type fails to load. It is in `docs/agent-teams-reference.md` §15, not in SKILL.md | planner P-37, implementer I-14 | (a) add it to SKILL.md; (b) leave it in the reference only |
+| PD-8 | CRLF test inputs under `.gitattributes` `* text=auto eol=lf`: CRLF normaliser and evaluator fixtures, and CSV export golden files, lose their CRLF bytes as text files. The spec gives no CSV line ending (TS §6.3 L1142 covers escaping only). Already applied: `*.gz binary` (`.gitattributes:3`); testing.md:18 names both options without choosing | planner R2-P-25, implementer R2-I-04, tester R2-T-08 | (a) build CRLF inputs and expected CSV in code, or compare parsed rows; (b) mark the fixture paths `-text` |
+| PD-9 | Build output paths (Go binaries, `.deb`, SHA-256, SBOM) and the packaging tool, given `deploy/debian/` instead of `debian/` | implementer R2-I-03 | Choose in M0; add one line to CLAUDE.md Commands; keep `.gitignore` in sync |
+| PD-10 | `.claude/settings.local.json` (ignored, on disk) repeats the team flag and overrides `settings.json` | implementer R2-I-11 | Delete it, or keep it |
+| PD-11 | The user's memory file `bitscan-project-decisions.md:25` says "Go 1.22"; CLAUDE.md says "a currently supported release". It is outside the repo, so the team must not edit it | planner P-41, reviewer R2-R-19 | The user or the lead updates it |
+| PD-12 | No rule loads for the build and config files the CI gates use: `manager/pyproject.toml`, `requirements*.txt`, `alembic.ini`, `agent/go.mod`, `go.sum`, `.golangci.yml` | tester T-16, R2-T-07 | (a) add those globs to testing.md `paths:`; (b) leave them, since security-invariants and CLAUDE.md always load |
+
+## 5. Spec-internal inconsistencies (report only; the spec is never edited here)
+
+S-02 to S-10 (history: `work/audit/archive/round1-reviewer.md`):
+- The TS §5.1 table map omits `agent_ip_seen` and `task`.
+- The TS §2.1 component table omits `pgcrypto`.
+- TS §2.3 describes the heartbeat response as only `job_pull_seconds`.
+- `spool_overflow` is called a runner error.
+- "deadline" is used for `pickup_by`.
+- The `failed` definition omits the 24 h never-started case and the inventory case.
+- TS G6 says "group", but only tags exist.
+- `/agent/enroll` is called unauthenticated but needs a `bse_` token.
+- BIT102 is listed after BIT103.
+
+Added later in the audit (S-11 to S-16 and unnumbered notes):
+- S-11: the TS §3.1 State row (L162) and the TS §3.6 `state_dir` comment (L261) omit the `issued_at` and `expires_at` that TS §3.2 L183 stores.
+- S-12: the six-parameter TS §4.5 `evaluate()` (L600) has no input for its own ERROR cases at L593 and L599 (#12).
+- S-13: TS §4.3 L550 "new version" vs SR §3.6 L240, which bumps the version only on a hash change (#14).
+- S-14: TS §3.5 L249 has the runner apply `max_parallel_plugins`, but the TS §6.5 Job (L1165–L1180) does not carry it (#29).
+- S-15: TS §3 L152 says "the agent reports `runner_unavailable`", but the heartbeat (TS §6.5 L1163) has only `last_error`, and the results `error` (L1184) is per plugin (#28).
+- S-16: the "missing" halves of SR §4.1 L263–L264 (BIT010 and BIT011) are unreachable after BIT002 (#2).
+- The TS §4.4 job-state table (L573) defines `cancelled` as "Cancelled by an operator, or replaced by a newer job", but TS §4.3 L550 also cancels a deleted policy's queued jobs.
+- The TS §6.2 `/scans/{id}/cancel` row (L1122) says "Cancel queued or running jobs", while TS §4.4 L581 also cancels dispatched jobs.
+- TS §7.3 L1223 requires type-ahead (top 10 names), but no TS §6.2 route supplies distinct names (#32).
+- TS §6.5 L1190 lists the error `type` values for the agent routes only (L1159), while user routes also return 409 `policy_managed_on_server` (TS §4.1 L522, TS §4.3 L550). There is no user-route `type` list. This is consistent, but incomplete; `api.md` now limits its list to agent routes.

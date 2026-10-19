@@ -11,7 +11,8 @@ Spec: TS §8.6 (configuration), §8.7 (deployment and CLI), §8.2 (configuration
 
 ## Start-up configuration (`/etc/bitscan/manager.env` + unit credentials; restart to change)
 
-- Required: `BITSCAN_DB_DSN_FILE` (`%d/app_dsn`, the `bitscan_app` DSN; refuse a DSN without TLS), `BITSCAN_RETENTION_DSN_FILE`, `BITSCAN_VAULT_ADDR`, `BITSCAN_TOTP_KEY_REF` (vault key that encrypts TOTP seeds), `BITSCAN_VAULT_TOKEN_FILE` (`%d/vault_token`), `BITSCAN_TLS_CERT_FILE`, `BITSCAN_TLS_KEY_FILE`, `BITSCAN_AUDIT_SINK`. Fail start-up if any is missing.
+- Required: `BITSCAN_DB_DSN_FILE` (`%d/app_dsn`, the `bitscan_app` DSN; refuse a DSN without TLS), `BITSCAN_RETENTION_DSN_FILE`, `BITSCAN_VAULT_ADDR`, `BITSCAN_TOTP_KEY_REF` (vault key that encrypts TOTP seeds), `BITSCAN_VAULT_TOKEN_FILE` (`%d/vault_token`; the manager's vault token or AppRole secret), `BITSCAN_TLS_CERT_FILE`, `BITSCAN_TLS_KEY_FILE`, `BITSCAN_AUDIT_SINK`. Fail start-up if any is missing.
+- **Open spec question:** the vault product and API, and the audit-sink wire format (syslog flavour, HTTPS body and authentication), are not specified (TS §8.6, §5.3) (`work/open-questions.md` #24).
 - Optional: `BITSCAN_LISTEN` (default `0.0.0.0:8443`, HTTPS), `BITSCAN_BITS_DIR` (default `/var/lib/bitscan/bits`; uploads go to its `uploaded/` subfolder).
 - `BITSCAN_MIGRATE_DSN_FILE` is read only by `db migrate` and `db maintain`, which only the migrate and maintain units load; `serve` never reads it.
 - Secrets are read from the `*_FILE` paths, never from plain environment values. `serve` reloads the TLS certificate on `SIGHUP`.
@@ -36,11 +37,11 @@ Spec: TS §8.6 (configuration), §8.7 (deployment and CLI), §8.2 (configuration
 
 `users …` and `bits rebuild` read their DSN from `/etc/bitscan/secrets/app.dsn` (TS §8.7).
 
-- `users create-admin <name>`: first admin; must enrol TOTP at first sign-in.
+- `users create-admin <name>`: first admin; must enrol TOTP at first sign-in. How its initial password is set is open (`work/open-questions.md` #7).
 - `users create-api-token <user>`: writes the token hash to the database and shows the token once; alerts like UI creation.
 - `users reset-totp <user>`: alerts, audit-logged, ends the user's sessions.
 - `bits rebuild`: same rebuild as `POST /policies/rebuild` (catalog lock, `task` row, alert).
 - `db migrate` and `db maintain`: run by `bitscan-manager-migrate.service` and `bitscan-manager-maintain.timer`, reading `BITSCAN_MIGRATE_DSN_FILE`, as `bitscan_migrate` with `SET ROLE bitscan_owner` (TS §8.6, §8.7; see `.claude/rules/manager/database.md`).
 - `serve`: the manager service.
 
-Tests (TS §8.3): Integration (settings validation and ranges, `PATCH /settings` refused for API tokens, CLI commands against Testcontainers PostgreSQL, start-up failure on missing required config).
+Tests (TS §8.3): Integration (settings validation and ranges, `PATCH /settings` refused for API tokens, CLI commands against Testcontainers PostgreSQL, start-up failure on missing required config; TS §8.6, §8.7).

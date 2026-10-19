@@ -41,14 +41,14 @@ Spec: TS §3.1 (agent package), §3.7 (agent units and the D-Bus policy), §8.6 
   4. Enables and starts `bitscan-runner.socket` and `bitscan-agent.service`.
 
   It fails clearly, leaving the package unconfigured, if the manager URL or enrolment token is missing. On upgrade it needs no inputs, keeps the existing config, token and agent id, and restarts the services. All maintainer scripts must be idempotent and pass `lintian`.
-- `apt remove` stops and disables the units. `postrm purge` removes `/etc/bitscan` and `/var/lib/bitscan-agent`.
+- `apt remove` stops and disables the units. `postrm purge` removes `/etc/bitscan` and `/var/lib/bitscan-agent`. The host then goes `offline` and is decommissioned under TS §3.3 (`decommission_after_days`, default 7; 0 = never). None of the agent endpoints in TS §6.1 deregisters a host (TS §3.1, §3.3, §6.1).
 - File ownership (TS §3.7): `/run/bitscan/` `root:root` 0755; `runner.sock` `root:bitscan` 0660; `capread.sock` `root:bitscan-runner` 0660; `/var/lib/bitscan-agent/` `bitscan:bitscan` 0700, with `token` and `enroll.token` 0600 and `agent_id` 0644.
-- Each release publishes its SHA-256 on the release page, a different origin from the download host. Builds are reproducible, and each release ships an SBOM. The install runbook follows TS §3.1 (`sha256sum -c`, preseed, `apt install ./…deb`, delete the preseed file).
+- Each release publishes its SHA-256 on the release page, a different origin from the download host. Builds are reproducible, and each release ships an SBOM. The install runbook follows TS §3.1 (`sha256sum -c`, preseed, `apt install ./…deb`, delete the preseed file) and states the prerequisite that hosts must be NTP-synced (TS §3.3). Hosts cloned from one image share `/etc/machine-id` and enrol as a re-enrolment of the first; the fix is to regenerate `/etc/machine-id` on the clone (TS §3.2 step 9). The runbook recommends pinning with `bitscan/manager_spki_sha256`; for a private manager, set `bitscan/ca_file` to that CA only or pin the key; pinning stays optional (TS §3.2 Transport).
 
 ## Manager
 
 - `bitscan-manager.service` runs as `bitscan-manager`, one instance, HTTPS only on `BITSCAN_LISTEN`; `SIGHUP` reloads the TLS certificate. Configuration comes from `/etc/bitscan/manager.env` (`root:root`, 0600). Secrets come from `/etc/bitscan/secrets/` (`root:root`, 0700) via `LoadCredential=`, so each unit reads only what it loads; the manager loads `app_dsn`, `retention_dsn`, `tls_cert`, `tls_key` and `vault_token`, never `migrate_dsn`. `BITSCAN_*_FILE` variables point to `%d/<name>`.
-- `bitscan-manager-migrate.service` and `bitscan-manager-maintain.service` (with its daily timer) run as `DynamicUser`, so the manager user can never read the migrate credential. They are the only units that load `migrate_dsn`. The migrate unit is ordered `Before=bitscan-manager.service`.
+- `bitscan-manager-migrate.service` and `bitscan-manager-maintain.service` (with its daily timer) run as `DynamicUser`, so the manager user can never read the migrate credential. They are the only units that load `migrate_dsn`. The migrate unit is ordered `Before=bitscan-manager.service`. The upgrade runbook starts it first (`systemctl start bitscan-manager-migrate`) (TS §8.7).
 - Upgrade order: run migrate, restart the manager, then roll out agents. The manager supports agents of its own version and the one before.
 - The server CLI runs as root (`sudo bitscan-manager …`) and reads its DSN from `/etc/bitscan/secrets/app.dsn`.
 - Folders:
@@ -57,5 +57,6 @@ Spec: TS §3.1 (agent package), §3.7 (agent units and the D-Bus policy), §8.6 
   - `/var/lib/bitscan/audit-queue/`: `bitscan-manager`, 0700.
 - Database bootstrap: run the TS §5.2 Bootstrap block once as a superuser. It creates the roles and database, makes `bitscan_owner` the owner of the `public` schema, and installs `pg_trgm`, `pgcrypto` and `debversion` (package `postgresql-16-debversion`). PostgreSQL accepts connections only from the manager host, over TLS. Backups follow TS §5.3 (nightly `pg_dump` + WAL archiving, encrypted, restore tested monthly).
 - Python dependencies are installed with `pip --require-hashes`.
+- **Open spec question:** how the manager is installed (TS §8.7 has `ExecStart=/usr/bin/bitscan-manager serve`) and how it serves the built web UI from its own origin (TS §6.3); ask before choosing (`work/open-questions.md` #6).
 
 Tests (TS §8.3): Sandbox (`systemd-analyze verify` as written, plus the plugin-cannot list in `.claude/rules/testing.md`) on every PR touching units; package tests in `deploy/tests/` (TS §3.1: lintian; install, reinstall, upgrade and purge idempotency); reproducible build and SBOM check per release (TS §3.1, §8.1).

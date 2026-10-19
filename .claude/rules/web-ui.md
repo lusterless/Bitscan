@@ -23,7 +23,9 @@ Spec: TS §6.2 (routes and roles), §6.3 (conventions), §4.3 (profiles), §4.5 
 - Creating API tokens and enrolling or replacing TOTP happen only in the UI, from a session. Replacing TOTP asks for the current password and a current code. Offer TOTP enrolment to every new user at first sign-in.
 - An admin without TOTP sees only the TOTP enrolment screen and sign-out.
 - The enrolment approval screen shows hostname, source IP, OS, and any agent with the same hostname or machine-id. The enrolment-token form hints that a multi-use token should set `max_uses` to the expected host count and set `allowed_cidrs`.
-- Package search uses the TS §7.1 parameters, with type-ahead (top 10 names) and results grouped package → version → host count (TS §7.3). The CSV export comes from `/packages/search.csv`; the server already escapes formula cells. The host page shows added / removed packages since the last snapshot.
+- Package search uses the TS §7.1 parameters, with type-ahead (top 10 names) and results grouped package → version → host count, with click-through to the host list (TS §7.3). The CSV export comes from `/packages/search.csv`; the server already escapes formula cells. The host page shows added / removed packages since the last snapshot.
+- **Open spec question:** TS §7.3 asks for type-ahead (top 10 names), but TS §6.2 has no route for it and `/packages/search` rows are per version or per host, not per name; ask how the UI gets the names (`work/open-questions.md` #32).
 - A policy can show the states *Disabled* and *Deleted*. There are no approval states.
+- Show changes to a host's enabled runner helpers (`runner_helpers`); the manager shows and audit-logs any change (TS §3.7).
 
 Tests: CI gates on `web/` (TS §8.2: strict typecheck, ESLint, Prettier, OpenAPI client regenerated with no diff); UI tests that a `<script>` hostname renders as text (TS §6.3).

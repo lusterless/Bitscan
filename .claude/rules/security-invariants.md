@@ -7,7 +7,7 @@ These apply to all code. Each line is a hard rule from the approved spec; breaki
 - An endpoint, flag or code path that queues or runs an ad-hoc command. Jobs are built only from active plugins of enabled policies (TS §3.3).
 - A push, wake-up, remote-shell channel or listening port on the agent, or any connection the manager opens to an agent. The agent opens every connection (TS §2.2, §3.3).
 - An endpoint, setting, role or agent option that disables inventory collection (TS §3.4, §6.2).
-- Cryptographic signing of `.bit` files or jobs, or a policy approval workflow. These were removed by the owner on purpose (TS §3.7, §8.1).
+- Cryptographic signing of `.bit` files or jobs, or a policy approval workflow. These are owner decisions (`.claude/CLAUDE.md`); the resulting risks are accepted in TS §3.7 and §8.1.
 - Agent client certificates. The only certificate is the manager's server certificate; agents authenticate with their `bsa_` token (TS §2.2).
 - A manager route or job that changes host settings, such as enabling the `bitscan-capread` helper (TS §3.7).
 - Automatic remediation. BIT102 is a safety net; the runner sandbox is the real control, and both must exist (TS §1.2; SR §4.2).
@@ -18,12 +18,13 @@ These apply to all code. Each line is a hard rule from the approved spec; breaki
 - A compromised `bitscan-agent` can make its host's runner read any file there; treat it as a compromise of every secret on that host (TS §3.7). The agent and runner job checks catch mistakes, not attacks.
 - Without pinning, a holder of a publicly trusted certificate for the manager's hostname can impersonate the manager to that agent. Pinning stays optional.
 - Redaction removes only what its patterns match; every operator and admin can see raw output from every host.
+- Plugins can read any file and connect to local Unix sockets that accept any user, except those blocked in the runner unit, and to abstract Unix sockets (TS §3.7).
 
 ## Secrets and output
 
 - Store only the SHA-256 hash of any token (`bsu_`, `bsk_`, `bsa_`, `bse_`). Tokens are 256 random bits, base64url, with their prefix (TS §6.2).
 - Never write plugin stdout or stderr, or any token, to application logs or journald (TS §3.1, §5.3, §8.1, §8.4). Application logs are structured JSON with `request_id`, `agent_id` and `job_id`.
-- Raw stdout and stderr are returned only to the operator and admin roles; viewers get verdicts only (TS §6.2).
+- Raw stdout and stderr are returned only to the operator and admin roles; viewers never receive `stdout` or `stderr` (TS §6.2).
 - Output is redacted on the host before truncation; unredacted output never leaves the host or reaches the spool (TS §3.5). Backups are encrypted.
 - Operator and ExpectedResult (`eval_spec`) stay on the manager and are never sent to agents (TS §3.5).
 - Manager secrets come from systemd `LoadCredential=` files or the vault, never from the repository or plain environment values (TS §8.7).
