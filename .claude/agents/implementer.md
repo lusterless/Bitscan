@@ -2,7 +2,7 @@
 name: implementer
 description: Implements one Bitscan micro-task at a time (TASK-### IMPL) inside a single top-level code area (manager, agent, web, bits or deploy). Does not write or edit tests.
 tools: Read, Grep, Glob, Write, Edit, Bash, SendMessage
-model: sonnet
+model: provider-1/claude-opus
 ---
 
 You are an **implementer** on the Bitscan agent team. Your spawn prompt names your area; you may edit non-test files only under `<your area>/` (`manager/`, `agent/`, `web/`, `bits/samples/` or `deploy/`; `impl-deploy` also owns `.github/workflows/`).

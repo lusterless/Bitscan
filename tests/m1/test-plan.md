@@ -159,9 +159,9 @@ Each part: (a) diff-equal to its TS §5.2 lines (schema-diff helper, ACLs exclud
 | CHK-M1-138 | CODE | REQ-029 (3) | CHK-M1-103 re-run as `bitscan_app` | — | W |
 | CHK-M1-139 | CODE | G20 | Throwaway `m0006` in a copy, one at a time: `GRANT UPDATE ON audit_log TO bitscan_app`, `GRANT DELETE ON scan TO bitscan_app`: `test_grants.py` red | as stated | W |
 | CHK-M1-140 | CODE | REQ-026 (1) | `system_schedule` = exactly the three rows | — | W |
-| CHK-M1-141 | CODE | REQ-026 (2) | `setting` = exactly six keys with the stated values, `updated_by` NULL, JSON shape per #42; no `inventory_interval_s`, no key that can disable inventory | — | W; finalised after #42 |
+| CHK-M1-141 | CODE | REQ-026 (2), #42 (answered) | `setting` = exactly six keys; the five numeric keys hold bare JSON numbers (`agent_token_ttl_days` 365, `job_pull_seconds` 300, `decommission_after_days` 7, `max_parallel_plugins` 2, `enrolment_alert_per_hour` 50, compared as `value::text` and as JSON type `number`), `redaction_patterns` a JSON array of five strings; every `updated_by` NULL; no `inventory_interval_s` and no key naming inventory or a switch | a value seeded as a JSON string `"365"` | W |
 | CHK-M1-142 | CODE | REQ-026 (3) | `redaction_patterns` = the five TS §8.6 patterns read from the spec at test time (L1332–L1336), in order, byte-identical; each `re2.compile`s | one character changed (G22) | W (`re2` also L for the spec extraction) |
-| CHK-M1-143 | CODE | REQ-026 (4) | Exactly four range partitions besides the default; contiguous; cover first instant of the current month to four months later (names and time zone per #43) | — | W; finalised after #43 |
+| CHK-M1-143 | CODE | REQ-026 (4), #43 (answered) | Exactly four range partitions besides the default, named `scan_result_YYYY_MM` for the current UTC month and the next three; bounds read with `TimeZone = UTC` are `FROM ('YYYY-MM-01 00:00:00+00') TO (<next month>)`; contiguous, no gap or overlap; first lower bound = first instant of the current UTC month, last upper bound = four months later | a partition missing or named by local time | W |
 | CHK-M1-144 | CODE | REQ-026 (5) | Each partition owned by `bitscan_owner`; ACL = SELECT+INSERT app, SELECT retention | — | W |
 | CHK-M1-145 | CODE | REQ-026 (6) | A row with `job_created_at` in the current month lands in that month's partition (`tableoid::regclass`); `scan_result_default` empty after migrate | — | W |
 | CHK-M1-146 | APP | REQ-026 (7) | Migrate to `m0004` only (`alembic upgrade m0004` via the runner's test hook, or a copy without `m0005`): `system_schedule` and `setting` empty, only the default partition | — | W |
@@ -176,7 +176,7 @@ Each part: (a) diff-equal to its TS §5.2 lines (schema-diff helper, ACLs exclud
 | CHK-M1-170 | CODE | REQ-028 (1) | Maintenance function with an injected clock two months ahead: creates exactly the missing partitions so current month + 3 exist, contiguous with the earlier ones | maintains only two future months (G22) | W |
 | CHK-M1-171 | CODE | REQ-028 (2) | Second run: exit 0 / no change (partition set and ACLs equal) | — | W |
 | CHK-M1-172 | CODE | REQ-028 (3) | New partitions owned by `bitscan_owner`, default ACL; `bitscan_app` 42501 for UPDATE, DELETE, TRUNCATE on them | — | W |
-| CHK-M1-173 | CODE | REQ-028 (4) | Drops only partitions past retention under #44; never `scan_result_default` or an in-retention partition; rows in kept partitions unchanged (count and checksum) | drops the default | W; finalised after #44 |
+| CHK-M1-173 | CODE | REQ-028 (4), #44 (answered) | With an injected clock: a partition whose upper bound is at least 400 days before now (UTC) is dropped, whether or not its rows are gone; one at 399 days is kept; `scan_result_default` and in-retention partitions are never dropped; rows in kept partitions unchanged (count and checksum). Partitions are found by bounds, not by name (a partition renamed in a copy is still handled) | drops the default; drops at 399 days | W |
 | CHK-M1-174 | CODE | REQ-028 (5) | Statement log during maintain: no `DELETE`; DDL only on `scan_result` partitions | — | W |
 | CHK-M1-175 | CODE | REQ-028 (6) | Rows in `scan_result_default` inside a range it must create: exit non-zero, message names `scan_result_default`, no partition created | — | W |
 | CHK-M1-176 | APP | REQ-028 (7) | `bitscan-manager db maintain` on a migrated database: exit 0, output lists each partition created or dropped, no canary; `BITSCAN_MIGRATE_DSN_FILE` unset: non-zero, names the variable | DSN in output | W (unset case also L) |
@@ -184,11 +184,35 @@ Each part: (a) diff-equal to its TS §5.2 lines (schema-diff helper, ACLs exclud
 | CHK-M1-178 | CODE | REQ-028 (8), G1 | Partition DDL composed with `psycopg.sql.SQL/Identifier/Literal` only (AST scan of `bm/db/maintain.py`: no f-string, `%` or `.format` reaching `execute`); ruff S608 red on a planted f-string | f-string DDL | L |
 | CHK-M1-179 | CODE | REQ-020 (7) | `test_cli.py`: `db maintain` is a real command; other commands keep M0 behaviour | — | L |
 
+### TASK-019 revision 1 (amendment to #44, 2026-10-20: clock guard, naive clock, run lock)
+
+| Id | Type | REQ | Check | Planted violation | Where |
+| --- | --- | --- | --- | --- | --- |
+| CHK-M1-180 | CODE | #44 amendment (a) | 24 older monthly partitions, clock +24 months: `drops_refused` set and names the clock (`YYYY-MM-DDTHH:MM:SS`), `drop == ()`, nothing dropped, the 4-month window created | guard (a) removed | W |
+| CHK-M1-181 | CODE | #44 amendment (b) | one partition past 400 days and a row with `job_created_at` = now + 20 days: drops refused, clock named, partition kept; a row exactly at now does not refuse (CHK-M1-173 asserts `drops_refused is None`) | guard (b) removed | W |
+| CHK-M1-182 | CODE | #44 amendment | clock inside the window and no future rows: the 400-day drop still happens, `drops_refused is None` | — | W |
+| CHK-M1-183 | APP | #44 amendment | `bitscan-manager db maintain` with guard (b) tripped: exit 1, `drops refused` and the date on stderr, no `dropped` line, no row data (job id) in the output; unit (L): stubbed plan with `drops_refused` gives exit 1 with `created ...` on stdout and the message only on stderr; a normal drop gives exit 0, empty stderr | CLI exits 0 on refusal | L, W |
+| CHK-M1-184 | CODE | #44 amendment (reviewer nit) | naive `now` refused with `ValueError` ("timezone-aware") by `plan_partitions` and `run_maintain` (before any connection) | — | L |
+| CHK-M1-185 | CODE | #44 amendment (run lock) | (i) two concurrent runs at clock +2 months: no error, the 2 missing partitions created once, 7 partitions; (ii) deterministic: a session holds `pg_advisory_xact_lock(hashtext('db_maintain'))`, a run waits (ungranted advisory row in `pg_locks`, nothing created), the holder creates one window partition and commits, the run then plans afresh (`create == ()`), 6 partitions | run lock removed | W |
+| CHK-M1-186 | CODE | #44 amendment (open) | Probe, not a committed test: clock +24 months, two runs a day apart. Run 2 finds the partition run 1 created, so guard (a) no longer trips; whether it then drops in-retention partitions is reported to `main` for an owner ruling (result: it did; led to guard (c)) | — | W (WSL copy only) |
+
+### TASK-019 revision 2 (second amendment to #44, 2026-10-20: guard (c), contiguous partitions)
+
+Text: drops are refused when the existing non-default partitions, read before the run's creates, are not contiguous (a UTC month missing between the oldest and the newest); the window is still created; exit 1; the message names the missing month(s). Earlier drop tests (CHK-M1-173, -181, -182, -183) fill every month between their old partition and the window, so they keep testing their own rule.
+
+| Id | Type | REQ | Check | Planted violation | Where |
+| --- | --- | --- | --- | --- | --- |
+| CHK-M1-187 | CODE | #44 amendment 2 | The CHK-M1-186 scenario as a committed test: 6 in-retention months, clock +24 months, run twice: both runs refuse, run 2 names the first missing month (current + 4) and drops nothing | guard (c) removed | W |
+| CHK-M1-188 | CODE | #44 amendment 2 | Contiguous set from 400+ days back to the window, correct clock: the two past-retention months are dropped, `drops_refused is None` | — | W |
+| CHK-M1-189 | CODE | #44 amendment 2 | One and two middle months dropped by hand (clock +1 month): drops refused, each missing `YYYY-MM` named, past-retention partition kept, the window (the one missing month) still created | guard (c) removed | W |
+| CHK-M1-190 | APP | #44 amendment 2 | CLI with a hand-made gap: exit 1, `drops refused` and the month on stderr, no `dropped` line | — | W |
+| CHK-M1-191 | CODE | #44 amendment 2 | Pure: `missing_months` for none, one, unordered input across a year end, 24 contiguous months; the message lists at most 12 months then `and K more`, and names the clock | — | L |
+
 ## TASK-020 / TASK-021 Audit chain (REQ-030, REQ-031; TP-M1-14, -15; G23)
 
 | Id | Type | REQ | Check | Planted violation | Where |
 | --- | --- | --- | --- | --- | --- |
-| CHK-M1-200 | CODE | REQ-030 (8), G1 | Pure hash function unit tests (no PostgreSQL): known-answer vectors computed independently from the #38 rule with `hashlib` in the test; each hashed field changes the hash; genesis `prev_hash` value; hex lower-case 64 chars; JSON and timestamp serialisation per #38; ruff S608 red on planted f-string SQL in `bm/repositories/audit_log.py` | field omitted from the hash | L; finalised after #38 |
+| CHK-M1-200 | CODE | REQ-030 (8), G1, #38 (answered) | Pure hash function unit tests (no PostgreSQL) against an independent reference in the test: SHA-256, lowercase hex, over the UTF-8 bytes of `json.dumps([prev_hash, audit_id, actor, action, target, detail_text, at_text], separators=(',', ':'), ensure_ascii=False)`; a hard-coded known-answer vector; each field changes the hash; `None` target/detail differ from `''`/`'{}'`; non-ASCII kept as UTF-8; genesis = 64 × `0`; at_text `YYYY-MM-DDTHH:MM:SS.ffffffZ`. Ruff S608 red on planted f-string SQL in `bm/repositories/audit_log.py` | field omitted from the hash; `ensure_ascii=True`; spaces in separators | L |
 | CHK-M1-201 | CODE | REQ-030 (8), G5 | Coverage gate on Windows with `pg` skipped: `pytest --cov=bitscan_manager/services --cov-fail-under=85` exits 0 from the unit tests alone; a planted untested 20-statement function in `bm/services/audit/` is red | as stated | L |
 | CHK-M1-202 | CODE | REQ-030 (1) | Append flow with a fake repository (unit): lock taken before reading the head, `prev_hash` = last `row_hash`, insert with the computed hash; order of calls asserted | lock after read | L |
 | CHK-M1-203 | CODE | REQ-030 (1) | PostgreSQL: N appends; every `prev_hash` = previous `row_hash` by `audit_id`; first = genesis; recomputed `row_hash` = stored | — | W |
@@ -201,10 +225,12 @@ Each part: (a) diff-equal to its TS §5.2 lines (schema-diff helper, ACLs exclud
 | CHK-M1-220 | CODE | REQ-031 (1), (6) | Pure verifier unit tests over row sequences: intact chain passes with count; empty passes | — | L |
 | CHK-M1-221 | CODE | REQ-031 (2), (3) | Unit and PostgreSQL (as `bitscan_owner`): each hashed field of one entry changed: first bad `audit_id` = that entry; middle entry deleted: reports the entry after the gap; inserted entry with wrong `prev_hash`: reports it | verifier skips the `prev_hash` link check (G23) | L, W |
 | CHK-M1-222 | CODE | REQ-031 (4) | `audit_id` gaps from rolled-back appends with intact links: passes | — | L, W |
-| CHK-M1-223 | CODE | REQ-031 (5) | As `bitscan_retention`: write `audit.checkpoint` (detail per #39) for the last entry to delete, delete up to it: passes; deleting one more entry, or altering the checkpoint's recorded hash: fails | — | W; finalised after #39 |
+| CHK-M1-223 | CODE | REQ-031 (5), #39 (answered) | As `bitscan_retention`: append an ordinary chained entry with `action = 'audit.checkpoint'`, `detail = {"last_deleted_id": <id>, "last_deleted_row_hash": "<hex>"}` for the last entry to delete, then delete up to that id: verifies (the oldest remaining entry's prev_hash equals last_deleted_row_hash and last_deleted_id < its id). Fails: deleting one more entry; altering the recorded hash; a checkpoint whose last_deleted_id is not lower than the oldest remaining id | — | W |
 | CHK-M1-224 | CODE | REQ-031 | Verifier reads from one snapshot (REPEATABLE READ or a single query); concurrent append during verify does not cause a false failure | — | W |
 | CHK-M1-226 | CODE | G5 | Coverage of `bm/services/audit/` from unit tests alone stays >= 85 % with `verify.py` added | — | L |
 | CHK-M1-228 | CODE | G23 | In a copy: advisory-lock call removed from append: CHK-M1-204 red; verifier with the link check removed: CHK-M1-221 red | as stated | W (unit part L) |
+| CHK-M1-230 | CODE | REQ-031 (1)–(5), TASK-021 step 2 | PostgreSQL through `verify_chain` (read as `bitscan_app`): empty and 5-entry chains verify with the count; as `bitscan_owner`, each of actor, action, target, detail, at, prev_hash, row_hash changed on one entry reports that entry; a deleted middle entry reports the next (`broken link`); an inserted entry with a wrong prev_hash reports itself; rolled-back gaps verify; as `bitscan_retention`, checkpoint then delete up to it verifies (and keeps verifying after more appends); one more delete fails at the oldest remaining; the checkpoint's recorded hash edited reports the checkpoint (`row_hash mismatch`); a connection with an open transaction is refused (AuditError); the connection is left idle after success and after an early failure | snapshot isolation dropped from the read; link check removed | W |
+| CHK-M1-229 | CODE | REQ-031 (2), (3), #39 | A failure before the vouching checkpoint is reported at the failing row, not the oldest row: checkpoint for id 4, ids 1–4 deleted, actor of id 8 changed in place gives (8, `row_hash mismatch`); rehashed in place gives the next row; a deleted row before the checkpoint gives the row after the gap. A checkpoint edited without rehash reports its own id; rehashed reports the oldest row. A checkpoint whose `last_deleted_id` is not below its own id does not vouch | oldest-row result given priority | L |
 
 ## TASK-022 CI migration gate (REQ-033; TP-M1-16; G24)
 
@@ -214,6 +240,8 @@ Each part: (a) diff-equal to its TS §5.2 lines (schema-diff helper, ACLs exclud
 | CHK-M1-251 | CODE | REQ-033 (1), (2) | Local substitute: the step's script run in scratch git repos (base commit = tree, PR commit on top): modify, delete, rename `m0001_catalog.py`: red; add two migration files: red; add zero or one: green; touching only `versions/__init__.py` the first time: green | as stated | L (scratch repos under TEMP) |
 | CHK-M1-252 | CODE | REQ-033 (3) | The PostgreSQL job sets `CI=true`, runs the M1 suites (`pytest` without `-m "not pg"`, Docker on the runner) | `-m "not pg"` | L (static) |
 | CHK-M1-253 | CODE | REQ-033 | The step's base ref for a PR is the PR base (fetch depth sufficient); on `push` to main it does not falsely fail | shallow checkout without base | L (static), CI |
+| CHK-M1-254 | CODE | REQ-033 (1), (2); user merge decision (five stacked PRs) | Scratch clone: five stacked branches, each adding exactly one of `m0001` (plus `__init__.py`) to `m0005` on top of the previous; the gate (script extracted byte for byte from `manager.yml`) passes for each PR against its own base, and after each base merges and the next is rebased/retargeted onto `main`; a stacked PR adding two migrations fails; a PR against `main` while its parent is unmerged fails (2 added) | stack PR adds two | L (scratch repos under TEMP) |
+| CHK-M1-255 | CODE | REQ-033 (4), user approval 2026-10-20 | `actionlint` at a pinned released tag at least two weeks old via `go run github.com/rhysd/actionlint/cmd/actionlint@vX.Y.Z` (sumdb verified; no GONOSUMDB, insecure or direct proxy), from a scratch directory outside the repo, over `.github/workflows/*.yml`: no findings; nothing added to the repository | — | L |
 | CHK-M1-256 | CODE | REQ-033, G24 | Live: PR branches with the planted changes fail the job; a clean PR passes | as stated | CI only: NOT RUN locally (needs pushed PRs) |
 
 ## M1 gate run (G18)
@@ -222,6 +250,7 @@ Each part: (a) diff-equal to its TS §5.2 lines (schema-diff helper, ACLs exclud
 | --- | --- | --- | --- | --- | --- |
 | CHK-M1-240 | CODE | all M1 | `cd /root/bitscan/manager && CI=true /root/venv/bin/python -m pytest --cov=bitscan_manager/services --cov-fail-under=85 -rs`: every test passes, **0 skipped**, coverage >= 85 % | any of G19 to G23 | W; CI |
 | CHK-M1-241 | CODE | all M1 | The same on Windows (`CI` unset): unit tests pass, `pg` tests skipped with `not run: Docker unavailable` (reported, not counted as pass), coverage gate passes | — | L |
+| CHK-M1-242 | CODE | all M1, user merge decision | Per-PR-head runs: for each of the five stacked M1 PR heads, a clean WSL copy of that head runs the full suite with `CI=true` and the coverage gate (0 skipped), one head at a time. Scheduled after the lead and the user agree the PR split | — | W (one head at a time) |
 
 ## Not tested in M1
 

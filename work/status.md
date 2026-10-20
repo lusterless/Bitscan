@@ -5,6 +5,29 @@ Docs audit (rounds 1 to 3): complete. Delivery plan approved by the user (M0 to 
 ## Roadmap (reordered 2026-10-20, see decisions.md)
 M0 scaffolding (done, PR #1 green) → M1 DB and audit core → M2 auth core → M3 agent API and scheduler (inventory) → M4 Go agent and pre-release `.deb` → M5 minimal host UI and package search → M6 first-release gate (agent heartbeat and `os_info` end to end) → M7 compliance catalog → M8 evaluator → M9 scan engine → M10 agent runner and sandbox → M11 results, re-evaluation, end-to-end. Next: planner breaks down M1; the lead brings the breakdown to the user for approval before any code.
 
+## M1 database and audit core: all tasks tested and approved (2026-10-20); exit-gate bookkeeping and the PR split remain, branch `m1-db-audit-core`
+
+M1 breakdown approved by the user; open questions #38 to #45 and PD-18 answered (decisions.md). Work is uncommitted after `ae6a6b4` (TASK-011 to TASK-015).
+
+| Task | What | TEST | REVIEW |
+| --- | --- | --- | --- |
+| TASK-011 to TASK-015 | dependencies, config loader, `db migrate`, m0001, m0002, Debian version compare | PASS | APPROVED (committed `ae6a6b4`) |
+| TASK-016 | m0003 scanning tables | PASS | APPROVED |
+| TASK-017 | m0004 system tables | PASS | APPROVED |
+| TASK-018 | m0005 privileges, view, seeds, partitions | PASS | APPROVED |
+| TASK-019 | `db maintain` | PASS | APPROVED |
+| TASK-019 | revisions 1 and 2: clock guard (a), (b) and partition gap check (c), both user-approved amendments to #44 | PASS (incl. mutations) | APPROVED |
+| TP-M1-02 harness and follow-ups | PASS (tester-b re-run pending) | APPROVED |
+| TASK-020 | audit append (hash chain) | PASS (unit, PostgreSQL, mutations) | APPROVED |
+| TASK-021 | audit chain verifier | PASS (step 1 rev 1 and step 2, unit, PostgreSQL, mutations) | APPROVED |
+| TASK-022 | CI forward-only, one-migration-per-PR gate | PASS (local; live GitHub check NOT RUN until the PRs are pushed) | APPROVED |
+
+M1 lands as five stacked PRs, one migration each (user decision). When the PRs are opened, ask the user: merge method, making the `migrations` check required in branch protection (otherwise a red gate does not block a merge), and "require branches to be up to date". Clean full WSL run (CHK-M1-240-r2): 547 passed, 0 skipped, coverage 100 %, 0 leftover containers.
+
+Team restarted 2026-10-20 on claude-opus (all roles): tester (finish TASK-019 r1, TASK-020, TASK-021 tests; WSL PostgreSQL run), impl-manager (TASK-021 step 2 after TASK-020 PASS; README), impl-deploy (TASK-022), reviewer (verdicts after each PASS). The previous tester's new test files were on disk but unverified (lint, format and mypy errors in them; Windows unit run 355 passed, 158 PostgreSQL skipped).
+
+Known gaps: coverage gate on `services/` waits for the TASK-020 unit tests; M1 exit gate CHK-M1-240 (G18 to G24) after TASK-019 revision 1, TASK-020 to TASK-022. Accepted residual risk: a forward clock skew under 3 months passes the `db maintain` guard (decisions.md). README usage docs are kept current by impl-manager.
+
 ## M0 scaffolding: ready for the user's exit-gate approval (2026-10-20)
 
 All ten tasks: IMPL done, TEST PASS (locally runnable checks), REVIEW APPROVED. The user gave the second approval for TASK-004, TASK-007 and TASK-010 (decisions.md).
