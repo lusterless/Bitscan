@@ -1,0 +1,54 @@
+[Unit]
+Description=Bitscan plugin runner
+Requires=bitscan-runner.socket
+After=bitscan-runner.socket
+
+[Service]
+ExecStart=/usr/sbin/bitscan-runner
+# Non-root user that can read every file but change nothing
+User=bitscan-runner
+Group=bitscan-runner
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+NoNewPrivileges=yes
+# Lets the runner put each plugin in its own cgroup and kill it afterwards
+Delegate=yes
+# Whole filesystem read-only; the only writable place is a private /tmp
+ProtectSystem=strict
+PrivateTmp=yes
+# Only system binaries can be executed; /tmp and user paths cannot
+NoExecPaths=/
+ExecPaths=/usr /bin /sbin /lib -/lib64
+ProtectHome=read-only
+UMask=0077
+PrivateDevices=yes
+PrivateIPC=yes
+RemoveIPC=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@debug @mount @module @raw-io @reboot @swap @obsolete @cpu-emulation
+SystemCallErrorNumber=EPERM
+# Netlink lets ss and ip read socket and route tables; changing them needs CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+# No IP networking at all
+IPAddressDeny=any
+# Local sockets plugins must not reach
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/run/containerd -/run/snapd.socket -/run/snapd-snap.socket
+InaccessiblePaths=-/run/systemd/journal/socket -/run/systemd/journal/stdout -/run/systemd/journal/syslog -/run/systemd/journal/dev-log
+MemoryMax=256M
+TasksMax=64
+CPUQuota=25%
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,63 @@
+name: manager
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Runtime lock installs with hashes in a fresh venv
+        run: |
+          python -m venv "$RUNNER_TEMP/runtime"
+          "$RUNNER_TEMP/runtime/bin/python" -m pip install --require-hashes -r manager/requirements.txt
+
+      - name: Dev lock installs with hashes, then the package
+        run: |
+          python -m venv "$RUNNER_TEMP/dev"
+          "$RUNNER_TEMP/dev/bin/python" -m pip install --require-hashes -r manager/requirements-dev.txt
+          "$RUNNER_TEMP/dev/bin/python" -m pip install --no-deps --no-build-isolation -e manager
+          echo "$RUNNER_TEMP/dev/bin" >>"$GITHUB_PATH"
+
+      - name: ruff check
+        run: ruff check manager
+
+      - name: ruff format --check
+        run: ruff format --check manager
+
+      - name: mypy --strict
+        run: mypy --strict --config-file manager/pyproject.toml manager
+
+      - name: pytest with coverage gate
+        working-directory: manager
+        env:
+          CI: "true"
+          RYUK_CONTAINER_IMAGE: testcontainers/ryuk:0.8.1@sha256:bf3f74a47dee0acda89aba4b2fc9c7fdcf994a084db02a2d06566f07baae022e
+        run: pytest --cov=bitscan_manager/services --cov-fail-under=85
+
+      - name: OpenAPI export matches the committed file
+        run: |
+          python -m bitscan_manager.app manager/openapi.json
+          git diff --exit-code -- manager/openapi.json
+          changed="$(git status --porcelain -- manager/openapi.json)"
+          if [ -n "$changed" ]; then
+            printf 'manager/openapi.json is not the committed file:\n%s\n' "$changed"
+            exit 1
+          fi

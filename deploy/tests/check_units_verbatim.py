@@ -1,0 +1,107 @@
+"""Check deploy/systemd/* against the TS ini blocks (REQ-016 (1)-(3)).
+
+Usage: python deploy/tests/check_units_verbatim.py [agent|manager|all] [--root DIR]
+Exit 0 when every selected unit is byte-identical to its spec block with the
+fence lines removed, has no end-of-line comment and the set of files is exact.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+SPEC = Path("docs/spec/Technical_Specification.md")
+
+# file name -> (opening fence line, closing fence line), 1-based, from work/tasks.md
+AGENT: dict[str, tuple[int, int]] = {
+    "bitscan-runner.socket": (289, 302),
+    "bitscan-runner.service": (308, 363),
+    "bitscan-agent.service": (369, 408),
+    "bitscan-capread.socket": (437, 449),
+    "bitscan-capread.service": (451, 482),
+}
+MANAGER: dict[str, tuple[int, int]] = {
+    "bitscan-manager.service": (1352, 1401),
+    "bitscan-manager-migrate.service": (1405, 1435),
+    "bitscan-manager-maintain.service": (1439, 1467),
+    "bitscan-manager-maintain.timer": (1469, 1480),
+}
+
+
+def spec_block(lines: list[bytes], start: int, end: int) -> bytes:
+    if lines[start - 1].rstrip(b"\r\n") != b"```ini":
+        raise SystemExit(f"spec line {start} is not an ```ini fence")
+    if lines[end - 1].rstrip(b"\r\n") != b"```":
+        raise SystemExit(f"spec line {end} is not a closing fence")
+    body = lines[start : end - 1]
+    return b"".join(line.rstrip(b"\r\n") + b"\n" for line in body)
+
+
+def eol_comment_lines(data: bytes) -> list[int]:
+    bad = []
+    for n, line in enumerate(data.split(b"\n"), 1):
+        stripped = line.lstrip()
+        if stripped.startswith((b"#", b";")) or not stripped:
+            continue
+        if b"#" in line:
+            bad.append(n)
+    return bad
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("which", choices=["agent", "manager", "all"], default="all", nargs="?")
+    ap.add_argument("--root", default=".")
+    args = ap.parse_args()
+    root = Path(args.root)
+    units = {}
+    if args.which in ("agent", "all"):
+        units.update(AGENT)
+    if args.which in ("manager", "all"):
+        units.update(MANAGER)
+
+    spec_lines = (root / SPEC).read_bytes().splitlines(keepends=True)
+    unit_dir = root / "deploy" / "systemd"
+    failures = 0
+    for name, (start, end) in units.items():
+        path = unit_dir / name
+        if not path.is_file():
+            print(f"MISSING {name}")
+            failures += 1
+            continue
+        want = spec_block(spec_lines, start, end)
+        got = path.read_bytes()
+        if got != want:
+            for i, (a, b) in enumerate(zip(got.split(b"\n"), want.split(b"\n"), strict=False), 1):
+                if a != b:
+                    print(f"DIFF {name} line {i}: got {a!r} want {b!r}")
+                    break
+            else:
+                print(f"DIFF {name}: length got {len(got)} want {len(want)}")
+            failures += 1
+            continue
+        if b"\r" in got:
+            print(f"CR {name}")
+            failures += 1
+        bad = eol_comment_lines(got)
+        if bad:
+            print(f"EOL-COMMENT {name} lines {bad}")
+            failures += 1
+        if name == "bitscan-capread.service" and b"[Install]" in got:
+            print("INSTALL-SECTION bitscan-capread.service")
+            failures += 1
+        print(f"IDENTICAL {name} (TS L{start + 1}-L{end - 1}, {len(got)} bytes)")
+
+    if args.which == "all":
+        present = {p.name for p in unit_dir.iterdir() if p.is_file()}
+        extra = present - set(units)
+        if extra:
+            print(f"EXTRA files in deploy/systemd: {sorted(extra)}")
+            failures += 1
+    print("FAIL" if failures else "OK", f"{len(units)} units checked, {failures} problems")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

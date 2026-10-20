@@ -1,0 +1,74 @@
+name: web
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci --ignore-scripts
+
+      - name: npm run lint
+        working-directory: web
+        run: npm run lint
+
+      - name: npm run typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: npm run format:check
+        working-directory: web
+        run: npm run format:check
+
+      - name: npm test
+        working-directory: web
+        run: npm test
+
+      - name: Install the manager runtime lock for the OpenAPI export
+        run: |
+          python -m venv "$RUNNER_TEMP/runtime"
+          "$RUNNER_TEMP/runtime/bin/python" -m pip install --require-hashes -r manager/requirements.txt
+
+      - name: Export OpenAPI
+        env:
+          PYTHONPATH: manager
+        run: |
+          "$RUNNER_TEMP/runtime/bin/python" -m bitscan_manager.app manager/openapi.json
+
+      - name: Regenerate the API client
+        working-directory: web
+        run: npm run gen:api
+
+      - name: OpenAPI document and client match the committed files
+        run: |
+          git diff --exit-code -- manager/openapi.json web/src/api/
+          changed="$(git status --porcelain -- manager/openapi.json web/src/api/)"
+          if [ -n "$changed" ]; then
+            printf 'OpenAPI document or client is not the committed version:\n%s\n' "$changed"
+            exit 1
+          fi
