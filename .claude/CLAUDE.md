@@ -74,7 +74,7 @@ bits/samples/         # sample .bit policies (owned by impl-bits)
 bits/tests/           # .bit test fixtures: malformed, XXE, billion-laughs, oversize (owned by tester)
 deploy/{systemd,dbus,debian,runbooks,tests}/
 e2e/                  # nightly end-to-end and load tests
-tests/                # phase test plans and reports: tests/m0..m8/{test-plan,report}.md plus index files tests/test-plan.md and tests/report.md (owned by tester)
+tests/                # phase test plans and reports: tests/m0..m11/{test-plan,report}.md plus index files tests/test-plan.md and tests/report.md (owned by tester)
 .github/workflows/    # CI (owned by impl-deploy)
 docs/spec/            # TS and SR; never edited as part of a code change
 work/                 # agent-team output (see "Agent team" below)

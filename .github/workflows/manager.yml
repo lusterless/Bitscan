@@ -2,6 +2,9 @@ name: manager
 
 on:
   pull_request:
+    # edited: a base change (a stacked PR retargeted after its parent merges)
+    # re-runs the migration gate against the new base.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -13,6 +16,74 @@ defaults:
     shell: bash
 
 jobs:
+  # Migrations are forward-only, one per PR (testing.md "Static gates", TS §5.3).
+  # Runs on every event with no skip: a PR is checked against its base, a push
+  # to main against the commit it replaced (which must be an ancestor).
+  migrations:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Migrations are forward-only, at most one added
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          dir=manager/bitscan_manager/db/migrations/versions
+          case "$EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" head="$PR_HEAD_SHA" ;;
+            push) base="$PUSH_BEFORE" head="$PUSH_AFTER" ;;
+            *) printf 'unexpected event %q\n' "$EVENT_NAME"; exit 1 ;;
+          esac
+          for sha in "$base" "$head"; do
+            if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || [[ "$sha" =~ ^0+$ ]] \
+              || ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
+              printf 'cannot diff: %q is not a fetched commit\n' "$sha"
+              exit 1
+            fi
+          done
+          if [ "$EVENT_NAME" = push ] && ! git merge-base --is-ancestor "$base" "$head"; then
+            echo "push to main rewrote history; migrations are forward-only"
+            exit 1
+          fi
+          # -z: names arrive NUL-terminated, never word-split; printed with %q.
+          list="$RUNNER_TEMP/migrations.diff"
+          git diff --name-status -z --find-renames "$base...$head" -- "$dir/" >"$list"
+          bad=0
+          added=()
+          while IFS= read -r -d '' status; do
+            IFS= read -r -d '' path
+            case "$status" in
+              A)
+                if [ "$path" != "$dir/__init__.py" ]; then added+=("$path"); fi
+                ;;
+              R* | C*)
+                IFS= read -r -d '' new
+                printf 'existing migration renamed or copied (%s): %q -> %q\n' "$status" "$path" "$new"
+                bad=1
+                ;;
+              *)
+                printf 'existing migration changed (%s): %q\n' "$status" "$path"
+                bad=1
+                ;;
+            esac
+          done <"$list"
+          if [ "${#added[@]}" -gt 1 ]; then
+            printf 'more than one migration added (%d):' "${#added[@]}"
+            printf ' %q' "${added[@]}"
+            printf '\n'
+            bad=1
+          fi
+          if [ "$bad" -ne 0 ]; then exit 1; fi
+          printf 'migrations ok: %d added, none changed\n' "${#added[@]}"
+
   gates:
     runs-on: ubuntu-24.04
     steps:
