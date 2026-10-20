@@ -176,3 +176,32 @@ blocker. Ignored paths (`.venv`, caches, `.claude/worktrees/`, `settings.local.j
    base after each parent merges.
 10. Cleanup after the user's go-ahead and push: `git worktree remove $WT`; keep `refs/m1-split/reference` and
     `m1-db-audit-core` until all five PRs are merged.
+
+## 6. Results (build done 2026-10-20, impl-split; local branches only, nothing pushed)
+
+As approved, with the user's Q1 change: `.github/workflows/manager.yml` and the TASK-022 reports and review
+are commit 1C in PR 1, and 5D is dropped. Reference snapshot `refs/m1-split/reference` = `022e0ff` (tree `3c2e1a4`).
+Worktree `.claude/worktrees/m1-split` with its own venv; the main checkout was never changed (still
+`m1-db-audit-core` at `ae6a6b4`, same 60 status entries).
+
+| Branch | Head | Commits on its base | ruff / format / mypy (files) | Windows pytest (pg skipped: Docker unavailable) | services/ coverage |
+| --- | --- | --- | --- | --- | --- |
+| `m1-pr1` | `24bf548` | `b77eeb6`, `b166ced`, `6716ed2` (reused), `bc7d13a` 1A, `a6ea766` 1B, `24bf548` 1C | pass / pass / pass (25) | 274 passed, 34 skipped, 0 failed | 0 statements, 100 % (no data, as M0) |
+| `m1-pr2` | `089eae0` | `089eae0` | pass / pass / pass (28) | 277 passed, 54 skipped | 100 % (no data) |
+| `m1-pr3` | `7a40d67` | `7a40d67` | pass / pass / pass (30) | 277 passed, 64 skipped | 100 % (no data) |
+| `m1-pr4` | `17fe725` | `17fe725` | pass / pass / pass (32) | 277 passed, 94 skipped | 100 % (no data) |
+| `m1-pr5` | `0b1a216` | `7539591` 5A, `b93a45a` 5B, `cdc22a8` 5C, `0b1a216` 5E | pass / pass / pass (46) | 366 passed, 181 skipped (547 total, as the WSL run) | 98.15 % on Windows (2 lines covered only by pg tests) |
+
+Every skip reason is "not run: Docker unavailable". The pg tests have NOT been run at any head yet: that is the
+tester's WSL step (R2).
+
+Migration gate, extracted from `m1-pr1`'s `manager.yml` (identical at `m1-pr5`), run locally: OK=12, MISMATCH=0.
+Each PR against its own base gives `migrations ok: 1 added, none changed` (PR 1 adds `versions/__init__.py` (exempt) and
+`m0001`). Push simulations m0 to PR 1 and PR 4 to PR 5 pass. The negative controls fail as they should: PR 2, PR 5 and
+`m1-db-audit-core` against `origin/m0-scaffolding`, PR 5 against PR 3, and a rewritten push (PR 5 to PR 4).
+The `migrations` job is present from PR 1 on, so every PR reports the check live.
+
+Equality: `git diff refs/m1-split/reference m1-pr5` is empty, and a fresh temporary-index snapshot of the live
+working tree, taken after all runs, has the same tree `3c2e1a4`. After this results section was written, the
+working tree differs from `m1-pr5` only in this file (bookkeeping, not amended into PR 5).
+Scripts: `%TEMP%\m1split\{gates.sh,head.sh,extract.py}`, logs `%TEMP%\m1split\pytest-m1-prN.log`.
