@@ -5,7 +5,7 @@ Docs audit (rounds 1 to 3): complete. Delivery plan approved by the user (M0 to 
 ## Roadmap (reordered 2026-10-20, see decisions.md)
 M0 scaffolding (done, PR #1 green) → M1 DB and audit core → M2 auth core → M3 agent API and scheduler (inventory) → M4 Go agent and pre-release `.deb` → M5 minimal host UI and package search → M6 first-release gate (agent heartbeat and `os_info` end to end) → M7 compliance catalog → M8 evaluator → M9 scan engine → M10 agent runner and sandbox → M11 results, re-evaluation, end-to-end. Next: planner breaks down M1; the lead brings the breakdown to the user for approval before any code.
 
-## M1 database and audit core: all tasks tested and approved (2026-10-20); exit-gate bookkeeping and the PR split remain, branch `m1-db-audit-core`
+## M1 database and audit core: DONE, merged to main 2026-10-21, branch `m1-db-audit-core`
 
 M1 breakdown approved by the user; open questions #38 to #45 and PD-18 answered (decisions.md). Work is uncommitted after `ae6a6b4` (TASK-011 to TASK-015).
 
@@ -23,6 +23,8 @@ M1 breakdown approved by the user; open questions #38 to #45 and PD-18 answered 
 | TASK-022 | CI forward-only, one-migration-per-PR gate | PASS (local; live GitHub check NOT RUN until the PRs are pushed) | APPROVED |
 
 M1 lands as five stacked PRs, one migration each (user decision). When the PRs are opened, ask the user: merge method, making the `migrations` check required in branch protection (otherwise a red gate does not block a merge), and "require branches to be up to date". Clean full WSL run (CHK-M1-240-r2): 547 passed, 0 skipped, coverage 100 %, 0 leftover containers.
+
+PR split (2026-10-20, plan `work/plans/M1-pr-split.md`): five local stacked branches built in the worktree `.claude/worktrees/m1-split`: m1-pr1 24bf548 (config, db migrate, m0001, harness, CI migration gate), m1-pr2 089eae0 (m0002, version compare), m1-pr3 7a40d67 (m0003), m1-pr4 17fe725 (m0004), m1-pr5 0b1a216 (m0005, db maintain, audit chain, README, records). Each head: static gates clean, Windows pytest 0 failed, local migration gate "1 added" against its own base. PR 5 tree equals the working tree. WSL run of each head with PostgreSQL (CHK-M1-242, 2026-10-21): PASS, 308/331/341/371/547 passed, 0 failed, 0 skipped, 0 leftover containers. Pushed 2026-10-21 and opened as stacked draft PRs: #2 (m1-pr1, base m0-scaffolding), #3 (m1-pr2), #4 (m1-pr3), #5 (m1-pr4), #6 (m1-pr5). 2026-10-21: live CI green on all five (5/5 checks each, incl. manager / migrations: CHK-M1-256 PASS). Merged in order with merge commits, each after its checks were green against main: #1 M0 (015c336), #2 (8b39ca5), #3 (c09034f), #4 (7bffd8b), #5 (25ea1c5), #6 (b1e99b8). main now equals the tested M1 tree (0 diff vs refs/m1-split/reference). Required checks are not available on this plan (decisions.md), so checks stay advisory.
 
 Team restarted 2026-10-20 on claude-opus (all roles): tester (finish TASK-019 r1, TASK-020, TASK-021 tests; WSL PostgreSQL run), impl-manager (TASK-021 step 2 after TASK-020 PASS; README), impl-deploy (TASK-022), reviewer (verdicts after each PASS). The previous tester's new test files were on disk but unverified (lint, format and mypy errors in them; Windows unit run 355 passed, 158 PostgreSQL skipped).
 
