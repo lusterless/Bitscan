@@ -121,6 +121,25 @@ def test_debversion_gives_the_recorded_relation_for_every_pair(owner: Conn) -> N
 
 
 @pytest.mark.pg
+def test_debversion_as_the_app_role(migrated_db: PgServer, app_conn: Conn) -> None:
+    """REQ-029 (3) from TASK-018 on: the same comparisons as bitscan_app, and the
+    indexed query on package, which needs the m0005 SELECT grant."""
+    pairs = load()
+    assert compare_all(app_conn, pairs) == []
+    with app_conn.transaction(force_rollback=True):
+        app_conn.execute("SET LOCAL enable_seqscan = off")
+        plan = "\n".join(
+            r[0]
+            for r in app_conn.execute(
+                "EXPLAIN SELECT package_id FROM package"
+                " WHERE name = %s AND version::debversion < %s::debversion",
+                ("openssl", "3.0.13-0ubuntu3.1"),
+            ).fetchall()
+        )
+    assert "ix_package_name_debver" in plan, plan
+
+
+@pytest.mark.pg
 def test_name_and_debversion_query_uses_the_index(owner: Conn) -> None:
     with owner.transaction(force_rollback=True):
         owner.execute("SET LOCAL enable_seqscan = off")
