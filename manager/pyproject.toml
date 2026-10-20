@@ -13,6 +13,9 @@ dependencies = [
     "apscheduler>=3.10,<4",
     "defusedxml>=0.7.1",
     "google-re2>=1.1",
+    "alembic>=1.13",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -23,7 +26,6 @@ dev = [
     "mypy>=1.13",
     "types-defusedxml",
     "testcontainers>=4.8",
-    "psycopg[binary]>=3.2",
     "httpx>=0.27",
     # Build backend (editables: hatchling's editable builds), so the project
     # installs with --no-build-isolation from hashed locks only.

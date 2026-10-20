@@ -139,6 +139,18 @@ def test_runtime_lock_has_the_stack() -> None:
     assert versions["apscheduler"].startswith("3.")
 
 
+def test_runtime_lock_has_the_database_stack() -> None:
+    """REQ-018: Alembic, SQLAlchemy and psycopg 3 with a bundled libpq (TS §5.3)."""
+    entries = parse(RUNTIME).entries
+    versions = {e.name: e.version for e in entries}
+    for name in ("alembic", "sqlalchemy", "psycopg", "psycopg-binary"):
+        assert name in versions, f"{name} missing from the runtime lock"
+    assert versions["psycopg"].startswith("3.")
+    assert versions["psycopg-binary"] == versions["psycopg"]
+    assert versions["sqlalchemy"].startswith("2.")
+    assert len([e for e in entries if e.name == "psycopg"]) == 1
+
+
 def test_dev_lock_is_a_superset_with_the_tools() -> None:
     runtime = {(e.name, e.version) for e in parse(RUNTIME).entries}
     dev = {(e.name, e.version) for e in parse(DEV).entries}
