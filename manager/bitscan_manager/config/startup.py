@@ -18,7 +18,7 @@ MAX_SECRET_FILE_BYTES = 64 * 1024
 
 
 class ConfigError(Exception):
-    """Message names the variable and the problem only; never a value or file content."""
+    """Names the variable and the problem only; never a value or file content."""
 
 
 @dataclass(frozen=True)
@@ -117,8 +117,19 @@ class _Loader:
     def readable_file(self, name: str) -> Path:
         value = self.required(name)
         path = Path(value)
-        if value and not (path.is_file() and os.access(path, os.R_OK)):
+        if not value:
+            return path
+        # Checked, not read: serve loads the certificate and key itself.
+        size: int | None = None
+        try:
+            if path.is_file() and os.access(path, os.R_OK):
+                size = path.stat().st_size
+        except OSError:
+            pass
+        if size is None:
             self.errors.append(f"{name}: file is missing or unreadable")
+        elif size == 0:
+            self.errors.append(f"{name}: file is empty")
         return path
 
     def listen(self, name: str) -> tuple[str, int]:
@@ -129,7 +140,12 @@ class _Loader:
             valid_host = bool(host)
         else:
             valid_host = bool(host) and ":" not in host and "[" not in host
-        valid_port = port.isascii() and port.isdigit() and 1 <= int(port) <= 65535
+        valid_port = (
+            len(port) <= 5
+            and port.isascii()
+            and port.isdigit()
+            and 1 <= int(port) <= 65535
+        )
         if not (sep and valid_host and valid_port):
             self.errors.append(f"{name} must be host:port with a port from 1 to 65535")
             return "", 0

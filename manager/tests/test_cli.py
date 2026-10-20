@@ -1,6 +1,8 @@
-"""REQ-008: bitscan-manager console script; only --help succeeds in M0.
+"""REQ-008 (narrowed in M1), REQ-020 (4), (6), (7): bitscan-manager console script.
 
-Checks CHK-M0-042 to CHK-M0-044 of tests/m0/test-plan.md.
+Checks CHK-M0-042 to CHK-M0-044 and CHK-M1-055/-056. From TASK-013 ``db migrate``
+is a real command; every other invocation keeps the M0 refusal: non-zero exit,
+no ``BITSCAN_*`` read, no socket and no database module.
 """
 
 import builtins
@@ -19,8 +21,23 @@ from bitscan_manager import cli
 
 from .test_app import EnvRecorder
 
-REFUSED = [[], ["serve"], ["db", "migrate"], ["db", "maintain"], ["bogus"]]
-DB_MODULES = ("psycopg", "sqlalchemy", "testcontainers", "asyncpg")
+STILL_STUBS = [
+    [],
+    ["serve"],
+    ["users", "create-admin", "x"],
+    ["bits", "rebuild"],
+    ["db"],
+    ["db", "downgrade"],
+    ["db", "downgrade", "base"],
+    ["db", "stamp", "head"],
+    ["db", "migrate", "extra"],
+    ["db", "maintain"],
+    ["bogus"],
+]
+# db migrate without its variable is also refused (exit 2, message on stderr).
+REFUSED = [*STILL_STUBS, ["db", "migrate"]]
+DB_MODULES = ("psycopg", "sqlalchemy", "alembic", "testcontainers", "asyncpg")
+MIGRATE = "BITSCAN_MIGRATE_DSN_FILE"
 
 
 def _run(argv: Sequence[str]) -> int:
@@ -60,10 +77,9 @@ def test_everything_else_is_refused_on_stderr(
     assert captured.out == ""
 
 
-@pytest.mark.parametrize("argv", [["serve"], ["db", "migrate"]])
-def test_refused_commands_touch_no_env_socket_or_db(
+def _guarded_run(
     monkeypatch: pytest.MonkeyPatch, argv: list[str]
-) -> None:
+) -> tuple[int, list[str], list[str]]:
     recorder = EnvRecorder(os.environ)
     imported: list[str] = []
     real_import = builtins.__import__
@@ -72,15 +88,37 @@ def test_refused_commands_touch_no_env_socket_or_db(
         imported.append(name)
         return real_import(name, *args, **kwargs)
 
+    monkeypatch.delenv(MIGRATE, raising=False)
     monkeypatch.setattr(os, "environ", recorder)
     monkeypatch.setattr(socket.socket, "__init__", _no_socket)
     monkeypatch.setattr(builtins, "__import__", recording_import)
-
-    assert _run(argv) != 0
-
+    code = _run(argv)
     monkeypatch.undo()
-    assert [m for m in imported if m.split(".")[0] in DB_MODULES] == []
-    assert [k for k in recorder.read if k.startswith("BITSCAN_")] == []
+    db = [m for m in imported if m.split(".")[0] in DB_MODULES]
+    db += [m for m in imported if m.startswith("bitscan_manager.db")]
+    return code, db, [k for k in recorder.read if k.startswith("BITSCAN_")]
+
+
+@pytest.mark.parametrize("argv", STILL_STUBS, ids=lambda a: " ".join(a) or "none")
+def test_refused_commands_touch_no_env_socket_or_db(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> None:
+    code, db, read = _guarded_run(monkeypatch, argv)
+    assert code != 0
+    assert db == []
+    assert read == []
+
+
+def test_db_migrate_without_its_variable_reads_only_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, db, read = _guarded_run(monkeypatch, ["db", "migrate"])
+    assert code == 2
+    assert db == []
+    assert set(read) == {MIGRATE}
+    captured = capsys.readouterr()
+    assert MIGRATE in captured.err
+    assert captured.out == ""
 
 
 def test_console_script_help() -> None:

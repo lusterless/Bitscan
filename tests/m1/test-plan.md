@@ -14,10 +14,16 @@ Owner: tester. Written 2026-10-20 from `work/tasks.md` "M1 database and audit co
 
 ## Superuser statements allowed in the harness (REQ-032 (1))
 
-Only these run as the container superuser; every other statement runs as `bitscan_migrate`, `bitscan_app` or `bitscan_retention`:
+Only these run as the container superuser, all inside `bootstrapped_server()` before it yields; every other statement runs as `bitscan_migrate`, `bitscan_app` or `bitscan_retention` (testing.md L51; ruling 2026-10-20):
 1. The TS §5.2 Bootstrap block, verbatim from L1018–L1033, with `\c bitscan` executed as a reconnect to database `bitscan`.
 2. `ALTER ROLE bitscan_migrate|bitscan_app|bitscan_retention PASSWORD <random per run>` (test-only passwords; never committed).
-3. Container TLS set-up (#45): the server starts with `ssl=on` and a throwaway self-signed key and certificate generated in the image build or per run, and `pg_hba.conf` allows the three LOGIN roles only over `hostssl`. These are server start options and files, not SQL statements; the only superuser SQL is items 1 and 2.
+3. The `bitscan_ref` Bootstrap-phase statements (#40): the database half of the Bootstrap block (`CREATE DATABASE`, `REVOKE ALL ... FROM PUBLIC`, `GRANT CONNECT` to the three LOGIN roles, then the post-`\c` statements) for database `bitscan_ref`, with only the database name changed. The TS §5.2 DDL and view blocks are applied later by the `reference_db` fixture to `bitscan_ref` as `bitscan_owner`, never as the superuser and never to `bitscan`.
+
+No superuser credential is reachable by a test: `PgServer` holds only the three LOGIN roles' passwords and the container's port bindings (not the container object, whose environment carries `POSTGRES_PASSWORD`); `PgServer.dsn("postgres")` raises.
+
+Read-only third-party statements before the Bootstrap (not harness code): the official image entrypoint's check for existing databases during initdb (a `SELECT` on `pg_database` over the local socket), and Testcontainers' readiness probe `psql ... -c 'select version();'` inside the container.
+
+Server configuration, not SQL (#45): the server starts with `ssl=on` and a throwaway self-signed key and certificate generated at image build, and `pg_hba.conf` allows TCP only over `hostssl`.
 
 ## Gate map
 
@@ -89,7 +95,7 @@ Unit tests in `manager/tests/test_config.py`, all without Docker. Each case uses
 | Id | Type | REQ | Check | Planted violation | Where |
 | --- | --- | --- | --- | --- | --- |
 | CHK-M1-050 | APP | REQ-020 (1) | Bootstrap only, then `bitscan-manager db migrate`: exit 0; `alembic_version.version_num` is the head revision of the shipped migrations | — | W |
-| CHK-M1-051 | APP | REQ-020 (2) | Every relation, index, sequence, type, function and view in `public`, and the Alembic version table (#41), is owned by `bitscan_owner`; none by `bitscan_migrate` (query over `pg_class`, `pg_type`, `pg_proc`) | object created without `SET ROLE` | W |
+| CHK-M1-051 | APP | REQ-020 (2), #41 (answered) | Every relation, index, sequence, type, function and view in `public` is owned by `bitscan_owner`; none by `bitscan_migrate` (query over `pg_class`, `pg_type`, `pg_proc`). `alembic_version` is in `public`, owned by `bitscan_owner`, and after `m0005` carries only the default blanket grants (SELECT and INSERT for `bitscan_app`, SELECT for `bitscan_retention`, nothing else) | object created without `SET ROLE`; extra grant on `alembic_version` | W |
 | CHK-M1-052 | APP | REQ-020 (3) | Second run exits 0; catalog snapshot (the schema-diff helper's full dump plus row counts of seeded tables) before and after is equal | non-idempotent migration | W |
 | CHK-M1-053 | CODE | REQ-020 (4) | Every module in `versions/`: calling `downgrade()` (if defined) raises; static check that no `downgrade` does work (AST: body is only `raise`). CLI: `db downgrade`, `db stamp`, `db`, `db bogus` exit non-zero and change nothing (catalog snapshot equal) | a working `downgrade()` (G22) | L (unit, AST); W (CLI) |
 | CHK-M1-054 | APP | REQ-020 (5) | DSN for `bitscan_app`: exit non-zero; no object created (catalog snapshot equals Bootstrap-only) | — | W |
@@ -106,7 +112,7 @@ Each part: (a) diff-equal to its TS §5.2 lines (schema-diff helper, ACLs exclud
 
 | Id | Type | REQ | Check | Planted violation | Where |
 | --- | --- | --- | --- | --- | --- |
-| CHK-M1-070 | CODE | REQ-021 (1), REQ-027 | Schema-diff helper (`tests/schema_diff.py`, method #40) unit-tested on two hand-made catalog dumps (equal, and each difference kind reported); then catalog objects of L638–L707 diff-equal | — | L (unit); W |
+| CHK-M1-070 | CODE | REQ-021 (1), REQ-027, #40 (answered) | Schema-diff helper (`tests/schema_diff.py`). Reference = the TS §5.2 SQL blocks extracted from the spec at test time (`spec_sql.py`) and applied as `bitscan_owner` to a **separate scratch database** in the same container (created for the reference only, never the database under test). Both databases are dumped with the same catalog queries (tables, columns, types, defaults, CHECKs, indexes, grants, trigger, view) and compared, excluding the monthly partitions and `alembic_version`. Unit-tested without Docker on two hand-made dumps (equal, and each difference kind reported with the object name); then the catalog objects of L638–L707 are diff-equal | — | L (unit); W |
 | CHK-M1-071 | CODE | REQ-021 (2) | `enum_range(NULL::plugin_operator)` equals the 14 spec labels in order; `policy_status`, `plugin_state` labels in order | reordered label | W |
 | CHK-M1-072 | CODE | REQ-021 (3) | `plugin.timeout_s` 0 and 601 rejected (23514), 1 and 600 accepted, default 60; `bit_import.mode` and `outcome` outside the sets rejected | — | W |
 | CHK-M1-073 | CODE | REQ-021 (4) | Defaults: `status_overridden` false, `format_version` `'1.0'`, `version` 1, `plugin.state` `active`, `bit_import.errors` `[]` | — | W |
@@ -159,7 +165,7 @@ Each part: (a) diff-equal to its TS §5.2 lines (schema-diff helper, ACLs exclud
 | CHK-M1-144 | CODE | REQ-026 (5) | Each partition owned by `bitscan_owner`; ACL = SELECT+INSERT app, SELECT retention | — | W |
 | CHK-M1-145 | CODE | REQ-026 (6) | A row with `job_created_at` in the current month lands in that month's partition (`tableoid::regclass`); `scan_result_default` empty after migrate | — | W |
 | CHK-M1-146 | APP | REQ-026 (7) | Migrate to `m0004` only (`alembic upgrade m0004` via the runner's test hook, or a copy without `m0005`): `system_schedule` and `setting` empty, only the default partition | — | W |
-| CHK-M1-150 | CODE | REQ-027 (1) | Full diff of the migrated `public` schema against the TS §5.2 reference (#40): extensions, types and labels, tables, columns (type, length, nullability, default, generated), constraints (PK, UNIQUE, FK + ON DELETE, CHECK), indexes (method, keys, predicate), function body, triggers, view, sequences, owners, table and column ACLs, default ACLs: no difference | — | W |
+| CHK-M1-150 | CODE | REQ-027 (1), #40 (answered) | Full diff of the migrated `public` schema against the reference scratch database built from the TS §5.2 blocks (CHK-M1-070 method): extensions, types and labels, tables, columns (type, length, nullability, default, generated), constraints (PK, UNIQUE, FK + ON DELETE, CHECK), indexes (method, keys, predicate), function body, triggers, view, sequences, owners, table and column ACLs, default ACLs: no difference. The reference database is dropped afterwards and never receives `db migrate` | — | W |
 | CHK-M1-151 | CODE | REQ-027 (2) | The four monthly partitions and `alembic_version` are excluded from the diff and checked by CHK-M1-143 and CHK-M1-051 (the exclusion list is exactly these) | broader exclusion | W |
 | CHK-M1-152 | CODE | REQ-027 (3), G19 | Throwaway `m0006` in a copy, one at a time: drop a CHECK, change a default, add a column, add a GRANT, drop an index: `test_schema_diff.py` red each time, naming the object | as stated | W |
 
