@@ -12,7 +12,9 @@
       "Bash(go build:*)",
       "Bash(go vet:*)",
       "Bash(gofmt:*)",
-      "Bash(golangci-lint run:*)"
+      "Bash(golangci-lint run:*)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -u root -- bash /mnt/c/Users/kaiquan.koh/AppData/Local/Temp/tester2_*.sh)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -u root -- docker ps:*)"
     ]
   }
 }

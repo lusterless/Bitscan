@@ -22,21 +22,28 @@ class Bootstrap:
     on_bitscan: tuple[str, ...]  # after \c bitscan
 
 
-def sql_block_after(text: str, heading: str) -> list[str]:
-    """Lines of the first ```sql fence after the line that starts with ``heading``."""
+def sql_block_after(text: str, heading: str, lang: str = "sql") -> list[str]:
+    """Lines of the first ```<lang> fence after the line starting with ``heading``."""
     lines = text.split("\n")
     start = next((i for i, line in enumerate(lines) if line.startswith(heading)), None)
     if start is None:
         raise ValueError(f"spec has no line starting with {heading!r}")
     for i in range(start + 1, len(lines)):
-        if lines[i].strip() == "```sql":
+        if lines[i].strip() == f"```{lang}":
             for j in range(i + 1, len(lines)):
                 if lines[j].strip() == "```":
                     return lines[i + 1 : j]
-            raise ValueError(f"unclosed sql fence after {heading!r}")
+            raise ValueError(f"unclosed {lang} fence after {heading!r}")
         if lines[i].startswith("**") or lines[i].startswith("#"):
             break
-    raise ValueError(f"no sql block directly after {heading!r}")
+    raise ValueError(f"no {lang} block directly after {heading!r}")
+
+
+def redaction_patterns(text: str | None = None) -> list[str]:
+    """TS §8.6 default redaction patterns, one per line, exactly as written."""
+    if text is None:
+        text = SPEC.read_text(encoding="utf-8")
+    return sql_block_after(text, "**Default redaction patterns**", lang="text")
 
 
 def split_statements(lines: list[str]) -> list[str]:

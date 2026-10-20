@@ -31,11 +31,11 @@ STILL_STUBS = [
     ["db", "downgrade", "base"],
     ["db", "stamp", "head"],
     ["db", "migrate", "extra"],
-    ["db", "maintain"],
+    ["db", "maintain", "extra"],
     ["bogus"],
 ]
 # db migrate without its variable is also refused (exit 2, message on stderr).
-REFUSED = [*STILL_STUBS, ["db", "migrate"]]
+REFUSED = [*STILL_STUBS, ["db", "migrate"], ["db", "maintain"]]
 DB_MODULES = ("psycopg", "sqlalchemy", "alembic", "testcontainers", "asyncpg")
 MIGRATE = "BITSCAN_MIGRATE_DSN_FILE"
 
@@ -109,10 +109,11 @@ def test_refused_commands_touch_no_env_socket_or_db(
     assert read == []
 
 
-def test_db_migrate_without_its_variable_reads_only_it(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("command", ["migrate", "maintain"])
+def test_db_command_without_its_variable_reads_only_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
 ) -> None:
-    code, db, read = _guarded_run(monkeypatch, ["db", "migrate"])
+    code, db, read = _guarded_run(monkeypatch, ["db", command])
     assert code == 2
     assert db == []
     assert set(read) == {MIGRATE}

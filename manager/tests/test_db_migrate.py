@@ -257,15 +257,128 @@ def test_bind_trap_scanner() -> None:
     assert len(bind_traps('{"all":true} and :x')) == 2
 
 
+# Module-level constants that are bound data (op.bulk_insert values), never SQL
+# text; main's ruling 2026-10-20. Named explicitly; the exemption is dropped if
+# the name reaches SQL (see sql_reaching_names).
+BOUND_DATA = {
+    "m0005_privileges_seeds.py": frozenset({"REDACTION_PATTERNS", "SETTINGS"})
+}
+SQL_CALLS = frozenset({"execute", "text", "exec_driver_sql"})
+
+
+def _names(node: ast.AST) -> set[str]:
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def sql_reaching_names(tree: ast.Module) -> set[str]:
+    """Names used inside op.execute/text()/sa.text arguments, or composed into a
+    string (f-string, %, +, .format) anywhere: such a name may become SQL text."""
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            name = (
+                func.attr
+                if isinstance(func, ast.Attribute)
+                else (func.id if isinstance(func, ast.Name) else "")
+            )
+            if name in SQL_CALLS or name == "format":
+                for arg in [*node.args, *[k.value for k in node.keywords]]:
+                    found |= _names(arg)
+                if name == "format" and isinstance(func, ast.Attribute):
+                    found |= _names(func.value)
+        elif isinstance(node, ast.JoinedStr):
+            found |= _names(node)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mod, ast.Add)):
+            found |= _names(node)
+    return found
+
+
+def traps_in_source(filename: str, source: str) -> list[tuple[int, str]]:
+    """Bind traps in every string literal of a migration, except the docstring and
+    the explicitly allowed bound-data constants that never reach SQL text."""
+    tree = ast.parse(source)
+    doc = ast.get_docstring(tree)
+    allowed = BOUND_DATA.get(filename, frozenset()) - sql_reaching_names(tree)
+    exempt: set[int] = set()
+    for stmt in tree.body:
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(stmt, ast.Assign):
+            targets, value = stmt.targets, stmt.value
+        elif isinstance(stmt, ast.AnnAssign):
+            targets, value = [stmt.target], stmt.value
+        if value is not None and any(
+            isinstance(t, ast.Name) and t.id in allowed for t in targets
+        ):
+            exempt |= {id(n) for n in ast.walk(value)}
+    traps = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node.value == doc or id(node) in exempt:
+                continue
+            traps += [(node.lineno, t) for t in bind_traps(node.value)]
+    return traps
+
+
 def test_migrations_have_no_bind_parameter_traps() -> None:
     for path in migration_files():
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        doc = ast.get_docstring(tree)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if node.value == doc:
-                    continue
-                assert bind_traps(node.value) == [], (path.name, bind_traps(node.value))
+        traps = traps_in_source(path.name, path.read_text(encoding="utf-8"))
+        assert traps == [], (path.name, traps)
+
+
+SEED = "m0005_privileges_seeds.py"
+PATTERNS = 'REDACTION_PATTERNS = (r"\\b(?:AKIA|ASIA)[0-9A-Z]{16}",)\n'
+
+
+@pytest.mark.parametrize(
+    ("label", "body", "caught"),
+    [
+        (
+            "bound data only",
+            "op.bulk_insert(t, [{'v': list(REDACTION_PATTERNS)}])\n",
+            False,
+        ),
+        (
+            "colon-word in an executed statement",
+            "STATEMENTS = ('SELECT :x',)\nfor s in STATEMENTS:\n    op.execute(s)\n",
+            True,
+        ),
+        (
+            "allowed constant used in text()",
+            "op.execute(sa.text(REDACTION_PATTERNS[0]))\n",
+            True,
+        ),
+        (
+            "allowed constant interpolated into SQL",
+            "op.execute(sa.text(f\"SELECT '{REDACTION_PATTERNS[0]}'\"))\n",
+            True,
+        ),
+        (
+            "allowed constant formatted into SQL",
+            "op.execute('SELECT {}'.format(REDACTION_PATTERNS[0]))\n",
+            True,
+        ),
+        (
+            "allowed constant %-composed",
+            "q = 'SELECT %s' % REDACTION_PATTERNS[0]\nop.execute(q)\n",
+            True,
+        ),
+        (
+            "same pattern, a name not on the allow-list",
+            PATTERNS.replace("REDACTION_PATTERNS", "OTHER") + "x = 1\n",
+            True,
+        ),
+    ],
+)
+def test_scanner_scope(label: str, body: str, caught: bool) -> None:
+    source = PATTERNS + body
+    assert bool(traps_in_source(SEED, source)) is caught, label
+
+
+def test_allow_list_does_not_leak_to_other_files() -> None:
+    source = PATTERNS + "op.bulk_insert(t, [{'v': list(REDACTION_PATTERNS)}])\n"
+    assert traps_in_source("m0006_other.py", source) != []
 
 
 def test_downgrade_functions_raise() -> None:
