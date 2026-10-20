@@ -4,7 +4,7 @@ Owner: tester. Per-task verdicts are in `work/reports/TASK-###-test.md`; per-che
 
 | Phase | Report | Summary |
 | --- | --- | --- |
-| M0 scaffolding | [m0/report.md](m0/report.md) | All 10 tasks TEST PASS. Lead re-run in WSL2 with Docker (see the end of m0/report.md): full pytest suite **58 passed, 0 skipped** with `CI=true`, PostgreSQL tests pass, Ryuk and postgres images pull by digest, real Linux hashed install OK. `systemd-analyze verify` on the nine units is clean on systemd 255 (Ubuntu 24.04, WSL) and goes red on four planted defects; the three Linux ELF stubs run as specified. Still NOT RUN: the live GitHub Actions runs (CI is the final proof for the systemd patch level and for file modes) |
+| M0 scaffolding | [m0/report.md](m0/report.md) | All 10 tasks TEST PASS. Lead re-run in WSL2 with Docker (see the end of m0/report.md): full pytest suite **58 passed, 0 skipped** with `CI=true`, PostgreSQL tests pass, Ryuk and postgres images pull by digest, real Linux hashed install OK. `systemd-analyze verify` on the nine units is clean on systemd 255 (Ubuntu 24.04, WSL) and goes red on four planted defects; the three Linux ELF stubs run as specified. **Live GitHub Actions on PR #1: all four workflows (manager, web, agent, units) green on their first run**: pytest 58 passed with 0 skipped on the runner, `systemd-analyze verify` clean, stubs run. Only arm64 stub execution remains open (deferred to M6) |
 | M1 to M8 | not started | |
 
 ## M0 per task
