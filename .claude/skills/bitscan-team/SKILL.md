@@ -1,7 +1,7 @@
 ---
 name: bitscan-team
 description: Run the Bitscan agent team. The current session becomes the team manager (lead) that breaks a goal into REQ/TASK micro-tasks, then drives plan, implement, test and review with planner, implementer, tester and reviewer teammates.
-argument-hint: "<goal, e.g. 'M2 importer, validator, evaluator' or 'break down the whole spec'>"
+argument-hint: "<goal, e.g. 'M3 agent API and scheduler' or 'break down the whole spec'>"
 disable-model-invocation: true
 ---
 
@@ -14,7 +14,7 @@ Manage the team and help the user break requirements into micro-tasks, then driv
 
 ## Sources of truth
 - `docs/spec/Technical_Specification.md` (TS) and `docs/spec/bit_Schema_Reference.md` (SR). The spec wins over older plans, code and teammates' assumptions. If they are missing, stop and ask the user.
-- Milestone order (older plans outside this repo predate the 19 Oct spec; ignore them): M0 scaffolding, M1 DB + Debian version compare, M2 importer/validator/evaluator, M3 auth/RBAC/API plumbing, M4 agent API + scheduler, M5 user API, M6 Go agent + .deb, M7 web UI, M8 end-to-end/load/observability.
+- Milestone order (older plans outside this repo predate the 19 Oct spec; ignore them): M0 scaffolding (done), M1 DB + audit core + Debian version compare, M2 auth core and API plumbing, M3 agent API and scheduler (inventory only), M4 Go agent and pre-release .deb, M5 minimal host UI and package search, M6 first-release gate (agent heartbeat and os_info end to end), M7 compliance catalog (importer, validator), M8 evaluator, M9 scan engine, M10 agent runner and sandbox, M11 results and end-to-end.
 - `.claude/CLAUDE.md` (layout, commands, owner decisions, out-of-scope list, team conventions) and `.claude/rules/` (security invariants plus path-scoped rules per area) are the project rules. Teammates auto-load CLAUDE.md; still tell each one to read `.claude/rules/security-invariants.md` and the rule files matching the area it works in.
 - Never invent fields, endpoints, tables or behaviour. Spec ambiguity or conflict: resolve from the spec if it is clear; otherwise ask the user (AskUserQuestion) and record the answer in `work/decisions.md`. Do not let teammates guess.
 
@@ -28,7 +28,7 @@ Manage the team and help the user break requirements into micro-tasks, then driv
 - Nobody commits or pushes unless the user asks.
 
 ## Phase A: PLAN (before any code)
-1. Scope the goal with the user's words. If it is a whole milestone or the whole spec, plan one milestone at a time, in order.
+1. Scope the goal with the user's words. If it is a whole milestone or the whole spec, plan one milestone at a time, in the milestone order above.
 2. Spawn one teammate named `planner` (agent type `planner`). Spawn prompt must include: the goal and milestone(s), the spec file paths and the TS/SR sections to cover, the conventions above, and the deliverables (`work/requirements.md`, `work/tasks.md`, `work/open-questions.md`).
 3. Review its output yourself before showing the user: every REQ traces to a spec section; every spec section in scope is covered or listed as uncovered; every TASK is <= 200 LOC / <= 5 files with a one-sentence acceptance test; dependencies are acyclic; parallel tasks have disjoint files; interface-defining tasks come first. Send it back for fixes if not.
 4. **Stop and present the breakdown to the user for approval:** counts, waves, the dependency spine, risks, and the open questions needing their decision. Do not spawn implementers, testers or reviewers until they approve. Apply their edits via the planner.

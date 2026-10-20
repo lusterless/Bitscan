@@ -21,7 +21,27 @@ None of these has been answered. When the owner answers one:
 
 ## Status summary
 
-Every agreed entry (#1–#18 and #20–#33) has its marker or pointer in `.claude/` (part 2). #19 is **withdrawn** and has no marker. #34 (M0 planning) is **proposed**, so no rule marker may point at it yet. Next free number: **#35**.
+Every agreed entry (#1–#18 and #20–#33) has its marker or pointer in `.claude/` (part 2). #19 is **withdrawn** and has no marker. #34 (M0 planning) and #35–#37 (milestone reorder, 2026-10-20) are **proposed**, so no rule marker may point at them yet. Next free number: **#38**.
+
+## Milestone reorder (2026-10-20)
+
+The user approved a new milestone order (`work/decisions.md`, 2026-10-20 rows): M1 DB, M2 auth and API plumbing, M3 agent API and inventory scheduler, M4 Go agent and `.deb` (0.x), M5 minimal host UI and package search, M6 first-release gate, then compliance in M7 to M11. Milestone numbers in this file use the new order.
+
+**Needed before the first release (M1 to M6):**
+- Numbered questions: #4, #5, #6, #7, #24, #25, #26, #30, #33, #35, #36, #37.
+- The own-question marker at `.claude/rules/manager/inventory-and-packages.md:16`: does a late `job_id` upload count against the 10-minute unscheduled limit?
+- Process decisions: PD-18 (first-migration size, M1) and PD-3 (second approver).
+
+**Can wait for compliance (M7 to M11):** #1–#3, #8–#18, #20–#23 (#19 is withdrawn), #27–#29, #31, and #32 partly.
+- #32 (package type-ahead) also touches the M5 package-search UI. Only the type-ahead part can wait, and only if M5 ships without type-ahead; the lead should confirm that.
+- #28 can wait for the 0.x pre-release, but it must be answered before the first *supported* agent release (`work/decisions.md`, 2026-10-20).
+
+**Not in the lead's lists; the planner suggests they also matter before the first release (lead to confirm):**
+- #34: is the OpenAPI document served? The first routes arrive in M2 and M3.
+- `auth-and-users.md`: the login "repeated failures alert" threshold (M2).
+- `audit-and-alerts.md`: the "repeated 401s" threshold (M3 and M6).
+- `testing.md`: whether to add the performance gates (M6 load test).
+- The CLAUDE.md N / N−1 compatibility marker: before the first supported release.
 
 ## 1. Numbered questions
 
@@ -61,8 +81,11 @@ Every agreed entry (#1–#18 and #20–#33) has its marker or pointer in `.claud
 | 32 | TS §7.3 asks for package type-ahead (top 10 names), but TS §6.2 has no route for it, and `/packages/search` rows are per version or per host, never per distinct name (`q` needs at least 3 characters). How does the UI get the names? | TS §7.3 (L1223); TS §6.2 (L1117); TS §7.1 (L1200, L1214) | R2-T-04 | (tester to supply) | agreed (tester, planner) |
 | 33 | TS §3.4 compares `list_sha256` with the last snapshot. Does the manager recompute it from `packages` or trust the agent's value? TS §6.1 says the manager re-checks size caps, not the hash | TS §3.4 (L241); TS §6.5 (L1186); TS §6.1 (L1072) | R2-T-05 | Recompute, and treat a mismatch as 422 | agreed (tester, planner) |
 | 34 | Is the OpenAPI 3.1 document served by the running manager, and if so at which route and with which authentication? TS §6 says only that the API is "described by an OpenAPI 3.1 document generated from code". TS §6.2 lists no route for it, and TS §2.3 says every call carries a bearer token. FastAPI by default serves `/openapi.json`, `/docs` and `/redoc` without authentication, and `/docs` loads its assets from another origin, which the TS §6.3 CSP (`default-src 'self'`) forbids | TS §6 (L1056), TS §6.2, TS §2.3 (L118), TS §6.3; TS §6.5 (L1159) | M0 planning (REQ-006, REQ-007) | Not served in v1. The document is exported at build time and committed (`manager/openapi.json`), and the web client and contract fixtures are generated from that file. M0 disables the three default routes, which adds nothing the spec does not list | proposed (planner) |
+| 35 | Which rule applies to the agent's own inventory collection? TS §3.4 has `bitscan-agent` run `uname -r -m`, `hostnamectl`, `nproc`, `ip -j addr` and `dpkg-query` itself ("Collection runs in `bitscan-agent` (no root or runner needed)"). But `.claude/rules/agent/agent.md:56` says "Never … Add code that executes commands outside the runner" | TS §3.4 (L234, L235, L238); TS §3.3 (L213); `.claude/rules/agent/agent.md:47`, `:56` | milestone reorder (M4) | Inventory collection is spec-defined and allowed in the agent: a fixed argv per command, run without a shell, taking no input from any job, the heartbeat or the manager. The agent.md rule is about job (plugin) commands, which only the runner executes | proposed (planner) |
+| 36 | When is the first inventory job queued after an agent is approved? TS §3.4 says only that the scheduler queues one inventory job per eligible agent "every `system_schedule.interval_s` for `inventory` (default 6 h)", and the dpkg watcher uploads only when packages change. So a newly approved host may show no `os_info` or packages for up to 6 h | TS §3.4 (L230, L239); TS §3.3; TS §3.2 step 5 (L185) | milestone reorder (M3) | Queue one inventory job when an enrolment is approved (or auto-approved), or at the agent's first heartbeat, and keep the regular interval after that | proposed (planner) |
+| 37 | How is the first `bse_` enrolment token created before the web UI exists (M5)? TS §3.2 step 1 says an admin creates it "in the UI", and the TS §6.2 route `/enrollment-tokens` needs an admin TOTP-verified session. The TS §8.7 server CLI list ("commands such as `users create-admin`, `users create-api-token`, `users reset-totp` and `bits rebuild`") has no command for it | TS §3.2 (L181); TS §6.2 (CRUD `/enrollment-tokens`, TOTP session); TS §8.7 (L1347) | milestone reorder (M3, M4) | Until M5, M3 tests and the M4 agent work create tokens through the API with an admin TOTP-verified session (`POST /auth/login` plus TOTP, then `/enrollment-tokens`), never with an API token. Whether a CLI command may be added is the owner's decision; `work/decisions.md` (2026-10-20) bars one until then | proposed (planner) |
 
-Next free number: #35.
+Next free number: #38.
 
 ## 2. Open spec question markers in `.claude/` (from a fresh grep, end of audit)
 

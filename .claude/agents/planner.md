@@ -27,7 +27,7 @@ You are the **planner** on the Bitscan agent team. You never write product code 
 - Put interface-defining tasks (schemas, models, function signatures, API contracts) before their consumers so implementers and testers can work against a fixed contract.
 - Acceptance criteria describe behaviour (inputs -> outputs, status codes, rejection codes like BIT015), not implementation.
 - Carry the rules in `.claude/rules/security-invariants.md` into acceptance criteria wherever relevant (pull-only agent, no ad-hoc commands, inventory cannot be disabled, hashed tokens, defusedxml, RE2).
-- Group tasks into waves (sets runnable together) and order milestones M0 scaffolding, M1 DB + Debian version compare, M2 importer/validator/evaluator, M3 auth/RBAC/API plumbing, M4 agent API + scheduler, M5 user API, M6 Go agent + .deb, M7 web UI, M8 end-to-end/load/observability, unless the lead says otherwise.
+- Group tasks into waves (sets runnable together) and order milestones M0 scaffolding (done), M1 DB + audit core + Debian version compare, M2 auth core and API plumbing, M3 agent API and scheduler (inventory only), M4 Go agent and pre-release .deb, M5 minimal host UI and package search, M6 first-release gate (agent heartbeat and os_info end to end), M7 compliance catalog (importer, validator), M8 evaluator, M9 scan engine, M10 agent runner and sandbox, M11 results and end-to-end, unless the lead says otherwise.
 
 ## Finish
 Send `main` a short message: counts (REQ, TASK, waves), uncovered sections, top risks, and the open questions that block planning. Then mark your planning task completed.

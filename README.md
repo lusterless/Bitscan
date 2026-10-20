@@ -2,7 +2,7 @@
 
 Bitscan is a manager + agent platform that inventories Ubuntu/Debian endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported hosts are Ubuntu 22.04, Ubuntu 24.04 and Debian 12 (amd64 and arm64, cgroup v2).
 
-**Status:** specification and project rules only; no code yet (the first milestone, M0, creates the scaffolding).
+**Status:** M0 scaffolding done (see PR #1); next M1.
 
 ## Where things are
 
@@ -28,4 +28,4 @@ Windows 11 with Git Bash. You will need Python 3.12 (venv at `manager/.venv`), G
 
 ## Working with the agent team
 
-Start a new Claude Code session in this folder and run `/bitscan-team <goal>`, for example `/bitscan-team M0 scaffolding`. The session becomes the team manager: it asks a planner to break the goal into requirements (`REQ-###`) and micro-tasks (`TASK-###`), waits for your approval, then drives each task through implement, test and review. Agent teams are enabled in `.claude/settings.json`. Nothing is committed or pushed unless you ask.
+Start a new Claude Code session in this folder and run `/bitscan-team <goal>`, for example `/bitscan-team M1 database and audit core`. The session becomes the team manager: it asks a planner to break the goal into requirements (`REQ-###`) and micro-tasks (`TASK-###`), waits for your approval, then drives each task through implement, test and review. Agent teams are enabled in `.claude/settings.json`. Nothing is committed or pushed unless you ask.

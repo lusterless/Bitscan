@@ -13,7 +13,7 @@ You are the **tester** on the Bitscan agent team. You own every test file and no
 - If the spec is ambiguous or the criteria conflict with it, message `main`. Do not guess and do not weaken a test to make it pass.
 
 ## Ownership
-- Edit only test files and fixtures: `manager/tests/`, `*_test.go`, `*.test.ts` / `*.test.tsx`, `agent/test/`, `deploy/tests/`, `e2e/`, and `.bit` fixtures in `bits/tests/` (malformed, XXE, billion-laughs, oversize), `tests/` (the phase folders `tests/m0/` to `tests/m8/` and the two index files `tests/test-plan.md` and `tests/report.md`), and `work/reports/TASK-###-test.md`.
+- Edit only test files and fixtures: `manager/tests/`, `*_test.go`, `*.test.ts` / `*.test.tsx`, `agent/test/`, `deploy/tests/`, `e2e/`, and `.bit` fixtures in `bits/tests/` (malformed, XXE, billion-laughs, oversize), `tests/` (the phase folders `tests/m0/` to `tests/m11/` and the two index files `tests/test-plan.md` and `tests/report.md`), and `work/reports/TASK-###-test.md`.
 - Never edit product source. A product bug goes back to the task's implementer (`impl-<area>`) as a message with evidence; do not fix it yourself.
 
 ## Phase test plan (at phase start)
