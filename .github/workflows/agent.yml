@@ -1,0 +1,117 @@
+name: agent
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+
+      - name: gofmt
+        run: |
+          out="$(gofmt -l agent)"
+          if [ -n "$out" ]; then
+            printf 'gofmt -l agent lists unformatted files:\n%s\n' "$out"
+            exit 1
+          fi
+
+      - name: Install golangci-lint v2.14.0
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+
+      - name: golangci-lint
+        working-directory: agent
+        run: golangci-lint run ./...
+
+      - name: No nolint or go:linkname in non-test code
+        working-directory: agent
+        run: |
+          if grep -rnE --include='*.go' --exclude='*_test.go' '//[[:space:]]*(nolint|go:linkname)' .; then
+            echo "nolint or go:linkname in non-test agent code (TS §2.2, §8.1); exceptions need a reviewed allow-list"
+            exit 1
+          fi
+
+      - name: go mod verify
+        working-directory: agent
+        run: go mod verify
+
+      - name: Build static linux binaries (CGO_ENABLED=0)
+        working-directory: agent
+        run: |
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "bin/linux_$arch/" ./cmd/...
+            for name in bitscan-agent bitscan-runner bitscan-capread; do
+              bin="bin/linux_$arch/$name"
+              info="$(go version -m "$bin")"
+              for want in CGO_ENABLED=0 GOOS=linux "GOARCH=$arch"; do
+                if ! grep -qE "^[[:space:]]+build[[:space:]]+$want\$" <<<"$info"; then
+                  printf '%s: go version -m does not show %s\n%s\n' "$bin" "$want" "$info"
+                  exit 1
+                fi
+              done
+              kind="$(file -b "$bin")"
+              if [[ "$kind" != *"statically linked"* ]]; then
+                echo "$bin is not statically linked: $kind"
+                exit 1
+              fi
+            done
+          done
+
+      - name: Run linux/amd64 stubs
+        working-directory: agent
+        run: |
+          for name in bitscan-agent bitscan-runner bitscan-capread; do
+            bin="bin/linux_amd64/$name"
+            out="$RUNNER_TEMP/$name.stdout"
+            err="$RUNNER_TEMP/$name.stderr"
+            if timeout 1 "$bin" >"$out" 2>"$err"; then
+              echo "$name exited 0; want non-zero"
+              exit 1
+            else
+              rc=$?
+            fi
+            if [ "$rc" -ge 124 ]; then
+              echo "$name: timeout or exec failure (exit $rc); want a non-zero exit within 1 s"
+              exit 1
+            fi
+            if [ -s "$out" ]; then
+              printf '%s wrote to stdout:\n%s\n' "$name" "$(cat "$out")"
+              exit 1
+            fi
+            if [ "$(wc -l <"$err")" -ne 1 ] || [ "$(cat "$err")" != "$name: not implemented" ]; then
+              printf '%s stderr is not one "%s: not implemented" line:\n%s\n' "$name" "$name" "$(cat "$err")"
+              exit 1
+            fi
+          done
+
+      - name: No cgo, assembly or object files (go list)
+        working-directory: agent
+        run: |
+          for arch in amd64 arm64; do
+            out="$(CGO_ENABLED=1 GOOS=linux GOARCH="$arch" go list -f '{{if or .CgoFiles .SFiles .SysoFiles}}{{.ImportPath}}: cgo={{.CgoFiles}} asm={{.SFiles}} syso={{.SysoFiles}}{{end}}' ./...)"
+            if [ -n "$out" ]; then
+              printf 'cgo, assembly or object files found for linux/%s (TS §8.2: no CGO; TS §2.2):\n%s\n' "$arch" "$out"
+              exit 1
+            fi
+          done
+
+      - name: go test
+        working-directory: agent
+        run: go test ./...

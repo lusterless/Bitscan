@@ -1,0 +1,67 @@
+# golangci-lint v2 config; CI pins golangci-lint 2.14.0 (PD-14 (c)).
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - forbidigo
+    - gosec
+    - nolintlint
+  settings:
+    errorlint:
+      errorf: true
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^net\.(Listen|ListenTCP|ListenUDP|ListenUnix|ListenUnixgram|ListenPacket|ListenIP|ListenMulticastUDP)$
+          pkg: ^net$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2). Runner and capread sockets come from systemd socket units (TS §3.7).
+        - pattern: ^net\.ListenConfig\.(Listen|ListenPacket)$
+          pkg: ^net$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2). Runner and capread sockets come from systemd socket units (TS §3.7).
+        - pattern: ^http\.(ListenAndServe|ListenAndServeTLS|Serve|ServeTLS)$
+          pkg: ^net/http$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+        - pattern: ^http\.Server\.(ListenAndServe|ListenAndServeTLS|Serve|ServeTLS)$
+          pkg: ^net/http$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+        # The types too, so embedding or calling through an interface is caught.
+        - pattern: ^http\.Server$
+          pkg: ^net/http$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+        - pattern: ^net\.ListenConfig$
+          pkg: ^net$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+        - pattern: ^httptest\.
+          pkg: ^net/http/httptest$
+          msg: the agent opens no listening socket; httptest is for _test.go files only (TS §2.2).
+        - pattern: ^syscall\.(Listen|Socket|Bind)$
+          pkg: ^syscall$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+        - pattern: ^unix\.(Listen|Socket|Bind)$
+          pkg: ^golang\.org/x/sys/unix$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+        # M6 adds narrow exceptions for runner and capread socket activation (TS §3.7).
+        - pattern: ^net\.FileListener$
+          pkg: ^net$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+        - pattern: ^tls\.Config\.InsecureSkipVerify$
+          pkg: ^crypto/tls$
+          msg: never skip manager certificate verification; tests use a test CA via ca_file (TS §8.1).
+  exclusions:
+    generated: disable
+    rules:
+      # Tests may start an httptest server as a fake manager. Only the listener
+      # rules are lifted; InsecureSkipVerify stays forbidden in tests.
+      - path: _test\.go$
+        linters:
+          - forbidigo
+        text: no listening socket
+
+formatters:
+  enable:
+    - gofmt

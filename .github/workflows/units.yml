@@ -1,0 +1,60 @@
+name: units
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Units match the spec blocks verbatim
+        run: python deploy/tests/check_units_verbatim.py all
+
+      - name: Install agent stubs to /usr/sbin
+        working-directory: agent
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux_amd64/ ./cmd/...
+          sudo install -m 0755 bin/linux_amd64/bitscan-agent bin/linux_amd64/bitscan-runner bin/linux_amd64/bitscan-capread /usr/sbin/
+
+      # CI scaffolding only: the manager install method is still open (work/open-questions.md #6).
+      - name: Install bitscan-manager to /usr/bin
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes -r manager/requirements-dev.txt
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --no-deps --no-build-isolation ./manager
+          sudo ln -s "$RUNNER_TEMP/venv/bin/bitscan-manager" /usr/bin/bitscan-manager
+          bitscan-manager --help
+
+      - name: systemd-analyze verify
+        run: |
+          systemd-analyze --version
+          if ! out="$(systemd-analyze verify deploy/systemd/* 2>&1)"; then
+            printf 'systemd-analyze verify failed:\n%s\n' "$out"
+            exit 1
+          fi
+          if [ -n "$out" ]; then
+            printf 'systemd-analyze verify printed output:\n%s\n' "$out"
+            exit 1
+          fi

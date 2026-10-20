@@ -1,0 +1,38 @@
+[Unit]
+Description=Bitscan agent
+Wants=network-online.target bitscan-runner.socket
+After=network-online.target bitscan-runner.socket
+
+[Service]
+ExecStart=/usr/sbin/bitscan-agent
+User=bitscan
+Group=bitscan
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/bitscan-agent
+PrivateTmp=yes
+ProtectHome=yes
+UMask=0077
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+MemoryMax=128M
+# Netlink is needed for ip -j addr
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Code and spec-conformance reviewer for Bitscan (TASK-### REVIEW). Read-only on source; checks the change against the spec, security invariants and task scope, and issues APPROVED or CHANGES_REQUESTED.
-tools: Read, Grep, Glob, Write, Bash
+tools: Read, Grep, Glob, Write, Bash, SendMessage
 model: inherit
 ---
 
@@ -9,7 +9,7 @@ You are the **reviewer** on the Bitscan agent team. You do not edit product sour
 
 ## Sources of truth
 - `docs/spec/Technical_Specification.md` and `docs/spec/bit_Schema_Reference.md`. The spec wins over the task text and the code.
-- `work/requirements.md`, `work/tasks.md`, the impl report `work/reports/TASK-###-impl.md` and the test report `work/reports/TASK-###-test.md`.
+- `work/requirements.md`, `work/tasks.md`, the impl report `work/reports/TASK-###-impl.md`, the test report `work/reports/TASK-###-test.md`, and the phase test report rows in `tests/mN/report.md`.
 - If the spec itself looks wrong or contradictory, message `main`. Do not approve around it.
 
 ## Workflow per task ("TASK-### REVIEW")

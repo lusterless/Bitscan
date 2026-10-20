@@ -74,7 +74,8 @@ bits/samples/         # sample .bit policies (owned by impl-bits)
 bits/tests/           # .bit test fixtures: malformed, XXE, billion-laughs, oversize (owned by tester)
 deploy/{systemd,dbus,debian,runbooks,tests}/
 e2e/                  # nightly end-to-end and load tests
-.github/workflows/
+tests/                # phase test plans and reports: tests/m0..m8/{test-plan,report}.md plus index files tests/test-plan.md and tests/report.md (owned by tester)
+.github/workflows/    # CI (owned by impl-deploy)
 docs/spec/            # TS and SR; never edited as part of a code change
 work/                 # agent-team output (see "Agent team" below)
 ```
@@ -110,6 +111,7 @@ work/                 # agent-team output (see "Agent team" below)
 
 - Ids: `REQ-###` requirements, `TASK-###` micro-tasks; every TASK links at least one REQ. A micro-task is one PR-sized change: about 200 lines or fewer, at most 5 files, independently testable.
 - Each TASK is tracked as `TASK-012 IMPL`, `TASK-012 TEST`, `TASK-012 REVIEW`, in that dependency order. TEST completes only with PASS and REVIEW only with APPROVED.
-- Ownership: `planner` owns `work/requirements.md`, `work/tasks.md`, `work/plans/`, `work/open-questions.md`; `impl-<area>` (agent type `implementer`) owns non-test files in `manager/`, `agent/`, `web/`, `bits/samples/` or `deploy/`, plus `work/reports/TASK-###-impl.md`; `tester` owns all test files and fixtures (`manager/tests/`, `*_test.go`, `*.test.ts(x)`, `agent/test/`, `deploy/tests/`, `e2e/`, `bits/tests/`) plus `work/reports/TASK-###-test.md`; `reviewer` owns `work/reviews/`; the lead owns `work/status.md` and `work/decisions.md`. Need a change elsewhere: message the owner.
+- Ownership: `planner` owns `work/requirements.md`, `work/tasks.md`, `work/plans/`, `work/open-questions.md`; `impl-<area>` (agent type `implementer`) owns non-test files in `manager/`, `agent/`, `web/`, `bits/samples/` or `deploy/`, plus `work/reports/TASK-###-impl.md`, and `impl-deploy` also owns `.github/workflows/`; `tester` owns all test files and fixtures (`manager/tests/`, `*_test.go`, `*.test.ts(x)`, `agent/test/`, `deploy/tests/`, `e2e/`, `bits/tests/`, `tests/`) plus `work/reports/TASK-###-test.md`; `reviewer` owns `work/reviews/`; the lead owns `work/status.md` and `work/decisions.md`. Need a change elsewhere: message the owner.
+- Per task, the implementer messages `tester` when IMPL is done (task id, impl report path). The tester drafts `tests/mN/test-plan.md` at phase start from the acceptance criteria (allowed before IMPL, it does not read code first), runs it after the implementer's message, writes pass/fail per check to `tests/mN/report.md`, then messages `impl-<area>`, `reviewer` and `main`. Check ids look like `CHK-M2-014`, type APP (running app) or CODE; report rows give command, PASS/FAIL/NOT RUN (with reason) and evidence.
 - Durable output goes in `work/` (plans, reports, reviews), not only in messages. Ambiguity or an **Open spec question**: message the lead (teammates address it as `main`), who asks the user. Never guess.
 - `work/audit/archive/` is history; do not read it unless asked.

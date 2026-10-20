@@ -6,6 +6,7 @@ paths:
   - "deploy/tests/**"
   - "e2e/**"
   - "bits/tests/**"
+  - "tests/**"
   - "web/**/*.test.ts"
   - "web/**/*.test.tsx"
   - ".github/workflows/**"
@@ -13,7 +14,7 @@ paths:
 
 # Tests and CI gates
 
-The full matrix is in TS §8.3. Do not lower a gate, skip a test or mark one expected-to-fail to get a change through; ask first. Test locations: Python in `manager/tests/`, Go unit and agent tests as `*_test.go`, sandbox and security VM suites in `agent/test/sandbox/`, package tests in `deploy/tests/`, end-to-end and load in `e2e/`, web tests as `web/**/*.test.ts(x)`, and `.bit` fixtures (malformed, XXE, billion-laughs, oversize) in `bits/tests/`.
+The full matrix is in TS §8.3. Do not lower a gate, skip a test or mark one expected-to-fail to get a change through; ask first. Test locations: Python in `manager/tests/`, Go unit and agent tests as `*_test.go`, sandbox and security VM suites in `agent/test/sandbox/`, package tests in `deploy/tests/`, end-to-end and load in `e2e/`, web tests as `web/**/*.test.ts(x)`, `.bit` fixtures (malformed, XXE, billion-laughs, oversize) in `bits/tests/`, and phase test plans and reports in `tests/` (`tests/m0..m8/{test-plan,report}.md` plus the index files `tests/test-plan.md` and `tests/report.md`).
 
 - **Unit:** cover the parser, normaliser (CRLF, trimming; `.gitattributes` has `* text=auto eol=lf`, so build CRLF inputs as in-code literals such as `"\r\n"`, or mark their fixture paths `-text` in `.gitattributes`), validators (one case per BIT code), Debian version comparison (against `dpkg --compare-versions`, at least 500 pairs, TS §7.2), `evaluate()` (every one of the 14 operators and every ERROR case) and the BIT102 lexer (the SR §1.1 example, a corpus of common CIS commands and the allowed read-only uses must pass), plus CSV formula escaping for every export (TS §6.3). Redaction fixtures:
   - must be redacted: a shadow line, a full and a cut-off private key, `key=value`, a `bsa_` token (TS §8.3), AKIA and ASIA key ids (TS §8.6 pattern 4);

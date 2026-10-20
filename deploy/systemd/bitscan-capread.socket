@@ -1,0 +1,11 @@
+[Unit]
+Description=Bitscan read-only capability helper socket
+
+[Socket]
+ListenStream=/run/bitscan/capread.sock
+SocketUser=root
+SocketGroup=bitscan-runner
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target
