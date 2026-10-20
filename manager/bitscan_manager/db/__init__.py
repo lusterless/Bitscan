@@ -29,11 +29,26 @@ def _alembic_config(connection: Connection) -> Config:
     return config
 
 
-def _scrub(message: str, dsn: str) -> str:
-    secrets = [dsn]
-    password = conninfo_to_dict(dsn).get("password")
-    if password:
-        secrets.append(str(password))
+def dsn_secrets(dsn: str) -> tuple[str, ...] | None:
+    """The DSN and its password, for scrub(); None if the DSN does not parse.
+
+    Never raises. psycopg's parse error quotes part of the DSN, so for an
+    unparsable DSN no driver message may be shown at all.
+    """
+    params: dict[str, object] | None = None
+    try:
+        params = dict(conninfo_to_dict(dsn))
+    except psycopg.Error:
+        pass
+    if params is None:
+        return None
+    password = params.get("password")
+    return (dsn, str(password)) if password else (dsn,)
+
+
+def scrub(message: str, secrets: tuple[str, ...] | None) -> str:
+    if secrets is None:
+        return "the DSN is not a valid PostgreSQL DSN"
     for secret in secrets:
         message = message.replace(secret, "**********")
     return message
@@ -71,10 +86,11 @@ def run_migrations(dsn: SecretStr) -> str:
     There is no downgrade path. Raises MigrationError on any failure.
     """
     secret = dsn.get_secret_value()
+    secrets = dsn_secrets(secret)
     message: str | None = None
     try:
         return _upgrade(secret)
     except Exception as exc:
-        message = _scrub(f"{type(exc).__name__}: {exc}", secret)
+        message = scrub(f"{type(exc).__name__}: {exc}", secrets)
     # Raised outside the except block, so the original error is not chained.
     raise MigrationError(message)
