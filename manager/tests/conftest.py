@@ -22,6 +22,7 @@ Without Docker the ``pg`` tests are skipped with "not run: Docker unavailable",
 unless ``CI=true``, where the same condition fails the run (PD-15).
 """
 
+import hashlib
 import os
 import secrets
 import shutil
@@ -38,8 +39,27 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
-IMAGE_TAG = "bitscan-test-postgres:16"
 BUILD_CONTEXT = Path(__file__).resolve().parent / "postgres"
+
+
+def context_tag(context: Path = BUILD_CONTEXT) -> str:
+    """Tag the test image by its build context, so trees never retag each other."""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in context.rglob("*") if p.is_file()):
+        digest.update(path.relative_to(context).as_posix().encode() + b"\0")
+        digest.update(path.read_bytes() + b"\0")
+    return f"bitscan-test-postgres:16-{digest.hexdigest()[:12]}"
+
+
+IMAGE_TAG = context_tag()
+# The Dockerfile CMD, repeated only when a test adds server options (log test).
+SERVER_ARGS = (
+    "postgres",
+    "-c", "ssl=on",
+    "-c", "ssl_cert_file=/etc/postgresql/tls/server.crt",
+    "-c", "ssl_key_file=/etc/postgresql/tls/server.key",
+    "-c", "hba_file=/etc/postgresql/pg_hba.conf",
+)  # fmt: skip
 NOT_RUN = "not run: Docker unavailable"
 LOGIN_ROLES = ("bitscan_app", "bitscan_retention", "bitscan_migrate")
 LOCALHOST = "127.0.0.1"
@@ -188,9 +208,25 @@ def reference_db(pg_server: PgServer) -> PgServer:
     return pg_server
 
 
+def redact_passwords(text: str) -> str:
+    """Drop everything after ``PASSWORD`` on a line (role passwords in a log)."""
+    out = []
+    for line in text.split("\n"):
+        cut = line.upper().find("PASSWORD")
+        out.append(line if cut < 0 else line[: cut + 8] + " <redacted>")
+    return "\n".join(out)
+
+
 @contextmanager
-def bootstrapped_server() -> Iterator[PgServer]:
-    """A new container with only the TS §5.2 Bootstrap applied."""
+def bootstrapped_server(
+    extra_args: Sequence[str] = (), log: list[str] | None = None
+) -> Iterator[PgServer]:
+    """A new container with only the TS §5.2 Bootstrap applied.
+
+    ``extra_args`` adds server options (``-c name=value``); ``log``, if given,
+    receives the container's log at teardown with passwords redacted. Neither
+    exposes the container or the superuser password.
+    """
     from testcontainers.community.postgres import PostgresContainer
     from testcontainers.core.image import DockerImage
 
@@ -204,6 +240,8 @@ def bootstrapped_server() -> Iterator[PgServer]:
             dbname="postgres",
             driver=None,
         )
+        if extra_args:
+            pg.with_command([*SERVER_ARGS, *extra_args])
         # Publish 5432 on 127.0.0.1 only (REQ-032 (4)); docker-py takes (ip, port).
         cast(dict[str, Any], pg.ports)["5432"] = (LOCALHOST, None)
         with pg:
@@ -214,7 +252,14 @@ def bootstrapped_server() -> Iterator[PgServer]:
                 "host_config": attrs["HostConfig"]["PortBindings"],
                 "published": attrs["NetworkSettings"]["Ports"],
             }
-            yield PgServer(LOCALHOST, port, bindings, roles)
+            try:
+                yield PgServer(LOCALHOST, port, bindings, roles)
+            finally:
+                if log is not None:
+                    out, err = pg.get_logs()
+                    text = (out or b"").decode(errors="replace")
+                    text += (err or b"").decode(errors="replace")
+                    log.append(redact_passwords(text.replace(su_password, "<su>")))
 
 
 @pytest.fixture(scope="session")
@@ -253,6 +298,37 @@ def write_dsn_file(directory: Path, name: str, dsn: str) -> Path:
     path = directory / name
     path.write_text(dsn + "\n", encoding="utf-8")
     return path
+
+
+def migrate_to(server: PgServer, revision: str) -> None:
+    """Upgrade a database to one revision (not head), for states the CLI never
+    stops at, such as REQ-026 (7): as bitscan_migrate with SET ROLE bitscan_owner,
+    like the runner. The CLI path to head is ``migrated_db``.
+    """
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.pool import NullPool
+
+    from bitscan_manager.db import MIGRATIONS_DIR
+
+    dsn = server.dsn("bitscan_migrate")
+    engine = create_engine(
+        "postgresql+psycopg://",
+        creator=lambda: cast(Any, psycopg.connect(dsn)),
+        poolclass=NullPool,
+    )
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SET ROLE bitscan_owner"))
+            conn.commit()
+            config = Config()
+            config.set_main_option("script_location", str(MIGRATIONS_DIR))
+            config.attributes["connection"] = conn
+            command.upgrade(config, revision)
+            conn.commit()
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture(scope="session")

@@ -4,6 +4,8 @@ Checks CHK-M0-050/051 and CHK-M1-031, -033 to -035 of the phase test plans.
 Unit tests of the spec extraction run without Docker; the rest are ``pg``.
 """
 
+from pathlib import Path
+
 import psycopg
 import pytest
 
@@ -215,3 +217,217 @@ def test_reference_database_was_bootstrapped_like_bitscan(
         " FROM pg_database WHERE datname = 'bitscan_ref'"
     ).fetchone()
     assert row == ("bitscan_owner", True, True, 0)
+
+
+# --- harness review follow-ups (TP-M1-02 review, tester-b) -------------------------
+
+
+def test_server_args_match_the_dockerfile_cmd() -> None:
+    from .conftest import BUILD_CONTEXT, SERVER_ARGS
+
+    text = (BUILD_CONTEXT / "Dockerfile").read_text(encoding="utf-8")
+    cmd = text.split("CMD [", 1)[1].split("]", 1)[0]
+    backslash = chr(92)  # Dockerfile line continuations
+    args = tuple(a.replace(backslash, " ").strip().strip('"') for a in cmd.split(","))
+    assert args == SERVER_ARGS
+
+
+def test_image_tag_is_the_build_context_hash(tmp_path: Path) -> None:
+    import shutil
+
+    from .conftest import BUILD_CONTEXT, IMAGE_TAG, context_tag
+
+    assert IMAGE_TAG == context_tag(BUILD_CONTEXT)
+    assert IMAGE_TAG.startswith("bitscan-test-postgres:16-")
+    copy = tmp_path / "ctx"
+    shutil.copytree(BUILD_CONTEXT, copy)
+    assert context_tag(copy) == IMAGE_TAG  # location does not matter
+    dockerfile = copy / "Dockerfile"
+    data = bytearray(dockerfile.read_bytes())
+    data[-2] = data[-2] ^ 1  # one byte changed
+    dockerfile.write_bytes(bytes(data))
+    assert context_tag(copy) != IMAGE_TAG
+
+
+def test_password_redaction() -> None:
+    from .conftest import redact_passwords
+
+    text = "a|LOG:  statement: ALTER ROLE \"bitscan_app\" PASSWORD 'abc123'\nok"
+    assert redact_passwords(text) == (
+        'a|LOG:  statement: ALTER ROLE "bitscan_app" PASSWORD <redacted>\nok'
+    )
+
+
+def test_no_test_module_but_conftest_imports_docker() -> None:
+    import ast
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parent
+    offenders = []
+    for path in sorted(here.rglob("*.py")):
+        if path == here / "conftest.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            for name in names:
+                if name.split(".")[0] in ("docker", "testcontainers"):
+                    offenders.append((path.name, name))
+    assert offenders == []
+
+
+@pytest.mark.pg
+def test_role_passwords_are_random_per_container(
+    pg_server: PgServer, fresh_pg_server: PgServer
+) -> None:
+    a, b = dict(pg_server._passwords), dict(fresh_pg_server._passwords)
+    for pw in [*a.values(), *b.values()]:
+        assert len(pw) == 32 and all(c in "0123456789abcdef" for c in pw)
+    assert len(set(a.values())) == 3 and len(set(b.values())) == 3
+    assert not set(a.values()) & set(b.values())
+
+
+# The only superuser statements allowed besides the planned ones, exactly as
+# logged: the image entrypoint's database check and Testcontainers' probe. They
+# must come before the first app-role connection.
+ALLOWED_THIRD_PARTY = frozenset(
+    {
+        "SELECT 1 FROM pg_database WHERE datname = 'postgres' ;",
+        "select version();",
+    }
+)
+LOG_MARKERS = ("LOG:  statement: ", "LOG:  execute ")
+NL = chr(10)
+
+
+def superuser_log_problems(text: str, planned: list[str]) -> list[str]:
+    """Problems in a log written with log_statement=all and log_line_prefix=%u|.
+
+    Simple-protocol statements ("statement:") and extended-protocol ones
+    ("execute <name>:") are both collected. Allowed third-party statements match
+    by exact equality, and nothing may run as the superuser after the first
+    connection of an app role.
+    """
+    entries: list[tuple[int, str]] = []
+    first_app: int | None = None
+    for no, line in enumerate(text.split(NL)):
+        user, sep, rest = line.partition("|")
+        if not sep:
+            continue
+        if first_app is None and "connection authorized: user=bitscan_" in rest:
+            first_app = no
+        if user != "postgres":
+            continue
+        for marker in LOG_MARKERS:
+            if marker in rest:
+                body = rest.split(marker, 1)[1]
+                if marker.endswith("execute "):
+                    body = body.split(": ", 1)[1] if ": " in body else body
+                entries.append((no, body.strip()))
+    problems = []
+    if first_app is None:
+        problems.append("no app-role connection in the log")
+    harness = []
+    for no, body in entries:
+        if first_app is not None and no > first_app:
+            problems.append(f"superuser statement after the bootstrap: {body}")
+        if body not in ALLOWED_THIRD_PARTY:
+            harness.append(body)
+    if harness != planned:
+        problems.append(
+            "superuser statements differ from the plan: " + " | ".join(harness)
+        )
+    return problems
+
+
+SYNTHETIC_PLAN = ["CREATE ROLE a NOLOGIN;", 'ALTER ROLE "a" PASSWORD <redacted>']
+SYNTHETIC_LOG = NL.join(
+    [
+        "postgres|LOG:  statement: "
+        "SELECT 1 FROM pg_database WHERE datname = 'postgres' ;",
+        "postgres|LOG:  statement: select version();",
+        "postgres|LOG:  statement: CREATE ROLE a NOLOGIN;",
+        'postgres|LOG:  statement: ALTER ROLE "a" PASSWORD <redacted>',
+        "bitscan_app|LOG:  connection authorized: user=bitscan_app database=bitscan",
+        "bitscan_app|LOG:  execute <unnamed>: SELECT $1::int",
+    ]
+)
+APP_CONNECT = "bitscan_app|LOG:  connection"
+
+
+@pytest.mark.parametrize(
+    ("label", "log", "red"),
+    [
+        ("clean", SYNTHETIC_LOG, False),
+        (
+            "parameterised superuser query after the bootstrap",
+            SYNTHETIC_LOG + NL + "postgres|LOG:  execute <unnamed>: SELECT $1",
+            True,
+        ),
+        (
+            "simple superuser query after the bootstrap",
+            SYNTHETIC_LOG + NL + "postgres|LOG:  statement: SELECT 2",
+            True,
+        ),
+        (
+            "allowed statement smuggling a GRANT",
+            SYNTHETIC_LOG.replace(
+                "select version();", "select version(); GRANT ALL ON DATABASE x TO y"
+            ),
+            True,
+        ),
+        (
+            "allowed statement after the bootstrap",
+            SYNTHETIC_LOG + NL + "postgres|LOG:  statement: select version();",
+            True,
+        ),
+        (
+            "extra superuser statement inside the bootstrap",
+            SYNTHETIC_LOG.replace(
+                APP_CONNECT, "postgres|LOG:  statement: SELECT 42" + NL + APP_CONNECT
+            ),
+            True,
+        ),
+        ("no app connection", SYNTHETIC_LOG.split(NL + "bitscan_app")[0], True),
+    ],
+)
+def test_superuser_log_checker(label: str, log: str, red: bool) -> None:
+    assert bool(superuser_log_problems(log, SYNTHETIC_PLAN)) is red, label
+
+
+@pytest.mark.pg
+def test_superuser_statements_are_only_the_planned_ones() -> None:
+    from .conftest import REFERENCE_DB, bootstrapped_server
+    from .spec_sql import bootstrap
+
+    log: list[str] = []
+    args = (
+        "-c",
+        "log_statement=all",
+        "-c",
+        "log_connections=on",
+        "-c",
+        "log_line_prefix=%u|",
+    )
+    with bootstrapped_server(extra_args=args, log=log) as server:
+        with server.connect("bitscan_app") as conn:
+            conn.execute("SELECT %s::int", (1,))
+    assert "PASSWORD '" not in log[0]
+    block = bootstrap()
+    ref_db = [
+        s.replace("DATABASE bitscan ", f"DATABASE {REFERENCE_DB} ")
+        for s in block.on_postgres
+        if not s.startswith("CREATE ROLE")
+    ]
+    planned = [
+        *block.on_postgres,
+        *[f'ALTER ROLE "{r}" PASSWORD <redacted>' for r in LOGIN_ROLES],
+        *block.on_bitscan,
+        *ref_db,
+        *block.on_bitscan,
+    ]
+    problems = superuser_log_problems(log[0], planned)
+    assert problems == [], " | ".join(problems)
