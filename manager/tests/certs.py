@@ -28,6 +28,11 @@ class Pki:
         csr = self.root / f"{name}-leaf.csr"
         cert = self.root / f"{name}-leaf.pem"
         ext = self.root / f"{name}-leaf.ext"
+        # A name used again gets fresh files: remove the old ones first, so a
+        # file an earlier test made unreadable (mode 0) cannot block openssl.
+        # Deleting needs write access to the folder only, not to the file.
+        for old in (key, csr, cert, ext):
+            old.unlink(missing_ok=True)
         ext.write_text(
             f"subjectAltName={sans}\nbasicConstraints=CA:FALSE\n"
             "keyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n",

@@ -10,6 +10,7 @@ flusher keeps failed entries, at most 10,000).
 
 import json
 import os
+import secrets
 import signal
 import socket
 import ssl
@@ -201,7 +202,9 @@ def sink(pki: Pki) -> Iterator[Any]:
 def running(
     migrated_db: PgServer, tmp_path: Path, pki: Pki, sink: Any
 ) -> Iterator[Serve]:
-    leaf = pki.leaf("serve")
+    # Each test gets its own leaf: tests rewrite or chmod running.cert and
+    # running.key, and the PKI folder is shared by the whole module.
+    leaf = pki.leaf(f"serve-{secrets.token_hex(4)}")
     port = free_port()
     env = env_for(
         migrated_db, tmp_path, pki, leaf, f"https://localhost:{sink.port}/a", port
@@ -457,22 +460,28 @@ def test_sighup_with_a_broken_pair_keeps_the_old_certificate(
 ) -> None:
     before = peer_fingerprint(running.port, running.ca)
     secret_line = new_canary("keymaterial")
-    if broken == "unreadable-key":
-        running.key.write_text(f"-----BEGIN PRIVATE KEY-----\n{secret_line}\n")
-        os.chmod(running.key, 0)
-    elif broken == "mismatched":
-        running.cert.write_bytes(pki.leaf("other-pair").cert.read_bytes())
-    else:
-        data = running.cert.read_bytes()
-        running.cert.write_bytes(data[: len(data) // 2])
-    running.proc.send_signal(SIGHUP)
-    time.sleep(2)
-    assert running.proc.poll() is None
-    assert peer_fingerprint(running.port, running.ca) == before
-    out = running.output()
-    errors = [ln for ln in out.splitlines() if "reload" in ln.lower()]
-    assert errors, out[-1500:]
-    assert sweep([secret_line, "BEGIN PRIVATE KEY"], out) == []
+    mode = running.key.stat().st_mode & 0o777
+    try:
+        if broken == "unreadable-key":
+            running.key.write_text(f"-----BEGIN PRIVATE KEY-----\n{secret_line}\n")
+            # As a normal user the key cannot be read; as root (WSL) it can, and
+            # the reload fails on the invalid key instead. Both must be refused.
+            os.chmod(running.key, 0)
+        elif broken == "mismatched":
+            running.cert.write_bytes(pki.leaf("other-pair").cert.read_bytes())
+        else:
+            data = running.cert.read_bytes()
+            running.cert.write_bytes(data[: len(data) // 2])
+        running.proc.send_signal(SIGHUP)
+        time.sleep(2)
+        assert running.proc.poll() is None
+        assert peer_fingerprint(running.port, running.ca) == before
+        out = running.output()
+        errors = [ln for ln in out.splitlines() if "reload" in ln.lower()]
+        assert errors, out[-1500:]
+        assert sweep([secret_line, "BEGIN PRIVATE KEY"], out) == []
+    finally:
+        os.chmod(running.key, mode)  # this test's own file, but leave nothing broken
 
 
 # ------------------------------------------------------ CHK-M2-255, -258

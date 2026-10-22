@@ -5,7 +5,7 @@ Docs audit (rounds 1 to 3): complete. Delivery plan approved by the user (M0 to 
 ## Roadmap (reordered 2026-10-20, see decisions.md)
 M0 scaffolding (done, PR #1 green) → M1 DB and audit core → M2 auth core → M3 agent API and scheduler (inventory) → M4 Go agent and pre-release `.deb` → M5 minimal host UI and package search → M6 first-release gate (agent heartbeat and `os_info` end to end) → M7 compliance catalog → M8 evaluator → M9 scan engine → M10 agent runner and sandbox → M11 results, re-evaluation, end-to-end. Next: planner breaks down M1; the lead brings the breakdown to the user for approval before any code.
 
-## M2 auth core and API plumbing: DONE (2026-10-22); exit gate PASS; one PR into main, merge after CI is green, branch `m2-auth-core` from main `5898951`
+## M2 auth core and API plumbing: DONE (2026-10-22); exit gate PASS; committed (a70126f, e1e9ecb, 262288e, eb1d542) and opened as PR #8 into main. CI 2026-10-22: migrations, units/verify (G17), agent and web green; manager/gates FAILED (1511 passed, 9 errors in test_serve_linux.py: a test chmods a shared key file to 0, hidden in WSL by root; test fix in progress). Merge only after CI is green, with a merge commit, branch `m2-auth-core` from main `5898951`
 
 Brief: `work/m2-brief.md`. Breakdown approved by the user (decisions.md 2026-10-21): REQ-034 to REQ-059, TASK-023 to TASK-047, 10 waves, no schema change; all open questions answered as recommended, vault = OpenBao (Vault Transit API), sink = syslog+tls and https, `users reset-totp` kept. Second approval by the user for the auth tasks: TASK-028 to 031, 037 to 040 and 042 given 2026-10-22; TASK-041, 043 and 046 still to come.
 
