@@ -5,6 +5,28 @@ Docs audit (rounds 1 to 3): complete. Delivery plan approved by the user (M0 to 
 ## Roadmap (reordered 2026-10-20, see decisions.md)
 M0 scaffolding (done, PR #1 green) → M1 DB and audit core → M2 auth core → M3 agent API and scheduler (inventory) → M4 Go agent and pre-release `.deb` → M5 minimal host UI and package search → M6 first-release gate (agent heartbeat and `os_info` end to end) → M7 compliance catalog → M8 evaluator → M9 scan engine → M10 agent runner and sandbox → M11 results, re-evaluation, end-to-end. Next: planner breaks down M1; the lead brings the breakdown to the user for approval before any code.
 
+## M2 auth core and API plumbing: DONE (2026-10-22); exit gate PASS; one PR into main, merge after CI is green, branch `m2-auth-core` from main `5898951`
+
+Brief: `work/m2-brief.md`. Breakdown approved by the user (decisions.md 2026-10-21): REQ-034 to REQ-059, TASK-023 to TASK-047, 10 waves, no schema change; all open questions answered as recommended, vault = OpenBao (Vault Transit API), sink = syslog+tls and https, `users reset-totp` kept. Second approval by the user for the auth tasks: TASK-028 to 031, 037 to 040 and 042 given 2026-10-22; TASK-041, 043 and 046 still to come.
+
+| Wave | Tasks | Status |
+| --- | --- | --- |
+| W1 | TASK-023 deps, 024 create_app hardening, 029 TOTP core, 031 user repositories, 033 audit disk queue | all TEST PASS and APPROVED (2026-10-21) |
+| W2 | TASK-025 runtime contract, 026 problem details, 028 passwords and tokens, 032 sink transport | all TEST PASS and APPROVED (2026-10-21) |
+| W3 | TASK-027 request log, 030 OpenBao vault client, 035 alerts and metrics, 036 failed-token rate limit | all TEST PASS and APPROVED (2026-10-21) |
+| W4 | TASK-034 audit shipper, 037 principal and auth dependencies, 042 user accounts, 044 health routes | all TEST PASS and APPROVED (2026-10-22; TASK-034 in round 2 after the fail-open fix) |
+| W5 | TASK-038 sign-in and logout routes, 045 serve and README | all TEST PASS and APPROVED (2026-10-22; Linux 1367 passed, 0 skipped) |
+| W6 | TASK-039 TOTP enrolment and replacement | TEST PASS (round 2) and APPROVED (round 2) (2026-10-22) |
+| W7 | TASK-040 password change | TEST PASS and APPROVED (2026-10-22) |
+| W8 | TASK-041 API tokens | TEST PASS and APPROVED (2026-10-22) |
+| W9 | TASK-043 /users routes, 046 server CLI users commands | TEST PASS and APPROVED (2026-10-22; both on revision 1) |
+| W10 | TASK-047 web client | TEST PASS and APPROVED (2026-10-22) |
+| Gate | M2 exit gate (G1 to G6, G16, G18, G25 to G29) and the full security mutation table | PASS (2026-10-22): G18 1520 passed, 0 skipped, 99.32 %; every mutation-table row red; reviewer's closing review APPROVED (work/reviews/M2-gate.md) |
+
+Test plan: tests/m2/test-plan.md, 260 checks (CHK-M2-001 to -349), written before the code.
+
+Second approval by the user (TS §8.2, auth): complete: given 2026-10-22 for all twelve auth tasks (TASK-028 to 031, 037 to 043, 046).
+
 ## M1 database and audit core: DONE, merged to main 2026-10-21, branch `m1-db-audit-core`
 
 M1 breakdown approved by the user; open questions #38 to #45 and PD-18 answered (decisions.md). Work is uncommitted after `ae6a6b4` (TASK-011 to TASK-015).
