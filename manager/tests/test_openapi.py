@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import bitscan_manager
 from bitscan_manager.app import openapi_document, write_openapi
 
@@ -33,14 +35,43 @@ def test_export_bytes_are_utf8_lf_sorted_with_one_trailing_newline(
     text = data.decode("utf-8")
     assert b"\r" not in data
     assert text.endswith("}\n") and not text.endswith("\n\n")
-    canonical = json.dumps(json.loads(text), indent=2, sort_keys=True)
+    # write_openapi keeps non-ASCII text as UTF-8 (ensure_ascii=False)
+    canonical = json.dumps(
+        json.loads(text), indent=2, sort_keys=True, ensure_ascii=False
+    )
     assert text == canonical + "\n"
 
 
-def test_document_is_openapi_31_with_no_paths() -> None:
+def test_export_keeps_non_ascii_text_as_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-ASCII text in the document (a section sign in a docstring, say) is
+    written as UTF-8 rather than as \\u escapes, and stays canonical."""
+    import bitscan_manager.app as app_module
+
+    real = app_module.openapi_document
+
+    def with_text() -> dict[str, object]:
+        doc = real()
+        doc["info"]["description"] = "TS §6.2 café"
+        return doc
+
+    monkeypatch.setattr(app_module, "openapi_document", with_text)
+    data = _export(tmp_path / "u.json")
+    assert "TS §6.2 café".encode() in data
+    assert b"\\u00a7" not in data
+    text = data.decode("utf-8")
+    canonical = json.dumps(
+        json.loads(text), indent=2, sort_keys=True, ensure_ascii=False
+    )
+    assert text == canonical + "\n"
+
+
+def test_document_is_openapi_31() -> None:
+    """REQ-007 (3) (paths == {}) is superseded from TASK-038/-044 on."""
     doc = openapi_document()
     assert str(doc["openapi"]).startswith("3.1.")
-    assert doc["paths"] == {}
+    assert {"/healthz", "/readyz"} <= set(doc["paths"])
     assert doc["info"]["version"] == bitscan_manager.__version__ == "0.1.0"
 
 

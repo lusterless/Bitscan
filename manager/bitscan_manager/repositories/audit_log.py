@@ -31,6 +31,34 @@ _READ_CHAIN = sql.SQL(
 ).format(_utc_text(sql.Identifier("at")))
 
 
+_TAIL = sql.SQL(
+    "SELECT audit_id, actor, action, target, detail::text, {}, prev_hash, row_hash"
+    " FROM audit_log WHERE audit_id > %s ORDER BY audit_id LIMIT %s"
+).format(_utc_text(sql.Identifier("at")))
+
+
+def entries_after(
+    conn: psycopg.Connection[Any], audit_id: int, limit: int
+) -> list[ChainRow]:
+    """Committed rows after audit_id, in id order, in the text form that was
+    hashed. Appends hold the chain lock until commit, so ids commit in order
+    and reading past a cursor never skips a later-committed lower id."""
+    rows = conn.execute(_TAIL, (audit_id, limit)).fetchall()
+    return [
+        (
+            int(r[0]),
+            str(r[1]),
+            str(r[2]),
+            None if r[3] is None else str(r[3]),
+            None if r[4] is None else str(r[4]),
+            str(r[5]),
+            str(r[6]),
+            str(r[7]),
+        )
+        for r in rows
+    ]
+
+
 class PgAuditRepo:
     """AuditRepo over one psycopg connection, inside the caller's transaction."""
 

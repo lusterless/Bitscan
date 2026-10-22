@@ -16,6 +16,14 @@ dependencies = [
     "alembic>=1.13",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
+    # PD-19: ASGI server without the "standard" extra, Argon2id, the HTTP
+    # client for OpenBao (Vault Transit API) and the HTTPS sink, the app pool,
+    # and the alert counter registry.
+    "uvicorn>=0.30",
+    "argon2-cffi>=23.1",
+    "httpx>=0.27",
+    "psycopg-pool>=3.2",
+    "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +34,6 @@ dev = [
     "mypy>=1.13",
     "types-defusedxml",
     "testcontainers>=4.8",
-    "httpx>=0.27",
     # Build backend (editables: hatchling's editable builds), so the project
     # installs with --no-build-isolation from hashed locks only.
     "hatchling>=1.25",

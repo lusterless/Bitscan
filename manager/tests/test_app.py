@@ -1,4 +1,5 @@
-"""REQ-006: app factory with no routes, no docs, no CORS, no env/network.
+"""REQ-006: app factory with no docs routes, no CORS, no env/network
+(routes: superseded from TASK-038/-044, see tests/m2/test-plan.md).
 
 Checks CHK-M0-035 to CHK-M0-039 of tests/m0/test-plan.md.
 """
@@ -15,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
-from bitscan_manager.app import create_app
+from bitscan_manager.app import create_app, openapi_document
 
 NOT_SERVED = [
     "/docs",
@@ -70,8 +71,18 @@ def test_post_enroll_is_404(client: TestClient) -> None:
     assert client.post("/api/v1/agent/enroll", json={}).status_code == 404
 
 
-def test_no_routes_registered() -> None:
-    assert list(create_app().routes) == []
+# REQ-006 (1) is superseded for routes from TASK-044 (health) and TASK-038 on;
+# it still holds for the documentation routes (REQ-035 (3)).
+EXPECTED_PATHS_M2 = {"/healthz", "/readyz"}
+
+
+def test_only_the_expected_routes_are_registered() -> None:
+    """Grows as M2 route tasks land; docs routes never appear."""
+    paths = set(openapi_document()["paths"])
+    assert EXPECTED_PATHS_M2 <= paths
+    assert {p for p in paths if not p.startswith("/api/v1/")} == EXPECTED_PATHS_M2
+    for banned in ("/docs", "/redoc", "/openapi.json", "/metrics"):
+        assert banned not in paths
 
 
 def _acao(headers: dict[str, str]) -> list[str]:
@@ -129,5 +140,7 @@ def test_import_and_create_need_no_env_or_network(
     doc = module.openapi_document()
 
     assert isinstance(app, FastAPI)
-    assert doc["paths"] == {}
+    assert {
+        p for p in doc["paths"] if not p.startswith("/api/v1/")
+    } == EXPECTED_PATHS_M2
     assert [k for k in recorder.read if k.startswith("BITSCAN_")] == []

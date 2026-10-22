@@ -9,6 +9,10 @@ if TYPE_CHECKING:
     from pydantic import SecretStr
 
 EPILOG = """commands:
+  serve        run the manager (HTTPS API) until SIGTERM
+  users create-admin <name>      create an admin (no TOTP yet); asks for a password
+  users create-api-token <user>  print a new API token once [--name N] [--days D]
+  users reset-totp <user>        clear a user's TOTP and end their sessions
   db migrate   upgrade the database schema to the latest revision
   db maintain  create upcoming scan_result partitions, drop expired ones"""
 
@@ -78,6 +82,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args in (["db", "migrate"], ["db", "maintain"]):
         return _db(args[1])
+    if args[:1] == ["users"] and len(args) > 1:
+        from bitscan_manager.cli.users import users_main
+
+        return users_main(args[1:])
+    if args == ["serve"]:
+        from bitscan_manager.cli.serve import serve_main
+
+        return serve_main(os.environ)
     parser.print_usage(sys.stderr)
     print(
         "bitscan-manager: error: unknown or not yet implemented command",

@@ -36,7 +36,12 @@ OUT_OF_SCOPE = {
     "python-keycloak",
     "msal",
     "okta",
+    "joserfc",
+    "fastapi-users",
 }
+M2_STACK = {"uvicorn", "argon2-cffi", "httpx", "psycopg-pool", "prometheus-client"}
+UVICORN_EXTRAS = {"uvloop", "httptools", "watchfiles", "websockets", "python-dotenv"}
+NOT_CHOSEN = {"hvac", "pyotp"}
 
 
 @dataclass(frozen=True)
@@ -149,6 +154,35 @@ def test_runtime_lock_has_the_database_stack() -> None:
     assert versions["psycopg-binary"] == versions["psycopg"]
     assert versions["sqlalchemy"].startswith("2.")
     assert len([e for e in entries if e.name == "psycopg"]) == 1
+
+
+def test_runtime_lock_has_the_m2_stack() -> None:
+    """REQ-034 (2), PD-19: the five M2 runtime packages, each pinned once."""
+    entries = parse(RUNTIME).entries
+    found = [e.name for e in entries]
+    for name in M2_STACK | {"argon2-cffi-bindings"}:
+        assert found.count(name) == 1, f"{name}: {found.count(name)} entries"
+    versions = {e.name: e.version for e in entries}
+    assert versions["httpx"] == {e.name: e.version for e in parse(DEV).entries}["httpx"]
+
+
+def test_runtime_lock_has_no_uvicorn_extras_or_unchosen_clients() -> None:
+    """PD-19 (a), (f), (g): uvicorn without extras, no hvac, no pyotp."""
+    assert names(RUNTIME) & (UVICORN_EXTRAS | NOT_CHOSEN) == set()
+
+
+@pytest.mark.parametrize("path", LOCKS, ids=IDS)
+def test_no_opentelemetry_sdk_exporter_or_instrumentation(path: Path) -> None:
+    """REQ-034 (5); decisions 2026-10-20: only opentelemetry-api may be present."""
+    otel = {n for n in names(path) if n.startswith("opentelemetry")}
+    assert otel <= {"opentelemetry-api", "opentelemetry-semantic-conventions"}, otel
+    assert not any(
+        n == "opentelemetry-sdk"
+        or n.startswith("opentelemetry-exporter")
+        or n.startswith("opentelemetry-instrumentation")
+        or n.startswith("opentelemetry-distro")
+        for n in otel
+    )
 
 
 def test_dev_lock_is_a_superset_with_the_tools() -> None:
