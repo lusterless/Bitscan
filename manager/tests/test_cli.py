@@ -23,8 +23,8 @@ from .test_app import EnvRecorder
 
 STILL_STUBS = [
     [],
-    ["serve"],
-    ["users", "create-admin", "x"],
+    ["users"],
+    ["users", "bogus"],
     ["bits", "rebuild"],
     ["db"],
     ["db", "downgrade"],
@@ -35,7 +35,8 @@ STILL_STUBS = [
     ["bogus"],
 ]
 # db migrate without its variable is also refused (exit 2, message on stderr).
-REFUSED = [*STILL_STUBS, ["db", "migrate"], ["db", "maintain"]]
+# serve without its variables is refused too (exit 2, names them; TASK-045).
+REFUSED = [*STILL_STUBS, ["db", "migrate"], ["db", "maintain"], ["serve"]]
 DB_MODULES = ("psycopg", "sqlalchemy", "alembic", "testcontainers", "asyncpg")
 MIGRATE = "BITSCAN_MIGRATE_DSN_FILE"
 
@@ -139,3 +140,37 @@ def test_console_script_refuses(argv: list[str]) -> None:
     assert proc.returncode != 0
     assert proc.stderr.strip()
     assert proc.stdout == ""
+
+
+SERVE_VARS = (
+    "BITSCAN_DB_DSN_FILE",
+    "BITSCAN_RETENTION_DSN_FILE",
+    "BITSCAN_VAULT_ADDR",
+    "BITSCAN_TOTP_KEY_REF",
+    "BITSCAN_VAULT_TOKEN_FILE",
+    "BITSCAN_TLS_CERT_FILE",
+    "BITSCAN_TLS_KEY_FILE",
+    "BITSCAN_AUDIT_SINK",
+)
+
+
+def test_serve_without_config_names_every_variable_and_binds_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REQ-057 (1), (7), REQ-008 narrowed: serve is real now. With no BITSCAN_*
+    set it exits 2 before binding, names each serve variable, and never reads
+    the migrate DSN."""
+    import socket
+
+    def no_bind(*a: object, **k: object) -> None:
+        raise AssertionError("serve bound or connected before validating")
+
+    monkeypatch.setattr(socket.socket, "bind", no_bind)
+    monkeypatch.setattr(socket.socket, "connect", no_bind)
+    code, db, read = _guarded_run(monkeypatch, ["serve"])
+    assert code == 2
+    assert MIGRATE not in read
+    assert set(read) <= set(SERVE_VARS) | {"BITSCAN_LISTEN", "BITSCAN_BITS_DIR"}
+    err = capsys.readouterr().err
+    for name in SERVE_VARS:
+        assert name in err, name
