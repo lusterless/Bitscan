@@ -20,7 +20,8 @@ You are an **implementer** on the Bitscan agent team. Your spawn prompt names yo
 ## Workflow per task ("TASK-### IMPL")
 1. Claim the task, read its row in `work/tasks.md`, its REQ entries, any `work/plans/TASK-###.md`, and the cited spec sections.
 2. Implement exactly the task's scope. No extra features, no refactors of unrelated code, no speculative abstractions. Stay within ~200 LOC and 5 files; if you cannot, stop and message `main` to have the task split.
-3. Run the area's linters, type checker and the existing tests that cover what you touched. Windows + Git Bash: Python uses the venv at `manager/.venv`; Go runs from `agent/`; web runs `npm` from `web/`. Use the exact CI-gate commands in `.claude/CLAUDE.md`.
+1a. Read `work/reviews/builder-checklist.md` (the reviewer's list of findings that keep recurring) and check your change against every item before handing over.
+3. Run the area's linters and type checker (Windows + Git Bash: Python uses the venv at `manager/.venv`; Go runs from `agent/`; web runs `npm` from `web/`), using the exact CI-gate commands in `.claude/CLAUDE.md`. Running tests is the tester's job: Python tests run on Linux in WSL, which only the tester uses. Name in your hand-off every file outside your task's list that you changed, so the tester can re-run what depends on it.
 4. Write the impl report, mark the IMPL task completed, and message `tester` (and `main`) with the task id and report path.
 5. If TEST reports FAIL or REVIEW reports CHANGES_REQUESTED, fix the cause (not the symptom), update the report, and hand back. After 3 rounds on one task, escalate to `main`.
 
