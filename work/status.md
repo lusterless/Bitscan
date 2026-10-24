@@ -5,7 +5,31 @@ Docs audit (rounds 1 to 3): complete. Delivery plan approved by the user (M0 to 
 ## Roadmap (reordered 2026-10-20, see decisions.md)
 M0 scaffolding (done, PR #1 green) → M1 DB and audit core → M2 auth core → M3 agent API and scheduler (inventory) → M4 Go agent and pre-release `.deb` → M5 minimal host UI and package search → M6 first-release gate (agent heartbeat and `os_info` end to end) → M7 compliance catalog → M8 evaluator → M9 scan engine → M10 agent runner and sandbox → M11 results, re-evaluation, end-to-end. Next: planner breaks down M1; the lead brings the breakdown to the user for approval before any code.
 
-## M2 auth core and API plumbing: DONE (2026-10-22); exit gate PASS; committed (a70126f, e1e9ecb, 262288e, eb1d542) and opened as PR #8 into main. CI 2026-10-22: migrations, units/verify (G17), agent and web green; manager/gates FAILED (1511 passed, 9 errors in test_serve_linux.py: a test chmods a shared key file to 0, hidden in WSL by root; test fix in progress). Merge only after CI is green, with a merge commit, branch `m2-auth-core` from main `5898951`
+## M3 agent API and scheduler (inventory only): PLANNING (2026-10-22)
+
+Branch `m3-agent-api` from main `6ff2b36`. Phase A: breakdown delivered by `planner` and checked by the lead (2026-10-23): REQ-060 to REQ-090, TASK-048 to TASK-081, TP-M3-00 to -35, 14 waves, no migration, gates G30 to G34 new, mutation table CHK-M3-320 to -374. **Approved by the user 2026-10-23** (all recommended answers; #62 10-minute grace, #70 viewer metrics, PD-24 one route task per wave; `work/decisions.md`). Phase B started: `impl-manager`, `tester`, `reviewer` spawned for W1.
+
+| Wave | Tasks | State |
+| --- | --- | --- |
+| W1 | TASK-048 to 058; tester TP-M3-00, -01 | All 11 TEST PASS (053 after revision 1). REVIEW APPROVED: 049, 050, 052, 053 (round 2), 054, 055, 056, 057, 058. TASK-050 has the user's second approval. TASK-051 APPROVED after revision 1 (fresh heartbeat for `online`). TASK-048 APPROVED after revision 1 round 3 (plain `$ref` to `RawValue`, NaN/Infinity refused), with the user's second approval. **W1 complete (2026-10-23).** |
+| W2 | TASK-059 to 062 | **Complete (2026-10-23)**: all four TEST PASS and REVIEW APPROVED; 060 (decoder) approved with one memory nit carried to M6. Earlier notes: | 061 TEST PASS, REVIEW APPROVED; 062 TEST PASS, REVIEW APPROVED (nit kept: a no-op PATCH still alerts, which errs toward more alerts); 059 APPROVED with revision 1 (old token capped at `last_rotation_at` + 30 days) and the user's second approval; 060 (decoder) started. Session restarted 2026-10-23 ~10:45; impl-manager, tester and reviewer resumed |
+| W3 | TASK-063 to 066 | 063 APPROVED with the user's second approval. 064 APPROVED (revision 1: alert slot only on commit). 065 APPROVED. 066 APPROVED (revision 1) with the user's second approval. **W3 complete.** with `tester-b` (the first tester's context filled up; replaced 2026-10-23) |
+| W4 | TASK-067 to 069 | **Complete**: 067 APPROVED after r1 (zone dropped, shared peer normaliser incl. two M2 auth files) with the user's second approval; 068, 069 APPROVED |
+| W5 | TASK-070, 071 | 071 APPROVED after r1 (stop flag; SIGTERM 4 s with the DB down). 070 built with r1 (new/re-enrol twin case), in TEST queue |
+| W5b | TASK-082 (new, user-ordered) | after 070: non-JSON bodies count toward the enrol and sign-in limits |
+| W5/W5b/W6 | TASK-070 r1, TASK-082, TASK-072, TASK-048 r2 | **APPROVED** with the user's second approvals (2026-10-23) |
+| W14 | TASK-080 README, TASK-083 (new, user-ordered: token before body on the heartbeat), TASK-081 web client | 080 built; 083 ordered; 081 after 079 approved |
+| W7–W9 | TASK-073, 074, 075 | **APPROVED** with the user's second approvals (075 after revision 1) |
+| W10–W13 | TASK-076 to 079 (078 with revision 1, `detail_text`) | **APPROVED** (077 with the user's second approval) |
+| W9 | TASK-075 revision 2 (no false alert on simultaneous rotates; user-ordered) | being built; to `tester-f` |
+| W14 | TASK-083 **APPROVED** with the user's second approval. TASK-080 r1 (README nits) awaiting the live walk-through and review; TASK-081 built, in TEST queue (tester-f). tester-e stopped (context full) after 073–083 | |
+| — | Session restarted ~21:50; agents resumed | |
+| All | TASK-048 to 083 | **All 36 APPROVED** (TASK-080 approved after the live walk-through, 107 requests, 0 deviations); every two-approval task has the user's second approval recorded; a one-sentence README edit (r2, rotation reuse) in progress |
+| Gate | M3 exit gate | tester-g stopped on a model rate-limit error at about 00:05 with G1–G4, G6, G16 green and most plants red; `tester-h` finishes it under the 2026-10-24 speed rules (xdist, Linux-only, targeted re-runs, one full run). TASK-084 awaits its TEST |
+| M4 | Go agent and pre-release `.deb` | **Approved 2026-10-24** (REQ-091..112, TASK-085..107, 6 waves; amd64 only, arm64 dropped by the user). Planner removing arm64 from the plan; then W1 starts on branch `m4-agent` alongside M3's closing |
+| W4–W14 | TASK-067 to 081 | not started | M3 carry-overs: contract fixtures, body caps on templated agent routes, metrics route in `HealthPath`, clock-skew alert, OpenAPI `/api/v1` paths and web client regeneration.
+
+## M2 auth core and API plumbing: DONE (2026-10-22); exit gate PASS; committed (a70126f, e1e9ecb, 262288e, eb1d542, c473a85) and MERGED as PR #8 into main (merge commit `6ff2b36`, 2026-10-22). First CI run: manager/gates failed (9 errors in test_serve_linux.py: a test chmodded a shared key file to 0, hidden in WSL by root); fixed in tests only (c473a85, CHK-M2-305-ci8). Re-run: all five PR checks green; CI on main after the merge: manager, agent, web and units green. Branch `m2-auth-core` from main `5898951`
 
 Brief: `work/m2-brief.md`. Breakdown approved by the user (decisions.md 2026-10-21): REQ-034 to REQ-059, TASK-023 to TASK-047, 10 waves, no schema change; all open questions answered as recommended, vault = OpenBao (Vault Transit API), sink = syslog+tls and https, `users reset-totp` kept. Second approval by the user for the auth tasks: TASK-028 to 031, 037 to 040 and 042 given 2026-10-22; TASK-041, 043 and 046 still to come.
 

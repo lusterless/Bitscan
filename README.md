@@ -2,13 +2,13 @@
 
 Bitscan is a manager + agent platform that inventories Ubuntu/Debian endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported hosts are Ubuntu 22.04, Ubuntu 24.04 and Debian 12 (amd64 and arm64, cgroup v2).
 
-**Status:** M2 (auth core and API plumbing). The manager runs:
+**Status:** M3 (agent API and inventory scheduler). The manager runs:
 
-- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`) and user administration (`/api/v1/users`);
+- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; and the scheduler (inventory runs and `offline_sweep`);
 - the server commands `users create-admin`, `users create-api-token` and `users reset-totp`;
 - `db migrate` and `db maintain`.
 
-The agent and the web UI do not run yet.
+The agent package, the web UI and compliance scans do not run yet.
 
 The specifications are in `docs/spec/`: `Technical_Specification.md` and `bit_Schema_Reference.md`.
 
@@ -140,7 +140,7 @@ The tests run the installed `bitscan-manager` command, so the editable install i
 - **Before the first start:** run `db migrate`. The audit queue folder `/var/lib/bitscan/audit-queue/` must belong to the `bitscan-manager` user with mode `0700`; `serve` creates it that way if it is missing (its parent must be writable) and refuses one that group or others can access.
 - **Listening:** HTTPS only, on `BITSCAN_LISTEN`, TLS 1.2 or later; there is no plain-HTTP listener and no redirect. One process, one worker. `X-Forwarded-For` and `Forwarded` are ignored: the client address is the TCP peer.
 - **Certificate reload:** `systemctl reload bitscan-manager` (or `kill -HUP <pid>`) loads the certificate and key files again for new connections, on the same process and socket. If the new pair cannot be loaded, the old one stays in use and an error is logged.
-- **Stopping:** `SIGTERM` stops the server, writes the pending failed token-check counts to the audit log, and leaves queued audit entries on disk. It exits 0.
+- **Stopping:** `SIGTERM` stops the scheduler and then the server, writes the pending failed token-check counts to the audit log, and leaves queued audit entries on disk. It exits 0.
 - **Logs:** one JSON object per line on stderr, each with `request_id`, `agent_id` and `job_id`. Access records hold the method, the path without its query string, the status and the duration. Tokens, passwords, headers, bodies and any part of a DSN (host, port, user, database) are never logged; database driver warnings keep only their fixed text.
 - **Start-up errors:** a missing or invalid variable, an unusable certificate or key, a plain `BITSCAN_AUDIT_SINK` (`http://`, `tcp://`, `udp://` or `syslog://`) and an unsafe queue folder each print one `serve: …` line naming the variable or folder, and exit 2. An unreachable database or OpenBao does not stop start-up: `/readyz` reports the database, and sign-in of users with TOTP answers 503 until OpenBao is back.
 
@@ -169,7 +169,45 @@ Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, 
 - **Password change:** `POST /auth/password`, session only, with `{"current_password", "new_password"}` (12–1,024 characters). It answers 204 and ends every session of the user, including this one, so sign in again; API tokens keep working.
 - **API tokens:** `POST /api-tokens` (session only; admins need a TOTP-verified session) with `{"name", "expires_in_days"}` (1–365, default 90) returns `{token_id, token, name, expires_at}`; the token is shown only this once. `GET /api-tokens` lists your own tokens, without the token. `DELETE /api-tokens/{token_id}` revokes one of your own; an API token may revoke itself.
 - **Users:** `/users` needs an admin with a TOTP-verified session, and is refused for API tokens and while the audit sink has been down for 15 minutes. `GET /users` lists, `POST /users` with `{"username", "password", "role"}` creates a viewer (default) or operator, and `GET /users/{user_id}` reads; items are `{user_id, username, role, disabled, totp_enrolled, created_at}`. `PATCH /users/{user_id}` takes exactly one change: `{"role"}`, `{"disabled": false}` (re-enable), `{"totp": null}` (reset another user's TOTP) or `{"revoke_tokens": true}`. `DELETE /users/{user_id}` disables the user; users are never deleted. Promotion to admin needs TOTP already enrolled, the last active admin cannot be demoted or disabled, a role change ends the user's sessions, and lowering a role or disabling also revokes their API tokens.
-- **Limits:** 600 requests a minute per user; after 20 failed token checks in a minute from one address, further bad tokens get 429 (valid tokens still work).
+- **Enrolment tokens:** `/enrollment-tokens` needs an admin with a TOTP-verified session. It is refused for API tokens, and once the audit sink has been down for 15 minutes. See [Enrolling agents](#enrolling-agents).
+- **Enrolment requests:**
+  - `GET /enrollment-requests?state=pending|decided|all` (admin, session or API token; default `pending`) lists held enrolments as `{request_id, kind, agent_id, hostname, machine_id, os_pretty_name, agent_version, source_ip, requested_at, token_expires_at, decision, decided_by, decided_at, matches}`.
+  - `matches` lists every other agent with the same hostname or machine-id; this is how a cloned image shows up.
+  - `POST /enrollment-requests/{request_id}/approve` and `/reject` need an admin TOTP-verified session.
+- **Hosts:**
+  - `GET /agents` (viewer) lists hosts by hostname, as `{agent_id, hostname, status, agent_version, os_id, os_version_id, os_pretty_name, last_heartbeat_at, last_inventory_at, tags, runner_helpers}`.
+  - `GET /agents/{agent_id}` adds `machine_id`, `enrolled_at`, `last_seen_ip`, the token times, `os_info` and `last_snapshot`. The snapshot is `{snapshot_id, collected_at, package_count, added, removed}`: the package lines added and removed by the last inventory that changed the list.
+  - `GET /agents/{agent_id}/packages` lists the host's packages by name, architecture and version (Debian version order).
+  - No response holds a token or a token hash.
+- **Tags:** `PUT /agents/{agent_id}/tags` (operator) with `{"tags": [...]}` replaces the whole set: up to 32 distinct tags, each 1–64 characters from `A–Z a–z 0–9 . _ : -`. `[]` clears them.
+- **Revoke:**
+  - `POST /agents/{agent_id}/revoke` (admin, TOTP-verified session) ends the agent's token at once, including a token still inside its rotation overlap. It answers 204.
+  - Every agent call then gets 401 `token_revoked`, and the host must enrol again; that enrolment is held for approval.
+- **Settings:** `GET /settings` (admin, session or API token) returns all seven runtime settings. `PATCH /settings` (admin, TOTP-verified session) changes any non-empty subset, all or nothing:
+
+  | Key | Default | Range |
+  | --- | --- | --- |
+  | `agent_token_ttl_days` | 365 | 60–730; applies to tokens issued or rotated afterwards |
+  | `job_pull_seconds` | 300 | 60–3,600; sent to agents in the heartbeat |
+  | `decommission_after_days` | 7 | 0 (never) – 365 |
+  | `redaction_patterns` | five built-in patterns | at most 50 RE2 patterns |
+  | `max_parallel_plugins` | 2 | 1–8; sent to agents in the heartbeat |
+  | `enrolment_alert_per_hour` | 50 | 1–10,000 |
+  | `inventory_interval_s` | 21,600 | 3,600–86,400 (1–24 h) |
+
+  - An unknown key, a wrong type or a value out of range gets 400 and changes nothing. No key can switch inventory off.
+  - Every change writes one `settings_changed` alert entry holding the old and new values. Removing one of the default redaction patterns also writes `redaction_default_removed`.
+- **Audit log:**
+  - `GET /audit-log` (admin, session or API token) pages through the hash-chained log, newest first. Items are `{audit_id, actor, action, target, detail, detail_text, at, prev_hash, row_hash}`. `detail_text` is the stored detail exactly as it was hashed (`null` when `detail` is null); `detail` is the same value parsed.
+  - Each item can be re-checked: `row_hash` is the lowercase hex SHA-256 of the UTF-8 JSON array `[prev_hash, audit_id, actor, action, target, detail_text, at]`, with `detail_text` and `at` used as the strings returned, written compactly (`,` and `:` with no spaces) and with non-ASCII characters left unescaped. Use `detail_text`, not `detail` written back as JSON: number forms such as `1e-07` would not match. Each item's `prev_hash` is the `row_hash` of the entry before it.
+- **Metrics:**
+  - `GET /api/v1/metrics` (viewer) returns the Prometheus text format (version 0.0.4). Give Prometheus a viewer API token as its bearer token.
+  - The metrics are `bitscan_alerts_total{kind}`, `bitscan_agents{status}`, `bitscan_heartbeat_latency_seconds`, `bitscan_jobs_queued` and `bitscan_jobs_expired_total`.
+  - The agent and job counts are read from the database at each scrape. Labels never hold a hostname, token or agent id.
+- **Limits:**
+  - 600 requests a minute per user.
+  - After 20 failed token checks in a minute from one address, counted across user and agent routes together, further bad tokens get 429. Valid tokens still work.
+  - Request bodies are limited to 1 MiB.
 
 ## Users
 
@@ -180,3 +218,104 @@ The `users` commands run on the server as root (`sudo bitscan-manager users …`
 - **`users reset-totp <user>`** clears the user's TOTP and ends their sessions; their next sign-in works with the password only (an admin then gets the enrolment-only session). Alert: `totp_reset`.
 
 Exit codes: 0 success; 1 refused (an existing or unknown user, a password or option that breaks a rule, a database error); 2 usage or DSN-file error. Messages name the rule or the DSN file path, never a password, token or DSN.
+
+## Enrolling agents
+
+Agents enrol with a `bse_` enrolment token that an admin creates through the API. There is no command for it: sign in as an admin with TOTP, then call `/enrollment-tokens` with that TOTP-verified session (API tokens are refused). If the manager's certificate comes from a private CA, add `--cacert <ca.pem>` to each `curl` command.
+
+```sh
+# 1. Sign in (admin with TOTP); keep the session token from the answer.
+curl -s https://manager.example:8443/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username": "alice", "password": "<password>", "totp_code": "<code>"}'
+
+# 2. Create an enrolment token (every field is optional).
+curl -s https://manager.example:8443/api/v1/enrollment-tokens \
+  -H 'Authorization: Bearer <session token>' -H 'Content-Type: application/json' \
+  -d '{"max_uses": 25, "expires_in_hours": 48, "allowed_cidrs": ["10.20.0.0/16"], "auto_approve": false}'
+```
+
+- **Fields:**
+  - `max_uses`: 1–10,000; the default is 1, one host.
+  - `expires_in_hours`: 1–720; the default is 24.
+  - `allowed_cidrs`: a list of 1–64 network addresses (`10.20.0.0/16`, `2001:db8::/32`), or `null`, the default, for any source address.
+  - `auto_approve`: the default is `false`.
+- **The answer (201)** holds `token` this once, with `token_id`, `max_uses`, `uses`, `auto_approve`, `allowed_cidrs`, `expires_at` and `created_at`. Only its SHA-256 is stored.
+- **Shared tokens:** a token used by many hosts, for example in an install script, should have `max_uses` set to the expected host count and `allowed_cidrs` set.
+- **Alerts:** creating a token with `auto_approve` or more than 100 uses writes an `enrolment_token_risky` alert. More than `enrolment_alert_per_hour` enrolments on one token within an hour writes an `enrolments_per_hour` alert.
+- **Managing tokens:** `GET /enrollment-tokens` and `GET /enrollment-tokens/{token_id}` list and read tokens, never the token itself. `DELETE /enrollment-tokens/{token_id}` revokes one (204; the record is kept).
+
+**Approving enrolments.** Without `auto_approve`, a new host waits as `awaiting_approval`, and every agent call it makes gets 403 `pending_approval`. A host whose machine-id is already known, such as a reinstall or a cloned image, is always held, even with an `auto_approve` token. List the held enrolments with `GET /enrollment-requests`, then decide each one with an admin TOTP-verified session:
+
+- **`POST /enrollment-requests/{request_id}/approve`:**
+  - A new host becomes `enrolled`.
+  - A re-enrolment moves the existing host record, with its history, tags and packages, to the new token. That ends the old token and writes a `reenrolment_approved` alert.
+  - A request whose token has expired cannot be approved (409); the host must enrol again.
+- **`POST /enrollment-requests/{request_id}/reject`:**
+  - A new host is set to `decommissioned` (never deleted), and its agent gets 401 `enrollment_rejected`.
+  - A rejected re-enrolment leaves the existing host and its old token as they were. That machine has already replaced its token, so it must enrol again with a new enrolment token.
+- Deciding a request twice gets 409. Each decision is audit-logged. An approved host gets its first inventory job straight away.
+
+## Agent API
+
+The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_` on enrolment, and `bsa_` on the other five. User tokens are refused there, and agent tokens are refused on every user route. Agents always open the connection; the manager never connects to an agent and has no route that runs a command.
+
+| Route | Purpose |
+| --- | --- |
+| `POST /agent/enroll` | Exchange a `bse_` token for `agent_id` and an agent token (`bsa_`), with `issued_at`, `expires_at` and `status` (`enrolled` or `awaiting_approval`) |
+| `POST /agent/{id}/heartbeat` | Report status; the answer is only `job_pull_seconds`, `max_parallel_plugins` and `server_time` |
+| `GET /agent/{id}/jobs` | Pull up to 10 queued jobs, each handed out once |
+| `POST /agent/{id}/jobs/{job_id}/results` | Return results; every batch answers 409 `job_not_acceptable` until compliance scans exist |
+| `PUT /agent/{id}/inventory[?job_id=...]` | Upload `os_info` and the package list, gzip-compressed; answers 204 |
+| `POST /agent/{id}/token/rotate` | Get a new agent token inside the rotation window |
+
+- **Authentication on every `bsa_` call:**
+  - The call carries the agent's machine-id in `X-Bitscan-Machine-Id`. A missing or different machine-id revokes the token (401 `machine_id_mismatch`) and alerts. For the new token of a re-enrolment that is still awaiting approval, a wrong machine-id gets the same 401 and alert, but nothing is revoked and the request stays pending.
+  - `{id}` must be the token's own agent; any other gets 403. Path and query ids (`{id}`, `{job_id}`, `?job_id`) accept only the hyphenated form (`8-4-4-4-12` hex digits, either case); other forms get 400 `invalid_request`.
+  - Unknown or malformed tokens get 401 `unauthorized`. Revoked, expired or rejected ones get `token_revoked`, `token_expired` or `enrollment_rejected`.
+- **Limits:**
+  - 30 requests a minute per agent.
+  - 10 enrolment attempts a minute per source address. Every attempt counts, malformed ones included.
+  - Failed token checks count toward the per-address limit that the user routes also use.
+  - Over a limit, the answer is 429 `rate_limited` with `Retry-After`.
+- **Bodies:**
+  - The default limit is 1 MiB.
+  - An inventory upload is at most 10 MiB as sent and 64 MiB decompressed, with at most 50,000 packages, `os_info.raw` at most 256 KiB, and every field within its column's length.
+  - Keep `os_info.raw` a flat set of keys and values: the decoder refuses data nested more than 32 levels deep.
+  - A result batch is at most 1.5 MiB after decompression.
+  - Over a byte limit the answer is 413. A package or field limit, a duplicate package, or a `list_sha256` that does not match the list gives 422.
+  - These limits are checked after the token, so a refused upload is audit-logged, and an upload that names a dispatched inventory job fails that job (413 or 422).
+  - An inventory upload without `Content-Encoding: gzip` (any letter case), or one that is not valid gzip, UTF-8 or JSON, gets 400 `invalid_request`. So does a string holding U+0000 or a lone surrogate, or data nested more than 32 levels deep. A 400 is audit-logged too, but leaves a named job to the 30-minute sweep.
+- **Inventory jobs:**
+  - An upload with the `job_id` of this agent's dispatched inventory job completes it.
+  - An upload with the `job_id` of an inventory job that already failed or completed is stored as an unscheduled upload, and the job is unchanged.
+  - Any other `job_id` gets 409 `job_not_acceptable` and nothing is stored: unknown, another agent's, a compliance job, or one that is queued, running, expired or cancelled.
+  - Unscheduled uploads (no `job_id`, or a failed or completed one) are accepted at most once per agent every 10 minutes (429 otherwise).
+- **Heartbeat:**
+  - A clock more than 5 minutes away from the manager's writes a `clock_skew` alert, at most once an hour per host.
+  - A change in `runner_helpers` writes a `runner_helper_changed` alert.
+  - A heartbeat makes an `enrolled`, `stale` or `offline` host `online` at once.
+- **Token rotation:**
+  - An agent token lives `agent_token_ttl_days` (default 365). It can be rotated from `issued_at + max(lifetime − 30 days, lifetime ÷ 2)` until it expires.
+  - Rotating earlier gets 403 and a `rotation_outside_window` alert. A second rotation within 24 hours of a used one gets 429.
+  - The old token keeps working until 10 minutes after the new token is first used. Using it after that revokes both tokens and alerts (`token_reuse`). A rotation with the old token after the new one has been used, even within those 10 minutes, counts as reuse: both tokens are revoked and an alert is raised.
+  - If the answer to a rotation is lost, rotating again with the old token returns a fresh new token. While the new token has not been used, the old one is accepted for at most 30 days after the rotation.
+  - A rotation from an address the agent has not used in the last 7 days writes a `rotation_new_ip` alert.
+  - After `expires_at` every call, rotation included, gets 401 `token_expired`, and the host must enrol again.
+
+## Scheduler
+
+`serve` runs two scheduled jobs in its own process. Neither ever runs twice at once.
+
+- **Inventory** (mandatory):
+  - At start-up, and then every `inventory_interval_s` (default 6 hours, range 1–24 hours), it queues one inventory job for each host that is not decommissioned or awaiting approval and has no open inventory job.
+  - A job must be picked up within 24 hours.
+  - Inventory cannot be turned off: there is no setting, role or route for it.
+  - An interval change takes effect within a minute.
+- **`offline_sweep`** (every 60 seconds):
+  - It sets each host `online` (a heartbeat in the last 10 minutes), `stale` (10–30 minutes) or `offline` (over 30 minutes). A host that has never sent a heartbeat ages from its enrolment or approval.
+  - An offline host with no heartbeat for more than `decommission_after_days` is `decommissioned` and its token revoked; 0 means never.
+  - Queued jobs past their pick-up time expire. An inventory job not uploaded within 30 minutes of being handed out fails. Inventory jobs are never retried.
+  - It raises the fleet alerts: more than 5 % of hosts offline; a job of an online host queued for over an hour; a heartbeating host whose inventory is older than twice the interval; and rows in the default `scan_result` partition.
+
+A failed run is logged by its kind of error, and the next run happens as usual. On `SIGTERM` the scheduler stops first; a run waiting on an unavailable database gives up within seconds.
