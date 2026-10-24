@@ -4,10 +4,12 @@ work/plans/TASK-045.md).
 One process: HTTPS only (TLS 1.2+), SIGHUP reloads the certificate on the
 same socket, proxy headers ignored, no uvicorn access log or log config
 (RequestLog and the JSON handler log instead). The lifecycle opens the app
-pool, starts the audit shipper and the failed-check flusher, and on SIGTERM
-flushes the failed-check counts, stops the shipper (the queue stays on disk)
-and closes the vault client and the pool. BITSCAN_MIGRATE_DSN_FILE is never
-read.
+pool, starts the audit shipper, the failed-check flusher and the scheduler
+(inventory runs and offline_sweep, REQ-080), and on SIGTERM first stops the
+scheduler (waiting for a running job, so none starts after the pool closed),
+then flushes the failed-check counts, stops the shipper (the queue stays on
+disk) and closes the vault client and the pool. BITSCAN_MIGRATE_DSN_FILE is
+never read.
 """
 
 import asyncio
@@ -38,6 +40,7 @@ from bitscan_manager.services.audit import append_entry, raise_alert
 from bitscan_manager.services.audit.disk_queue import DiskQueue, QueueError
 from bitscan_manager.services.audit.shipper import DbOutageAudit, PgAuditTail, Shipper
 from bitscan_manager.services.audit.sink_transport import transport_from_url
+from bitscan_manager.services.scheduler.runner import SchedulerRunner
 
 log = logging.getLogger(__name__)
 
@@ -152,6 +155,7 @@ class ServeLifecycle:
         flusher: FailedCheckFlusher,
         cipher: VaultCipher,
         tls: tuple[ssl.SSLContext, Path, Path],
+        scheduler: SchedulerRunner | None = None,
     ) -> None:
         self._db, self._shipper, self._flusher, self._cipher = (
             db,
@@ -160,11 +164,14 @@ class ServeLifecycle:
             cipher,
         )
         self._tls = tls
+        self._scheduler = scheduler
 
     async def start(self) -> None:
         self._db.open()  # does not wait for the database
         self._shipper.start()
         self._flusher.start()
+        if self._scheduler is not None:
+            self._scheduler.start()
         if hasattr(signal, "SIGHUP"):
             asyncio.get_running_loop().add_signal_handler(
                 signal.SIGHUP, reload_certificate, *self._tls
@@ -173,6 +180,8 @@ class ServeLifecycle:
     async def stop(self) -> None:
         if hasattr(signal, "SIGHUP"):
             asyncio.get_running_loop().remove_signal_handler(signal.SIGHUP)
+        if self._scheduler is not None:
+            self._scheduler.stop()  # before the pool closes (REQ-080 (3))
         self._flusher.stop()
         self._shipper.stop()
         self._cipher.close()
@@ -188,8 +197,14 @@ def build_runtime(config: ServeConfig, tls: ssl.SSLContext, queue_dir: Path) -> 
     cipher = VaultCipher(config.vault_addr, config.totp_key_ref, config.vault_token)
     limits = RateLimiter(clock)
     flusher = FailedCheckFlusher(limits, db, shipper)
+    scheduler = SchedulerRunner(db, clock, shipper.wake)
     lifecycle = ServeLifecycle(
-        db, shipper, flusher, cipher, (tls, config.tls_cert_file, config.tls_key_file)
+        db,
+        shipper,
+        flusher,
+        cipher,
+        (tls, config.tls_cert_file, config.tls_key_file),
+        scheduler,
     )
     return Runtime(clock, db, cipher, shipper, limits, lifecycle)
 

@@ -1,12 +1,12 @@
 """POST /api/v1/auth/login, /auth/logout, /auth/totp/enrol and /auth/password
 (TS §6.2 L1080, L1085, L1096, L1097; #47, #48, #49 (b), #53 (a), #55)."""
 
-import math
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from bitscan_manager.api.attempt_limits import limit_first, per_ip_limit
 from bitscan_manager.api.problems import Problem
 from bitscan_manager.api.timestamps import UtcDatetime
 from bitscan_manager.api.user import problem_responses
@@ -35,23 +35,17 @@ class LoginResponse(BaseModel):
     totp_verified: bool
 
 
-def login_limit(
-    request: Request, runtime: Annotated[Runtime, Depends(get_runtime)]
-) -> Runtime:
-    """10 sign-in requests per minute per TCP peer, every attempt counted (#55)."""
-    ip = request.client.host if request.client is not None else "unknown"
-    if not runtime.limits.allow_login(ip):
-        now = runtime.clock.now().timestamp()
-        retry = str(max(1, math.ceil(60 - now % 60)))
-        raise Problem(
-            429, "rate_limited", "Too many sign-in attempts.", {"Retry-After": retry}
-        )
-    return runtime
+# 10 sign-in requests per minute per TCP peer, every attempt counted (#55 (c)),
+# before the body is even read (TASK-082: the route class).
+_login_limit = per_ip_limit(
+    lambda runtime, ip: runtime.limits.allow_login(ip), "Too many sign-in attempts."
+)
+_sign_in = APIRouter(route_class=limit_first(_login_limit))
 
 
-@router.post("/login", responses=problem_responses((401, 429, 503)))
+@_sign_in.post("/login", responses=problem_responses((401, 429, 503)))
 def login(
-    body: LoginRequest, runtime: Annotated[Runtime, Depends(login_limit)]
+    body: LoginRequest, runtime: Annotated[Runtime, Depends(get_runtime)]
 ) -> LoginResponse:
     try:
         result = login_service.login(
@@ -69,6 +63,9 @@ def login(
         totp_enrolled=result.totp_enrolled,
         totp_verified=result.totp_verified,
     )
+
+
+router.include_router(_sign_in)
 
 
 @router.post(
@@ -94,7 +91,7 @@ def _pending(request: Request) -> totp_enrol.PendingEnrolments:
     return pending
 
 
-class EnrolRequest(BaseModel):
+class TotpEnrolRequest(BaseModel):
     """{} or {current_password, current_code} starts; {totp_code} confirms."""
 
     model_config = ConfigDict(extra="forbid")
@@ -111,7 +108,7 @@ class EnrolStartResponse(BaseModel):
 @router.post("/totp/enrol", responses=problem_responses((401, 403, 409, 429, 503)))
 def totp_enrol_route(
     request: Request,
-    body: EnrolRequest,
+    body: TotpEnrolRequest,
     principal: Annotated[Principal, Depends(require_session(allow_restricted=True))],
     runtime: Annotated[Runtime, Depends(get_runtime)],
 ) -> EnrolStartResponse | LoginResponse:

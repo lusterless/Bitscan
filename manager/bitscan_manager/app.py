@@ -2,16 +2,24 @@ import json
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
+import re2  # type: ignore[import-untyped]
 from fastapi import FastAPI, Request, Response
 from fastapi.telemetry import TelemetryConfig
+from pydantic.json_schema import models_json_schema
+from starlette.routing import compile_path
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from bitscan_manager import __version__
 from bitscan_manager.api import health, problems
+from bitscan_manager.api.agent import (
+    build_agent_router,
+    build_agent_windows,
+    documented_request_bodies,
+)
 from bitscan_manager.api.problems import ABOUT_BLANK, PROBLEM_JSON, problem_body
 from bitscan_manager.api.request_log import RequestLog
 from bitscan_manager.api.user import PROBLEM_REF, build_user_router
@@ -32,8 +40,80 @@ BODY_CAP_CLASSES: Final[Mapping[str, int]] = {
     "inventory": 10 * MIB,
 }
 
-# (path, class, bytes) for routes that need more than the json cap.
-ROUTE_BODY_CAPS: list[tuple[str, str, int]] = []
+
+class RouteCap(NamedTuple):
+    """A body cap for one route template in FastAPI path syntax, for example
+    /api/v1/agent/{id}/inventory. With after_auth the route enforces the cap
+    itself, after its token check, so a refusal can be audit-logged and its
+    job failed (TS §3.4 L240, L244); the app still never reads past it."""
+
+    template: str
+    cap_class: str
+    limit: int
+    after_auth: bool = False
+
+
+# Routes that need more than the json cap, matched in registration order.
+ROUTE_BODY_CAPS: list[RouteCap] = [
+    # TS §6.3 L1138: a result batch is 1.5 MiB as sent (and after inflating,
+    # checked by the route); enforced after the token check (REQ-066 (3)).
+    RouteCap(
+        "/api/v1/agent/{id}/jobs/{job_id}/results",
+        "result_batch",
+        BODY_CAP_CLASSES["result_batch"],
+        after_auth=True,
+    ),
+    # TS §6.3 L1138: an inventory upload is 10 MiB gzip as sent (its 64 MiB
+    # decompressed limit is the decoder's); after the token check, so a
+    # refused upload is audit-logged and fails its job (TS §3.4 L240, L244).
+    RouteCap(
+        "/api/v1/agent/{id}/inventory",
+        "inventory",
+        BODY_CAP_CLASSES["inventory"],
+        after_auth=True,
+    ),
+]
+
+# What an after-auth route finds in its scope (read by api/agent/bodies.py).
+BODY_CAP_SCOPE_KEY: Final = "bitscan.body_cap"
+
+
+@dataclass(frozen=True)
+class BodyCap:
+    limit: int
+    content_length: int | None  # the largest Content-Length sent, if any
+
+
+class BodyTooLarge(Exception):
+    """More than the cap arrived through CappedReceive."""
+
+
+class CappedReceive:
+    """Wraps receive() and raises BodyTooLarge once more than limit bytes
+    arrived, counting real bytes, not the Content-Length header."""
+
+    def __init__(self, receive: Receive, limit: int) -> None:
+        self._receive = receive
+        self.limit = limit
+        self.received = 0
+
+    async def __call__(self) -> Message:
+        if self.received > self.limit:
+            raise BodyTooLarge
+        message = await self._receive()
+        if message["type"] == "http.request":
+            self.received += len(message.get("body", b""))
+            if self.received > self.limit:
+                raise BodyTooLarge
+        return message
+
+
+@dataclass(frozen=True)
+class _Cap:
+    matches: Callable[[str], object]
+    limit: int
+    after_auth: bool
+
 
 SECURITY_HEADERS: Final[tuple[tuple[bytes, bytes], ...]] = (
     (b"strict-transport-security", b"max-age=31536000"),
@@ -58,18 +138,23 @@ TELEMETRY_OFF: Final[TelemetryConfig] = {
 }
 
 
-def _route_caps() -> dict[str, int]:
-    caps: dict[str, int] = {}
-    for path, cap_class, limit in ROUTE_BODY_CAPS:
-        if path in caps:
+def _route_caps() -> tuple[_Cap, ...]:
+    caps: list[_Cap] = []
+    seen: set[str] = set()
+    for entry in ROUTE_BODY_CAPS:
+        path, cap_class, limit, after_auth = RouteCap(*entry)
+        if path in seen:
             raise ValueError(f"body cap for {path} registered twice")
+        seen.add(path)
         maximum = BODY_CAP_CLASSES.get(cap_class)
         if maximum is None:
             raise ValueError(f"unknown body cap class {cap_class!r} for {path}")
         if not 0 < limit <= maximum:
             raise ValueError(f"body cap for {path} is outside 1..{maximum} bytes")
-        caps[path] = limit
-    return caps
+        # The router's own template regex, run with RE2 (the path is untrusted).
+        regex = re2.compile(compile_path(path)[0].pattern)
+        caps.append(_Cap(regex.match, limit, after_auth))
+    return tuple(caps)
 
 
 class SecurityHeaders:
@@ -98,9 +183,10 @@ class SecurityHeaders:
 
 
 class BodyLimit:
-    """Refuses bodies over the cap with 413 before the app sees any of them."""
+    """Refuses bodies over the cap with 413 before the app sees any of them,
+    except on after-auth routes, which get a CappedReceive and a BodyCap."""
 
-    def __init__(self, app: ASGIApp, route_caps: Mapping[str, int]) -> None:
+    def __init__(self, app: ASGIApp, route_caps: tuple[_Cap, ...]) -> None:
         self.app = app
         self.route_caps = route_caps
 
@@ -108,11 +194,21 @@ class BodyLimit:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        cap = self.route_caps.get(scope["path"], BODY_CAP_CLASSES["json"])
-        for name, value in scope["headers"]:
-            if name == b"content-length" and value.isdigit() and int(value) > cap:
-                await self._too_large(scope, send)
-                return
+        path = scope["path"]
+        found = next((c for c in self.route_caps if c.matches(path)), None)
+        cap = BODY_CAP_CLASSES["json"] if found is None else found.limit
+        declared = [
+            int(value)
+            for name, value in scope["headers"]
+            if name == b"content-length" and value.isdigit()
+        ]
+        if found is not None and found.after_auth:
+            scope[BODY_CAP_SCOPE_KEY] = BodyCap(cap, max(declared, default=None))
+            await self.app(scope, CappedReceive(receive, cap), send)
+            return
+        if any(length > cap for length in declared):
+            await self._too_large(scope, send)
+            return
 
         chunks: list[bytes] = []
         total = 0
@@ -158,7 +254,7 @@ class BodyLimit:
 class BitscanApp(FastAPI):
     """FastAPI with the header and size layers outside its error middleware."""
 
-    route_caps: Mapping[str, int] = MappingProxyType({})
+    route_caps: tuple[_Cap, ...] = ()
 
     def build_middleware_stack(self) -> ASGIApp:
         inner = super().build_middleware_stack()
@@ -197,12 +293,14 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
     app.route_caps = _route_caps()
     if runtime is not None:
         app.state.runtime = runtime
+        app.state.agent_windows = build_agent_windows(runtime.clock)
     problems.install(app)
     # A database or vault outage is a 503, never a 500 or a failed check.
     app.add_exception_handler(DatabaseUnavailable, _unavailable("database"))
     app.add_exception_handler(VaultUnavailable, _unavailable("vault"))
     app.include_router(health.router)  # outside /api/v1, no token (#5)
     app.include_router(build_user_router())
+    app.include_router(build_agent_router())  # bsa_ and bse_ only (TS §6)
     app.openapi = _problem_openapi(app.openapi)  # type: ignore[method-assign]
     return app
 
@@ -242,11 +340,22 @@ def _problem_openapi(
         doc = build()
         schemas = doc.setdefault("components", {}).setdefault("schemas", {})
         schemas.pop("HTTPValidationError", None)
+        _, bodies = models_json_schema(
+            [(model, "validation") for model in documented_request_bodies()],
+            ref_template="#/components/schemas/{model}",
+        )
+        for name, schema in bodies.get("$defs", {}).items():
+            if schemas.setdefault(name, schema) != schema:  # two models, one name
+                raise ValueError(f"OpenAPI component name {name!r} is used twice")
         schemas.pop("ValidationError", None)
         schemas["Problem"] = PROBLEM_SCHEMA
         for item in doc.get("paths", {}).values():
             for op in item.values():
-                op["responses"].pop("422", None)
+                # FastAPI's request-validation 422 goes (the app answers 400);
+                # a 422 a route declares itself stays (the inventory decoder,
+                # TS §3.4 L240; decisions 2026-10-23, TASK-074 option (a)).
+                if "HTTPValidationError" in json.dumps(op["responses"].get("422", {})):
+                    del op["responses"]["422"]
                 for status, response in op["responses"].items():
                     if int(status) >= 400 and "content" not in response:
                         response["content"] = {

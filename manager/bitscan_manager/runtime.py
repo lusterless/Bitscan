@@ -9,6 +9,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
+from uuid import UUID
 
 import psycopg
 from fastapi import HTTPException, Request
@@ -56,6 +57,14 @@ class RateLimits(Protocol):
     def failed_check_blocked(self, ip: str) -> bool: ...
 
     def record_failed_check(self, ip: str) -> None: ...
+
+    def allow_agent(self, agent_id: UUID) -> bool: ...  # 30 per minute
+
+    def allow_enrol(self, ip: str) -> bool: ...  # 10 per minute, every attempt
+
+    def allow_unscheduled_inventory(self, agent_id: UUID) -> bool: ...
+
+    def unscheduled_inventory_retry_after(self, agent_id: UUID) -> int: ...
 
 
 class Lifecycle(Protocol):

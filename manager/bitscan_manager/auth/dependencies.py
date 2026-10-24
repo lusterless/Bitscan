@@ -17,6 +17,7 @@ from typing import Annotated, Final
 
 from fastapi import Depends, Request
 
+from bitscan_manager.api.peer import peer_key
 from bitscan_manager.api.problems import Problem
 from bitscan_manager.auth.principal import ROLE_ORDER, Principal, resolve
 from bitscan_manager.auth.tokens import TokenKind
@@ -55,7 +56,7 @@ def _bearer(request: Request) -> str | None:
 def current_principal(
     request: Request, runtime: Annotated[Runtime, Depends(get_runtime)]
 ) -> Principal:
-    ip = request.client.host if request.client is not None else "unknown"
+    ip = peer_key(request)  # zone dropped, IPv4-mapped as IPv4 (api.peer)
     raw = _bearer(request)
     now = runtime.clock.now()
     principal: Principal | None = None
