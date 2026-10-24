@@ -19,7 +19,7 @@ import sys
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -512,6 +512,12 @@ def test_healthz_over_tls_carries_the_headers(running: Serve) -> None:
 
 
 def test_proxy_headers_are_ignored(running: Serve) -> None:
+    # The sign-in limit counts per calendar minute: start in a fresh one, so
+    # the 11 attempts cannot straddle a boundary under load (M3 gate xdist
+    # run: 401 for the 11th) and no earlier sign-in shares the minute.
+    fresh = datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(minutes=1)
+    while datetime.now(UTC) < fresh:
+        time.sleep(0.2)
     codes = []
     for i in range(11):
         status, _, _ = https_get(
@@ -729,6 +735,19 @@ def test_cli_path_exists() -> None:
     assert Path(cli_path()).exists()
 
 
+def queued_ids_while_running(folder: Path) -> list[int]:
+    """The audit ids in the queue's complete lines, read only.
+
+    A DiskQueue may not be opened on the folder while serve owns it: opening
+    one cuts an incomplete last line, which races the running writer and
+    damages the segment (found in the M3 gate xdist run)."""
+    ids: list[int] = []
+    for seg in sorted(folder.glob("segment-*.jsonl")):
+        for line in seg.read_bytes().split(b"\n")[:-1]:  # last part: not complete
+            ids.append(int(json.loads(line)["record"]["audit_id"]))
+    return ids
+
+
 def test_sigterm_with_the_sink_down_leaves_the_queue_intact(
     migrated_db: PgServer, tmp_path: Path, pki: Pki
 ) -> None:
@@ -752,8 +771,7 @@ def test_sigterm_with_the_sink_down_leaves_the_queue_intact(
         queued: list[int] = []
         while time.monotonic() < deadline and entry.audit_id not in queued:
             time.sleep(0.3)
-            if any(p.name.startswith("segment-") for p in s.queue.iterdir()):
-                queued = [r["audit_id"] for r in DiskQueue(s.queue).peek(100_000)]
+            queued = queued_ids_while_running(s.queue)
         assert entry.audit_id in queued
         assert s.stop(signal.SIGTERM) == 0
     finally:

@@ -1386,8 +1386,12 @@ def test_every_documented_request_behaves_as_the_readme_says(  # noqa: PLR0915
         "D new token, 30 per minute", "GET", f"{V1}/healthz", want=404
     )  # marker row only
     w.rows.pop()
-    while datetime.now(UTC).second > 40:
-        time.sleep(1)
+    # Start in a fresh calendar minute: the limit counts per minute, and D's
+    # requests from the steps above must not share it (under parallel load
+    # they did: 27 x 200, M3 gate xdist run).
+    fresh = datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(minutes=1)
+    while datetime.now(UTC) < fresh:
+        time.sleep(0.2)
     b2 = beat(D, TD2, mD)
     owner(
         server,
