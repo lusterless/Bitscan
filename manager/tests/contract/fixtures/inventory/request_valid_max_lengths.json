@@ -1,0 +1,39 @@
+{
+  "os_info": {
+    "os_id": "oooooooooooooooooooooooooooooooo",
+    "os_version_id": "9999999999999999",
+    "os_pretty_name": "PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP",
+    "kernel_release": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "architecture": "aaaaaaaaaaaaaaaa",
+    "cpu_count": 2147483647,
+    "memory_mb": 0,
+    "ip_addresses": [
+      "192.0.2.1",
+      "10.0.0.5/24",
+      "::1",
+      "2001:db8::5/64",
+      "fe80::1"
+    ],
+    "uptime_s": 9007199254740991,
+    "raw": {
+      "os_release": {
+        "ID": "ubuntu",
+        "VERSION_ID": "24.04"
+      },
+      "hostnamectl": {
+        "Chassis": "vm"
+      }
+    }
+  },
+  "packages": [
+    {
+      "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+      "version": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+      "architecture": "aaaaaaaaaaaaaaaa",
+      "status": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "source": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+      "installed_size_kb": 2147483647
+    }
+  ],
+  "list_sha256": "7d2c0daf5de18867bf0ee2e9f410f0fc80a2222f8582dc537ec188e8c74f5de0"
+}

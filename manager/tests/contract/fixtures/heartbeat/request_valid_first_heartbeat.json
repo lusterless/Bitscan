@@ -1,0 +1,10 @@
+{
+  "agent_version": "1.0.0",
+  "uptime_s": 0,
+  "last_pull_at": null,
+  "current_job_id": null,
+  "spool_bytes": 0,
+  "last_error": null,
+  "runner_helpers": [],
+  "clock": "2026-10-19T08:00:00Z"
+}

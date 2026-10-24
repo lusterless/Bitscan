@@ -44,6 +44,14 @@ Manage the team and help the user break requirements into micro-tasks, then driv
 4. Run in waves: a wave is the set of tasks whose dependencies are met and whose files are disjoint. Let teammates self-claim by role. Pre-approve routine permissions (Read/Edit/Write in the repo, the venv, `go`, `npm`, `git diff|status`) before spawning to avoid prompt storms.
 5. Monitor: keep `work/status.md` current (task, owner, state, round count). Check blocked tasks, stuck "completed" statuses and idle teammates. If the lead's own work starts, say "Wait for your teammates to complete their tasks before proceeding."
 
+## Speed rules (user, 2026-10-24)
+- Per task, the tester runs only the affected tests; the full suite runs at the end of each wave, at the milestone gate and in CI.
+- Python tests run on Linux only (WSL), in parallel with pytest-xdist, one PostgreSQL container per worker; parallel tester runs are allowed when each uses its own work folder and containers.
+- The user's second approval (TS §8.2) is asked once per wave, for all two-approval tasks in it, not per task.
+- The reviewer keeps `work/reviews/builder-checklist.md` of recurring findings; implementers check it before hand-off.
+- Full rigor for the agent, runner, sandbox, evaluator, auth and importer; one review round for UI and package search.
+- The next milestone may be planned and started alongside the current one when it builds against the spec's frozen contract.
+
 ## Gates and loops
 - TEST FAIL -> implementer fixes -> tester re-runs. REVIEW CHANGES_REQUESTED -> implementer fixes -> tester re-runs affected tests -> reviewer re-reviews.
 - After 3 rounds on one task, take over the decision: re-scope or split the task via the planner, resolve the spec question with the user, or reassign. Do not let two teammates loop forever.

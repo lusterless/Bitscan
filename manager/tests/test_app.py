@@ -23,7 +23,6 @@ NOT_SERVED = [
     "/docs/oauth2-redirect",
     "/redoc",
     "/openapi.json",
-    "/api/v1/agent/enroll",
 ]
 
 
@@ -67,8 +66,16 @@ def test_doc_and_api_paths_are_not_served(client: TestClient, path: str) -> None
     assert client.get(path).status_code == 404
 
 
-def test_post_enroll_is_404(client: TestClient) -> None:
-    assert client.post("/api/v1/agent/enroll", json={}).status_code == 404
+def test_enroll_exists_post_only_and_needs_a_runtime(client: TestClient) -> None:
+    """TASK-067 (decisions 2026-10-23 (4)): the M0 placeholder "POST enroll is
+    404" is replaced now that TS §6.1 L1062 POST /agent/enroll exists. GET is
+    405; a POST to an app without a runtime is 503, never 404 or 200."""
+    get = client.get("/api/v1/agent/enroll")
+    assert get.status_code == 405
+    post = client.post("/api/v1/agent/enroll", json={})
+    assert post.status_code == 503
+    assert post.headers["content-type"].startswith("application/problem+json")
+    assert post.json()["type"] == "about:blank"
 
 
 # REQ-006 (1) is superseded for routes from TASK-044 (health) and TASK-038 on;

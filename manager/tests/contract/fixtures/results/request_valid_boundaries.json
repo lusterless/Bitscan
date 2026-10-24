@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "plugin_uuid": "3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c48",
+      "exit_code": -2147483648,
+      "stdout": "line1\nline2\té中😀\n",
+      "stderr": "warn\n",
+      "started_at": "2026-10-19T16:00:00+08:00",
+      "finished_at": "2026-10-19T16:00:00.25+08:00",
+      "timed_out": false,
+      "truncated": true,
+      "error": null
+    },
+    {
+      "plugin_uuid": "4a7d3b0f-9c2e-4f68-8b4d-3e8a1f7c2d59",
+      "exit_code": 2147483647,
+      "stdout": "install ok installed",
+      "stderr": "",
+      "started_at": "2026-10-19T08:00:00Z",
+      "finished_at": "2026-10-19T08:00:05Z",
+      "timed_out": false,
+      "truncated": false,
+      "error": null
+    }
+  ],
+  "final": true
+}

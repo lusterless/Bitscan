@@ -34,6 +34,13 @@ dev = [
     "mypy>=1.13",
     "types-defusedxml",
     "testcontainers>=4.8",
+    # PD-21: the contract suite validates the shared fixtures against the
+    # exported JSON Schemas; the fuzz suite drives the inventory decoder.
+    "jsonschema>=4.23",
+    "hypothesis>=6.100",
+    # Parallel test runs, one PostgreSQL container per worker (decisions
+    # 2026-10-24, speed rule 3).
+    "pytest-xdist>=3.6",
     # Build backend (editables: hatchling's editable builds), so the project
     # installs with --no-build-isolation from hashed locks only.
     "hatchling>=1.25",
@@ -77,4 +84,5 @@ branch = false
 
 [tool.coverage.report]
 fail_under = 85
+precision = 2
 show_missing = true

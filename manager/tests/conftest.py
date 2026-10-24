@@ -1,9 +1,9 @@
 """PostgreSQL 16 Testcontainers harness (TASK-003, TP-M1-02; REQ-009, REQ-032).
 
-One container per session, built from ``tests/postgres/Dockerfile`` (``pg_trgm``,
-``pgcrypto``, ``debversion``, TLS on, ``hostssl`` only), published on 127.0.0.1
-only. The harness then runs, as the container superuser and nothing else, all
-before it hands anything to a test:
+One container per session (so one per pytest-xdist worker), built from
+``tests/postgres/Dockerfile`` (``pg_trgm``, ``pgcrypto``, ``debversion``, TLS on,
+``hostssl`` only), published on 127.0.0.1 only. The harness then runs, as the
+container superuser and nothing else, all before it hands anything to a test:
 
 1. the TS §5.2 Bootstrap block, read verbatim from the spec (``spec_sql``), with
    ``\\c bitscan`` carried out as a reconnect;
@@ -105,6 +105,8 @@ class PgServer:
     port: int
     port_bindings: Mapping[str, Any] = field(repr=False)
     _passwords: Mapping[str, str] = field(repr=False)
+    # The container's bitscan.* Docker labels, read back from Docker (run, worker).
+    labels: Mapping[str, str] = field(default_factory=dict, repr=False)
 
     def dsn(self, role: str, dbname: str = "bitscan", sslmode: str = "require") -> str:
         if role not in LOGIN_ROLES:
@@ -217,6 +219,26 @@ def redact_passwords(text: str) -> str:
     return "\n".join(out)
 
 
+RUN_LABEL_ENV = "BSTEST_RUN_LABEL"
+RUN_LABEL_KEY = "bitscan.test-run"
+WORKER_LABEL_KEY = "bitscan.test-worker"
+
+
+def container_labels(env: Mapping[str, str]) -> dict[str, str]:
+    """Docker labels for every test container (speed rules, decisions 2026-10-24).
+
+    ``pg_server`` is session-scoped, and each pytest-xdist worker is its own
+    process with its own session, so every worker gets its own container; the
+    worker label (``PYTEST_XDIST_WORKER``, ``main`` without xdist) records which.
+    The run label (``BSTEST_RUN_LABEL``, ``default`` when unset) lets a run
+    remove only its own containers, so two runs can share one Docker daemon.
+    """
+    return {
+        RUN_LABEL_KEY: env.get(RUN_LABEL_ENV) or "default",
+        WORKER_LABEL_KEY: env.get("PYTEST_XDIST_WORKER") or "main",
+    }
+
+
 @contextmanager
 def bootstrapped_server(
     extra_args: Sequence[str] = (), log: list[str] | None = None
@@ -242,6 +264,7 @@ def bootstrapped_server(
         )
         if extra_args:
             pg.with_command([*SERVER_ARGS, *extra_args])
+        pg.with_kwargs(labels=container_labels(os.environ))
         # Publish 5432 on 127.0.0.1 only (REQ-032 (4)); docker-py takes (ip, port).
         cast(dict[str, Any], pg.ports)["5432"] = (LOCALHOST, None)
         with pg:
@@ -252,8 +275,13 @@ def bootstrapped_server(
                 "host_config": attrs["HostConfig"]["PortBindings"],
                 "published": attrs["NetworkSettings"]["Ports"],
             }
+            labels = {
+                k: v
+                for k, v in (attrs["Config"]["Labels"] or {}).items()
+                if k.startswith("bitscan.")
+            }
             try:
-                yield PgServer(LOCALHOST, port, bindings, roles)
+                yield PgServer(LOCALHOST, port, bindings, roles, labels)
             finally:
                 if log is not None:
                     out, err = pg.get_logs()
@@ -340,6 +368,21 @@ def migrated_db(
     proc = run_cli(["db", "migrate"], {"BITSCAN_MIGRATE_DSN_FILE": str(dsn_file)})
     assert proc.returncode == 0, f"db migrate failed: {proc.stderr}"
     return pg_server
+
+
+@contextmanager
+def own_migrated_server(creds_dir: Path) -> Iterator[PgServer]:
+    """A Bootstrap-only container of its own, then `db migrate`: for a module
+    whose checks need a database no other test has written to (the session
+    database is shared by the whole suite; M3 gate fix, lead ruling
+    2026-10-23). Use it as a module-scoped `migrated_db` override."""
+    with bootstrapped_server() as server:
+        dsn_file = write_dsn_file(
+            creds_dir, "migrate_dsn", server.dsn("bitscan_migrate")
+        )
+        proc = run_cli(["db", "migrate"], {"BITSCAN_MIGRATE_DSN_FILE": str(dsn_file)})
+        assert proc.returncode == 0, f"db migrate failed: {proc.stderr}"
+        yield server
 
 
 def _role_conn(

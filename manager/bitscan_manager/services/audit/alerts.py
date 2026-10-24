@@ -1,4 +1,4 @@
-"""Alerts (TS §8.4 L1289-L1291; #50).
+"""Alerts (TS §8.4 L1289-L1291; #50, #71).
 
 An alert is an audit entry whose detail holds "alert": true and "alert_kind",
 written in the caller's transaction so it reaches the sink like any entry.
@@ -12,7 +12,7 @@ from bitscan_manager.services.audit.chain import AppendedEntry, AuditRepo, appen
 from bitscan_manager.services.audit.metrics import ALERTS_TOTAL
 
 # The M2 alert kinds (#50 (c)).
-ALERT_KINDS: Final = frozenset(
+M2_ALERT_KINDS: Final = frozenset(
     {
         "api_token_created",
         "totp_enrolled",
@@ -26,6 +26,30 @@ ALERT_KINDS: Final = frozenset(
         "token_check_failures",
     }
 )
+# The M3 alert kinds (#71): agent, enrolment, settings and fleet events.
+M3_ALERT_KINDS: Final = frozenset(
+    {
+        "enrolment_token_risky",
+        "enrolments_per_hour",
+        "reenrolment_approved",
+        "machine_id_mismatch",
+        "token_reuse",
+        "rotation_outside_window",
+        "rotation_new_ip",
+        "runner_helper_changed",
+        "settings_changed",
+        "redaction_default_removed",
+        "clock_skew",
+        "agents_offline",
+        "job_queue_age",
+        "inventory_stale",
+        "new_packages_burst",
+        "result_409_flood",
+        "agent_auth_failures",
+        "default_partition_rows",
+    }
+)
+ALERT_KINDS: Final = M2_ALERT_KINDS | M3_ALERT_KINDS
 
 for _kind in sorted(ALERT_KINDS):
     ALERTS_TOTAL.labels(kind=_kind)  # every kind is exported, from zero

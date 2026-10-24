@@ -4,6 +4,197 @@
  */
 
 export interface paths {
+  "/api/v1/agent/enroll": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Enroll */
+    post: operations["enroll_api_v1_agent_enroll_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agent/{id}/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Heartbeat */
+    post: operations["heartbeat_api_v1_agent__id__heartbeat_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agent/{id}/inventory": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Put Inventory */
+    put: operations["put_inventory_api_v1_agent__id__inventory_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agent/{id}/jobs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Pull Jobs */
+    get: operations["pull_jobs_api_v1_agent__id__jobs_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agent/{id}/jobs/{job_id}/results": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Post Results */
+    post: operations["post_results_api_v1_agent__id__jobs__job_id__results_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agent/{id}/token/rotate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rotate */
+    post: operations["rotate_api_v1_agent__id__token_rotate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Agents */
+    get: operations["list_agents_api_v1_agents_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Agent */
+    get: operations["get_agent_api_v1_agents__id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{id}/packages": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Packages */
+    get: operations["list_packages_api_v1_agents__id__packages_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{id}/revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Revoke Agent
+     * @description Admin, TOTP-verified session, refused during a long audit-sink outage
+     *     (TS §6.2 L1084, L1113). Again: 204.
+     */
+    post: operations["revoke_agent_api_v1_agents__id__revoke_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{id}/tags": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Put Tags */
+    put: operations["put_tags_api_v1_agents__id__tags_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/api-tokens": {
     parameters: {
       query?: never;
@@ -40,6 +231,23 @@ export interface paths {
      * @description Your own API tokens only; an API token may revoke them too (#8).
      */
     delete: operations["revoke_api_v1_api_tokens__token_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/audit-log": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Audit Log */
+    get: operations["list_audit_log_api_v1_audit_log_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -114,6 +322,128 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  "/api/v1/enrollment-requests": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Requests */
+    get: operations["list_requests_api_v1_enrollment_requests_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/enrollment-requests/{request_id}/approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve Request */
+    post: operations["approve_request_api_v1_enrollment_requests__request_id__approve_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/enrollment-requests/{request_id}/reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject Request */
+    post: operations["reject_request_api_v1_enrollment_requests__request_id__reject_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/enrollment-tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Tokens */
+    get: operations["list_tokens_api_v1_enrollment_tokens_get"];
+    put?: never;
+    /** Create Token */
+    post: operations["create_token_api_v1_enrollment_tokens_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/enrollment-tokens/{token_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Token */
+    get: operations["get_token_api_v1_enrollment_tokens__token_id__get"];
+    put?: never;
+    post?: never;
+    /** Revoke Token */
+    delete: operations["revoke_token_api_v1_enrollment_tokens__token_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Metrics */
+    get: operations["metrics_api_v1_metrics_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/settings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Settings */
+    get: operations["get_settings_api_v1_settings_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Patch Settings */
+    patch: operations["patch_settings_api_v1_settings_patch"];
     trace?: never;
   };
   "/api/v1/users": {
@@ -191,6 +521,110 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AgentDetailItem */
+    AgentDetailItem: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Agent Version */
+      agent_version: string;
+      /**
+       * Enrolled At
+       * Format: date-time
+       */
+      enrolled_at: string;
+      /** Hostname */
+      hostname: string;
+      /** Last Heartbeat At */
+      last_heartbeat_at: string | null;
+      /** Last Inventory At */
+      last_inventory_at: string | null;
+      /** Last Seen Ip */
+      last_seen_ip: string | null;
+      last_snapshot: components["schemas"]["SnapshotItem"] | null;
+      /** Machine Id */
+      machine_id: string;
+      /** Os Id */
+      os_id: string | null;
+      os_info: components["schemas"]["OsInfoItem"] | null;
+      /** Os Pretty Name */
+      os_pretty_name: string | null;
+      /** Os Version Id */
+      os_version_id: string | null;
+      /** Runner Helpers */
+      runner_helpers: string[];
+      /** Status */
+      status: string;
+      /** Tags */
+      tags: string[];
+      /**
+       * Token Expires At
+       * Format: date-time
+       */
+      token_expires_at: string;
+      /**
+       * Token Issued At
+       * Format: date-time
+       */
+      token_issued_at: string;
+      /** Token Revoked At */
+      token_revoked_at: string | null;
+    };
+    /** AgentItem */
+    AgentItem: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Agent Version */
+      agent_version: string;
+      /** Hostname */
+      hostname: string;
+      /** Last Heartbeat At */
+      last_heartbeat_at: string | null;
+      /** Last Inventory At */
+      last_inventory_at: string | null;
+      /** Os Id */
+      os_id: string | null;
+      /** Os Pretty Name */
+      os_pretty_name: string | null;
+      /** Os Version Id */
+      os_version_id: string | null;
+      /** Runner Helpers */
+      runner_helpers: string[];
+      /** Status */
+      status: string;
+      /** Tags */
+      tags: string[];
+    };
+    /** AgentPackageItem */
+    AgentPackageItem: {
+      /** Architecture */
+      architecture: string;
+      /**
+       * First Seen At
+       * Format: date-time
+       */
+      first_seen_at: string;
+      /** Installed Size Kb */
+      installed_size_kb: number | null;
+      /**
+       * Last Seen At
+       * Format: date-time
+       */
+      last_seen_at: string;
+      /** Name */
+      name: string;
+      /** Source Name */
+      source_name: string | null;
+      /** Status */
+      status: string;
+      /** Version */
+      version: string;
+    };
     /** ApiTokenItem */
     ApiTokenItem: {
       /**
@@ -212,12 +646,77 @@ export interface components {
       /** Token Id */
       token_id: number;
     };
+    /** AuditItem */
+    AuditItem: {
+      /** Action */
+      action: string;
+      /** Actor */
+      actor: string;
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      /** Audit Id */
+      audit_id: number;
+      /** Detail */
+      detail: unknown;
+      /** Detail Text */
+      detail_text: string | null;
+      /** Prev Hash */
+      prev_hash: string;
+      /** Row Hash */
+      row_hash: string;
+      /** Target */
+      target: string | null;
+    };
+    /** ComplianceJob */
+    ComplianceJob: {
+      /** Agent Id */
+      agent_id: string;
+      /** Job Id */
+      job_id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "compliance";
+      /**
+       * Pickup By
+       * Format: date-time
+       */
+      pickup_by: string;
+      /** Plugins */
+      plugins: components["schemas"]["PluginSpec"][];
+      /** Redaction Patterns */
+      redaction_patterns: string[];
+    };
     /** CreateRequest */
     CreateRequest: {
       /** Expires In Days */
       expires_in_days?: number | null;
       /** Name */
       name?: string | null;
+    };
+    /** CreateToken */
+    CreateToken: {
+      /** Allowed Cidrs */
+      allowed_cidrs?: string[] | null;
+      /**
+       * Auto Approve
+       * @default false
+       */
+      auto_approve: boolean;
+      /**
+       * Expires In Hours
+       * @default 24
+       */
+      expires_in_hours: number;
+      /**
+       * Max Uses
+       * @default 1
+       */
+      max_uses: number;
     };
     /** CreateUser */
     CreateUser: {
@@ -246,17 +745,67 @@ export interface components {
       /** Token Id */
       token_id: number;
     };
-    /**
-     * EnrolRequest
-     * @description {} or {current_password, current_code} starts; {totp_code} confirms.
-     */
+    /** CreatedToken */
+    CreatedToken: {
+      /** Allowed Cidrs */
+      allowed_cidrs: string[] | null;
+      /** Auto Approve */
+      auto_approve: boolean;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Max Uses */
+      max_uses: number;
+      /** Token */
+      token: string;
+      /** Token Id */
+      token_id: number;
+      /** Uses */
+      uses: number;
+    };
+    /** EnrolRequest */
     EnrolRequest: {
-      /** Current Code */
-      current_code?: string | null;
-      /** Current Password */
-      current_password?: string | null;
-      /** Totp Code */
-      totp_code?: string | null;
+      /** Agent Version */
+      agent_version: string;
+      /** Hostname */
+      hostname: string;
+      /** Machine Id */
+      machine_id: string;
+      /** Os Id */
+      os_id: string | null;
+      /** Os Pretty Name */
+      os_pretty_name: string | null;
+      /** Os Version Id */
+      os_version_id: string | null;
+    };
+    /** EnrolResponse */
+    EnrolResponse: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Token */
+      agent_token: string;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /**
+       * Issued At
+       * Format: date-time
+       */
+      issued_at: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "enrolled" | "awaiting_approval";
     };
     /** EnrolStartResponse */
     EnrolStartResponse: {
@@ -272,6 +821,79 @@ export interface components {
        * @constant
        */
       status: "ok";
+    };
+    /** HeartbeatRequest */
+    HeartbeatRequest: {
+      /** Agent Version */
+      agent_version: string;
+      /**
+       * Clock
+       * Format: date-time
+       */
+      clock: string;
+      /** Current Job Id */
+      current_job_id: string | null;
+      /** Last Error */
+      last_error: string | null;
+      /** Last Pull At */
+      last_pull_at: string | null;
+      /** Runner Helpers */
+      runner_helpers: string[];
+      /** Spool Bytes */
+      spool_bytes: number;
+      /** Uptime S */
+      uptime_s: number;
+    };
+    /**
+     * HeartbeatResponse
+     * @description Configuration only (TS §6.1 L1063): never jobs or commands.
+     */
+    HeartbeatResponse: {
+      /** Job Pull Seconds */
+      job_pull_seconds: number;
+      /** Max Parallel Plugins */
+      max_parallel_plugins: number;
+      /**
+       * Server Time
+       * Format: date-time
+       */
+      server_time: string;
+    };
+    /** InventoryBody */
+    InventoryBody: {
+      /** List Sha256 */
+      list_sha256: string;
+      os_info: components["schemas"]["OsInfo"];
+      /** Packages */
+      packages: components["schemas"]["PackageItem"][];
+    };
+    /**
+     * InventoryJob
+     * @description No plugins or redaction_patterns (TS §6.5 L1182): a key more is refused.
+     */
+    InventoryJob: {
+      /** Agent Id */
+      agent_id: string;
+      /** Job Id */
+      job_id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "inventory";
+      /**
+       * Pickup By
+       * Format: date-time
+       */
+      pickup_by: string;
+    };
+    /** JobsResponse */
+    JobsResponse: {
+      /** Jobs */
+      jobs: (
+        | components["schemas"]["InventoryJob"]
+        | components["schemas"]["ComplianceJob"]
+      )[];
     };
     /** LoginRequest */
     LoginRequest: {
@@ -298,10 +920,140 @@ export interface components {
       /** Totp Verified */
       totp_verified: boolean;
     };
+    /** MatchItem */
+    MatchItem: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Hostname */
+      hostname: string;
+      /** Machine Id */
+      machine_id: string;
+      /** Status */
+      status: string;
+    };
+    /** OsInfo */
+    OsInfo: {
+      /** Architecture */
+      architecture: string | null;
+      /** Cpu Count */
+      cpu_count: number | null;
+      /** Ip Addresses */
+      ip_addresses: string[];
+      /** Kernel Release */
+      kernel_release: string | null;
+      /** Memory Mb */
+      memory_mb: number | null;
+      /** Os Id */
+      os_id: string | null;
+      /** Os Pretty Name */
+      os_pretty_name: string | null;
+      /** Os Version Id */
+      os_version_id: string | null;
+      /** Raw */
+      raw: {
+        [key: string]: components["schemas"]["RawValue"];
+      };
+      /** Uptime S */
+      uptime_s: number | null;
+    };
+    /** OsInfoItem */
+    OsInfoItem: {
+      /** Architecture */
+      architecture: string | null;
+      /**
+       * Collected At
+       * Format: date-time
+       */
+      collected_at: string;
+      /** Cpu Count */
+      cpu_count: number | null;
+      /** Ip Addresses */
+      ip_addresses: string[];
+      /** Kernel Release */
+      kernel_release: string | null;
+      /** Memory Mb */
+      memory_mb: number | null;
+      /** Os Id */
+      os_id: string | null;
+      /** Os Pretty Name */
+      os_pretty_name: string | null;
+      /** Os Version Id */
+      os_version_id: string | null;
+      /** Raw */
+      raw: {
+        [key: string]: unknown;
+      };
+      /** Uptime S */
+      uptime_s: number | null;
+    };
+    /** PackageItem */
+    PackageItem: {
+      /** Architecture */
+      architecture: string;
+      /** Installed Size Kb */
+      installed_size_kb: number | null;
+      /** Name */
+      name: string;
+      /** Source */
+      source: string | null;
+      /** Status */
+      status: string;
+      /** Version */
+      version: string;
+    };
+    /** PackageLine */
+    PackageLine: {
+      /** Architecture */
+      architecture: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
+      /** Version */
+      version: string;
+    };
+    /** Page[AgentItem] */
+    Page_AgentItem_: {
+      /** Items */
+      items: components["schemas"]["AgentItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[AgentPackageItem] */
+    Page_AgentPackageItem_: {
+      /** Items */
+      items: components["schemas"]["AgentPackageItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** Page[ApiTokenItem] */
     Page_ApiTokenItem_: {
       /** Items */
       items: components["schemas"]["ApiTokenItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[AuditItem] */
+    Page_AuditItem_: {
+      /** Items */
+      items: components["schemas"]["AuditItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[RequestItem] */
+    Page_RequestItem_: {
+      /** Items */
+      items: components["schemas"]["RequestItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[TokenItem] */
+    Page_TokenItem_: {
+      /** Items */
+      items: components["schemas"]["TokenItem"][];
       /** Next Cursor */
       next_cursor: string | null;
     };
@@ -333,12 +1085,240 @@ export interface components {
       /** Totp */
       totp?: null;
     };
+    /** PluginSpec */
+    PluginSpec: {
+      /** Execute */
+      execute: string;
+      /** Plugin Uuid */
+      plugin_uuid: string;
+      /** Timeout S */
+      timeout_s: number;
+    };
     Problem: {
       detail: string;
       instance: string;
       status: number;
       title: string;
       type: string;
+    };
+    RawValue:
+      | string
+      | number
+      | boolean
+      | components["schemas"]["RawValue"][]
+      | {
+          [key: string]: components["schemas"]["RawValue"];
+        }
+      | null;
+    /**
+     * RequestItem
+     * @description Never the new token or its hash (REQ-063 (5)).
+     */
+    RequestItem: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Agent Version */
+      agent_version: string;
+      /** Decided At */
+      decided_at: string | null;
+      /** Decided By */
+      decided_by: number | null;
+      /** Decision */
+      decision: string | null;
+      /** Hostname */
+      hostname: string;
+      /** Kind */
+      kind: string;
+      /** Machine Id */
+      machine_id: string;
+      /** Matches */
+      matches: components["schemas"]["MatchItem"][];
+      /** Os Pretty Name */
+      os_pretty_name: string | null;
+      /** Request Id */
+      request_id: number;
+      /**
+       * Requested At
+       * Format: date-time
+       */
+      requested_at: string;
+      /** Source Ip */
+      source_ip: string;
+      /**
+       * Token Expires At
+       * Format: date-time
+       */
+      token_expires_at: string;
+    };
+    /** ResultItem */
+    ResultItem: {
+      /** Error */
+      error: ("spool_overflow" | "runner_unavailable") | null;
+      /** Exit Code */
+      exit_code: number | null;
+      /**
+       * Finished At
+       * Format: date-time
+       */
+      finished_at: string;
+      /** Plugin Uuid */
+      plugin_uuid: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /** Stderr */
+      stderr: string;
+      /** Stdout */
+      stdout: string;
+      /** Timed Out */
+      timed_out: boolean;
+      /** Truncated */
+      truncated: boolean;
+    };
+    /** ResultsRequest */
+    ResultsRequest: {
+      /** Final */
+      final: boolean;
+      /** Results */
+      results: components["schemas"]["ResultItem"][];
+    };
+    /** ResultsResponse */
+    ResultsResponse: {
+      /** Accepted */
+      accepted: number;
+      /** Duplicates */
+      duplicates: number;
+    };
+    /**
+     * RotateRequest
+     * @description Rotate takes no body; an empty body or {} only (#60).
+     */
+    RotateRequest: Record<string, never>;
+    /** RotateResponse */
+    RotateResponse: {
+      /** Agent Token */
+      agent_token: string;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /**
+       * Issued At
+       * Format: date-time
+       */
+      issued_at: string;
+    };
+    /** SettingsBody */
+    SettingsBody: {
+      /** Agent Token Ttl Days */
+      agent_token_ttl_days: number;
+      /** Decommission After Days */
+      decommission_after_days: number;
+      /** Enrolment Alert Per Hour */
+      enrolment_alert_per_hour: number;
+      /** Inventory Interval S */
+      inventory_interval_s: number;
+      /** Job Pull Seconds */
+      job_pull_seconds: number;
+      /** Max Parallel Plugins */
+      max_parallel_plugins: number;
+      /** Redaction Patterns */
+      redaction_patterns: string[];
+    };
+    /**
+     * SettingsPatch
+     * @description Any non-empty subset of the seven keys; null is not a value.
+     */
+    SettingsPatch: {
+      /** Agent Token Ttl Days */
+      agent_token_ttl_days?: number | null;
+      /** Decommission After Days */
+      decommission_after_days?: number | null;
+      /** Enrolment Alert Per Hour */
+      enrolment_alert_per_hour?: number | null;
+      /** Inventory Interval S */
+      inventory_interval_s?: number | null;
+      /** Job Pull Seconds */
+      job_pull_seconds?: number | null;
+      /** Max Parallel Plugins */
+      max_parallel_plugins?: number | null;
+      /** Redaction Patterns */
+      redaction_patterns?: string[] | null;
+    };
+    /** SnapshotItem */
+    SnapshotItem: {
+      /** Added */
+      added: components["schemas"]["PackageLine"][];
+      /**
+       * Collected At
+       * Format: date-time
+       */
+      collected_at: string;
+      /** Package Count */
+      package_count: number;
+      /** Removed */
+      removed: components["schemas"]["PackageLine"][];
+      /** Snapshot Id */
+      snapshot_id: number;
+    };
+    /**
+     * TagsBody
+     * @description Replaces the whole set: 0–32 distinct tags of 1–64 characters from
+     *     A–Z, a–z, 0–9 and ._:- (#68).
+     */
+    TagsBody: {
+      /** Tags */
+      tags: string[];
+    };
+    /** TagsItem */
+    TagsItem: {
+      /** Tags */
+      tags: string[];
+    };
+    /** TokenItem */
+    TokenItem: {
+      /** Allowed Cidrs */
+      allowed_cidrs: string[] | null;
+      /** Auto Approve */
+      auto_approve: boolean;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By */
+      created_by: number;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Max Uses */
+      max_uses: number;
+      /** Revoked At */
+      revoked_at: string | null;
+      /** Token Id */
+      token_id: number;
+      /** Uses */
+      uses: number;
+    };
+    /**
+     * TotpEnrolRequest
+     * @description {} or {current_password, current_code} starts; {totp_code} confirms.
+     */
+    TotpEnrolRequest: {
+      /** Current Code */
+      current_code?: string | null;
+      /** Current Password */
+      current_password?: string | null;
+      /** Totp Code */
+      totp_code?: string | null;
     };
     /** UserItem */
     UserItem: {
@@ -367,6 +1347,841 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  enroll_api_v1_agent_enroll_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EnrolRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnrolResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  heartbeat_api_v1_agent__id__heartbeat_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["HeartbeatRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HeartbeatResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  put_inventory_api_v1_agent__id__inventory_put: {
+    parameters: {
+      query?: {
+        job_id?: string | null;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    /** @description The TS §6.5 inventory body, sent with Content-Encoding: gzip. */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InventoryBody"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Request Entity Too Large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  pull_jobs_api_v1_agent__id__jobs_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JobsResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  post_results_api_v1_agent__id__jobs__job_id__results_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+        job_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ResultsRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ResultsResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Request Entity Too Large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  rotate_api_v1_agent__id__token_rotate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["RotateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RotateResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_agents_api_v1_agents_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_AgentItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_agent_api_v1_agents__id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentDetailItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_packages_api_v1_agents__id__packages_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_AgentPackageItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  revoke_agent_api_v1_agents__id__revoke_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  put_tags_api_v1_agents__id__tags_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TagsBody"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TagsItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   list_tokens_api_v1_api_tokens_get: {
     parameters: {
       query?: {
@@ -551,6 +2366,74 @@ export interface operations {
       };
       /** @description Not Found */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_audit_log_api_v1_audit_log_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_AuditItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -768,7 +2651,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["EnrolRequest"];
+        "application/json": components["schemas"]["TotpEnrolRequest"];
       };
     };
     responses: {
@@ -812,6 +2695,713 @@ export interface operations {
       };
       /** @description Conflict */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_requests_api_v1_enrollment_requests_get: {
+    parameters: {
+      query?: {
+        state?: "pending" | "decided" | "all";
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_RequestItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  approve_request_api_v1_enrollment_requests__request_id__approve_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RequestItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  reject_request_api_v1_enrollment_requests__request_id__reject_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RequestItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_tokens_api_v1_enrollment_tokens_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_TokenItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  create_token_api_v1_enrollment_tokens_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateToken"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreatedToken"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_token_api_v1_enrollment_tokens__token_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TokenItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  revoke_token_api_v1_enrollment_tokens__token_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  metrics_api_v1_metrics_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Prometheus text exposition format */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/plain; version=0.0.4; charset=utf-8": string;
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_settings_api_v1_settings_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SettingsBody"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  patch_settings_api_v1_settings_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SettingsPatch"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SettingsBody"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
         headers: {
           [name: string]: unknown;
         };

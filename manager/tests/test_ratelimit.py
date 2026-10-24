@@ -10,6 +10,7 @@ per IP per hour).
 """
 
 import threading
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -291,3 +292,161 @@ def test_retry_after_is_whole_seconds_to_the_window_end(
 ) -> None:
     clock.advance(offset)
     assert RateLimiter(clock).retry_after() == expected
+
+
+# ================================================================ M3 TASK-057
+# CHK-M3-110 to CHK-M3-114 of tests/m3/test-plan.md (TP-M3-11). TS §6.3 L1136:
+# agent routes 30 req/min per agent; /agent/enroll 10 req/min per source IP
+# (every attempt counts, #55 (c)). TS §3.4 L239 and #72 (e): at most one
+# unscheduled inventory upload per agent per 10 minutes; Retry-After = whole
+# seconds to the end of that window.
+
+A = uuid.UUID("6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b")
+B = uuid.UUID("7a2d3c4b-5e6f-4071-9b8c-0d1e2f3a4b5c")
+
+
+# ------------------------------------------------------------ CHK-M3-110
+
+
+def test_thirty_per_agent_per_minute(rl: RateLimiter, clock: Clock) -> None:
+    clock.advance(10)
+    assert [rl.allow_agent(A) for _ in range(30)] == [True] * 30
+    assert rl.allow_agent(A) is False  # the 31st
+    assert rl.retry_after() == 50  # seconds to the end of the minute
+    assert rl.allow_agent(A) is False  # still refused, and refusals keep counting
+    assert [rl.allow_agent(B) for _ in range(30)] == [True] * 30  # B unaffected
+    clock.advance(49.999)
+    assert rl.allow_agent(A) is False
+    clock.advance(0.001)  # the next minute
+    assert rl.allow_agent(A) is True
+
+
+def test_agent_limit_is_its_own_counter(rl: RateLimiter) -> None:
+    """User, login and failed-check counters do not consume the agent's budget."""
+    for _ in range(600):
+        rl.allow_user(1)
+    for _ in range(10):
+        rl.allow_login("192.0.2.7")
+    for _ in range(25):
+        rl.record_failed_check("192.0.2.7")
+    assert [rl.allow_agent(A) for _ in range(30)] == [True] * 30
+    assert rl.allow_agent(A) is False
+
+
+def test_agent_limit_is_exact_under_threads(rl: RateLimiter) -> None:
+    results: list[bool] = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(20)
+
+    def hit() -> None:
+        barrier.wait(10)
+        for _ in range(10):
+            ok = rl.allow_agent(A)
+            with lock:
+                results.append(ok)
+
+    threads = [threading.Thread(target=hit) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert len(results) == 200
+    assert results.count(True) == 30
+
+
+# ------------------------------------------------------------ CHK-M3-111
+
+
+def test_ten_enrolments_per_ip_per_minute(rl: RateLimiter, clock: Clock) -> None:
+    clock.advance(30)
+    assert [rl.allow_enrol("198.51.100.1") for _ in range(10)] == [True] * 10
+    assert rl.allow_enrol("198.51.100.1") is False  # the 11th
+    assert rl.retry_after() == 30
+    assert rl.allow_enrol("198.51.100.2") is True  # another IP
+    assert rl.allow_enrol("2001:db8::1") is True
+    clock.advance(30)
+    assert rl.allow_enrol("198.51.100.1") is True
+
+
+def test_enrol_and_login_limits_do_not_share_a_counter(rl: RateLimiter) -> None:
+    ip = "198.51.100.9"
+    assert [rl.allow_login(ip) for _ in range(10)] == [True] * 10
+    assert [rl.allow_enrol(ip) for _ in range(10)] == [True] * 10
+    assert rl.allow_login(ip) is False
+    assert rl.allow_enrol(ip) is False
+
+
+# ------------------------------------------------------------ CHK-M3-112
+
+
+def test_one_unscheduled_upload_per_ten_minutes(rl: RateLimiter, clock: Clock) -> None:
+    assert rl.allow_unscheduled_inventory(A) is True
+    clock.advance(60)
+    assert rl.allow_unscheduled_inventory(A) is False
+    assert rl.unscheduled_inventory_retry_after(A) == 540
+    clock.advance(9 * 60 - 1)  # 9 min 59 s after the first
+    assert rl.allow_unscheduled_inventory(A) is False
+    assert rl.unscheduled_inventory_retry_after(A) == 1
+    assert rl.allow_unscheduled_inventory(B) is True  # per agent
+    clock.advance(1)  # exactly 10 min
+    assert rl.allow_unscheduled_inventory(A) is True
+    assert rl.unscheduled_inventory_retry_after(A) == 600
+    assert rl.allow_unscheduled_inventory(A) is False
+
+
+def test_refused_attempts_do_not_move_the_window(rl: RateLimiter, clock: Clock) -> None:
+    assert rl.allow_unscheduled_inventory(A)
+    for _ in range(9):
+        clock.advance(60)
+        assert rl.allow_unscheduled_inventory(A) is False
+    clock.advance(60)  # 10 min after the allowed one, despite nine refusals
+    assert rl.allow_unscheduled_inventory(A) is True
+
+
+def test_retry_after_rounds_up_to_whole_seconds(rl: RateLimiter, clock: Clock) -> None:
+    assert rl.allow_unscheduled_inventory(A)
+    clock.advance(599.5)
+    assert rl.unscheduled_inventory_retry_after(A) == 1
+    clock.at = T0 + timedelta(seconds=0.25)
+    assert rl.unscheduled_inventory_retry_after(A) == 600
+    assert rl.unscheduled_inventory_retry_after(B) >= 1  # never 0 or negative
+
+
+# ------------------------------------------------------------ CHK-M3-113
+
+
+def test_agent_enrol_and_inventory_keys_are_dropped(
+    rl: RateLimiter, clock: Clock
+) -> None:
+    n = 10_000
+    agents = [uuid.uuid4() for _ in range(n)]
+    for i, a in enumerate(agents):
+        rl.allow_agent(a)
+        rl.allow_enrol(f"10.{i // 65536}.{(i // 256) % 256}.{i % 256}")
+        rl.allow_unscheduled_inventory(a)
+    assert rl.size() == 3 * n
+    clock.advance(30)
+    rl.drain()
+    assert rl.size() == 3 * n  # the current minute is kept
+    clock.advance(31)
+    rl.drain()
+    assert rl.size() == n  # minute keys gone; inventory windows still open
+    clock.advance(9 * 60 - 2)  # 9 min 59 s after the uploads
+    rl.drain()
+    assert rl.size() == n
+    clock.advance(1)
+    rl.drain()
+    assert rl.size() == 0
+    # dropping a key never re-allows early: a fresh window starts from scratch
+    assert rl.allow_unscheduled_inventory(agents[0]) is True
+
+
+# ------------------------------------------------------------ CHK-M3-114
+
+
+def test_limiter_implements_the_extended_protocol(rl: RateLimiter) -> None:
+    limits: RateLimits = rl
+    assert limits.allow_agent(A) is True
+    assert limits.allow_enrol("192.0.2.1") is True
+    assert limits.allow_unscheduled_inventory(A) is True
+    assert limits.unscheduled_inventory_retry_after(A) == 600

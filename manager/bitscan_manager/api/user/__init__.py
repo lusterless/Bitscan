@@ -23,10 +23,24 @@ def problem_responses(statuses: Iterable[int]) -> dict[int | str, dict[str, Any]
 
 def build_user_router() -> APIRouter:
     # Imported here: the route modules import problem_responses from this package.
-    from bitscan_manager.api.user import api_tokens, auth, users
+    from bitscan_manager.api.user import (
+        agents,
+        api_tokens,
+        audit_log,
+        auth,
+        enrolment,
+        metrics,
+        settings,
+        users,
+    )
 
     router = APIRouter(prefix="/api/v1")
     router.include_router(auth.router)
     router.include_router(api_tokens.router)
     router.include_router(users.router)
+    router.include_router(settings.router)
+    router.include_router(enrolment.router)
+    router.include_router(agents.router)
+    router.include_router(audit_log.router)
+    router.include_router(metrics.router)
     return router

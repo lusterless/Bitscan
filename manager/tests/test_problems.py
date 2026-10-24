@@ -122,7 +122,8 @@ def check_problem(resp: Any, status: int, type_: str, path: str) -> dict[str, An
 
 CASES: list[tuple[str, str, dict[str, Any], int, str]] = [
     ("GET", "/no/such/path", {}, 404, "not_found"),
-    ("GET", "/api/v1/agent/enroll", {}, 404, "not_found"),
+    ("GET", "/api/v1/agent/no-such-route", {}, 404, "not_found"),
+    ("GET", "/api/v1/agent/enroll", {}, 405, "about:blank"),  # POST only (TASK-067)
     ("DELETE", "/t/q", {}, 405, "about:blank"),
     ("POST", "/t/model", {"content": b"{not json"}, 400, "invalid_request"),
     ("POST", "/t/model", {"json": {"name": "a"}}, 400, "invalid_request"),

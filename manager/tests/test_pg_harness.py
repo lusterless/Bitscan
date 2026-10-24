@@ -4,12 +4,20 @@ Checks CHK-M0-050/051 and CHK-M1-031, -033 to -035 of the phase test plans.
 Unit tests of the spec extraction run without Docker; the rest are ``pg``.
 """
 
+import os
 from pathlib import Path
 
 import psycopg
 import pytest
 
-from .conftest import LOGIN_ROLES, Conn, PgServer
+from .conftest import (
+    LOGIN_ROLES,
+    RUN_LABEL_KEY,
+    WORKER_LABEL_KEY,
+    Conn,
+    PgServer,
+    container_labels,
+)
 from .spec_sql import RECONNECT, bootstrap
 
 EXTENSIONS = {"pg_trgm", "pgcrypto", "debversion"}
@@ -198,8 +206,10 @@ def test_port_is_published_on_localhost_only(pg_server: PgServer) -> None:
 def test_no_superuser_credential_is_reachable(pg_server: PgServer) -> None:
     """testing.md L51: after the Bootstrap, nothing a test holds can act as one."""
     names = {f.name for f in pg_server.__dataclass_fields__.values()}
-    assert names == {"host", "port", "port_bindings", "_passwords"}
+    assert names == {"host", "port", "port_bindings", "_passwords", "labels"}
     assert set(pg_server._passwords) == set(LOGIN_ROLES)
+    # the labels are only the two bitscan.* keys, never the container's Env
+    assert set(pg_server.labels) == {RUN_LABEL_KEY, WORKER_LABEL_KEY}
     assert "Env" not in repr(pg_server.port_bindings)
     with pytest.raises(ValueError):
         pg_server.dsn("postgres")
@@ -431,3 +441,30 @@ def test_superuser_statements_are_only_the_planned_ones() -> None:
     ]
     problems = superuser_log_problems(log[0], planned)
     assert problems == [], " | ".join(problems)
+
+
+# --- per-run and per-worker containers (speed rules, decisions 2026-10-24) ---
+
+
+def test_container_labels_default_without_xdist_or_run_label() -> None:
+    assert container_labels({}) == {RUN_LABEL_KEY: "default", WORKER_LABEL_KEY: "main"}
+    assert container_labels({"BSTEST_RUN_LABEL": "", "PYTEST_XDIST_WORKER": ""}) == {
+        RUN_LABEL_KEY: "default",
+        WORKER_LABEL_KEY: "main",
+    }
+
+
+def test_container_labels_carry_the_run_and_the_xdist_worker() -> None:
+    env = {"BSTEST_RUN_LABEL": "g18-r1", "PYTEST_XDIST_WORKER": "gw7", "OTHER": "x"}
+    assert container_labels(env) == {RUN_LABEL_KEY: "g18-r1", WORKER_LABEL_KEY: "gw7"}
+
+
+@pytest.mark.pg
+def test_session_container_is_labelled_for_this_run_and_worker(
+    pg_server: PgServer, fresh_pg_server: PgServer
+) -> None:
+    # Read back from Docker, so the labels are really on the running containers.
+    want = container_labels(os.environ)
+    assert dict(pg_server.labels) == want
+    assert dict(fresh_pg_server.labels) == want
+    assert pg_server.port != fresh_pg_server.port

@@ -340,10 +340,12 @@ def test_package_identity_and_indexes(fl: Conn) -> None:
     q: LiteralString = (
         "INSERT INTO package (name, version, architecture) VALUES (%s, %s, %s)"
     )
-    assert state(fl, q, ("bash", "5.2-1", "amd64")) is None
-    assert state(fl, q, ("bash", "5.2-1", "amd64")) == "23505"
-    assert state(fl, q, ("bash", "5.2-1", "arm64")) is None
-    assert state(fl, q, ("bash", "5.2-2", "amd64")) is None
+    # a name no other test stores: the session database is shared (M3 gate fix)
+    name = f"bash-{secrets.token_hex(4)}"
+    assert state(fl, q, (name, "5.2-1", "amd64")) is None
+    assert state(fl, q, (name, "5.2-1", "amd64")) == "23505"
+    assert state(fl, q, (name, "5.2-1", "arm64")) is None
+    assert state(fl, q, (name, "5.2-2", "amd64")) is None
     defs = dict(
         fl.execute(
             "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'"

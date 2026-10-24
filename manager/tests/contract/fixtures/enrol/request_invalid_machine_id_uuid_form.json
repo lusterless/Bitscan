@@ -1,0 +1,8 @@
+{
+  "hostname": "web-01.example.org",
+  "machine_id": "01234567-89ab-cdef-0123-456789abcdef",
+  "agent_version": "1.0.0",
+  "os_id": "ubuntu",
+  "os_version_id": "24.04",
+  "os_pretty_name": "Ubuntu 24.04.1 LTS"
+}

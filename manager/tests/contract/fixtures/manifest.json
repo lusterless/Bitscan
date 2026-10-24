@@ -1,0 +1,2384 @@
+{
+  "about": "Shared agent wire-contract fixtures (TS §8.3 Contract, TS §6.5, REQ-061; PD-22). Written by the tester from TS §6.5 L1159-L1190 and the #60 field table in work/plans/TASK-048.md, not from the code. 'valid' is about the JSON Schema and the manager model; 'decoder' marks schema-valid inventory bodies the decoder must refuse (#33, #72). 'generate' entries are built from the file: plugins_count repeats plugins[0] with distinct UUIDs; packages_count makes distinct packages pkg-<n> 1.0 amd64 'install ok installed' with the list_sha256 recomputed; ip_addresses_count makes distinct 10.x.y.z addresses; raw_bytes sets os_info.raw to {\"pad\": \"<a...>\"} whose compact UTF-8 JSON (separators ',' ':') is exactly that many bytes. Inventory bodies are uncompressed; send them with Content-Encoding: gzip. The only token value is fake_token.",
+  "fake_token": "bsa_FIXTURE_fake_token_not_a_real_secret0000000",
+  "routes": {
+    "enrol": {
+      "method": "POST",
+      "path": "/api/v1/agent/enroll",
+      "request": {
+        "model": "EnrolRequest"
+      },
+      "response": {
+        "model": "EnrolResponse"
+      }
+    },
+    "heartbeat": {
+      "method": "POST",
+      "path": "/api/v1/agent/{id}/heartbeat",
+      "request": {
+        "model": "HeartbeatRequest"
+      },
+      "response": {
+        "model": "HeartbeatResponse"
+      }
+    },
+    "jobs": {
+      "method": "GET",
+      "path": "/api/v1/agent/{id}/jobs",
+      "request": null,
+      "response": {
+        "model": "JobsResponse"
+      }
+    },
+    "results": {
+      "method": "POST",
+      "path": "/api/v1/agent/{id}/jobs/{job_id}/results",
+      "request": {
+        "model": "ResultsRequest"
+      },
+      "response": {
+        "model": "ResultsResponse"
+      }
+    },
+    "inventory": {
+      "method": "PUT",
+      "path": "/api/v1/agent/{id}/inventory",
+      "request": {
+        "model": "InventoryBody",
+        "content_encoding": "gzip"
+      },
+      "response": null
+    },
+    "rotate": {
+      "method": "POST",
+      "path": "/api/v1/agent/{id}/token/rotate",
+      "request": {
+        "model": "RotateRequest"
+      },
+      "response": {
+        "model": "RotateResponse"
+      }
+    }
+  },
+  "no_body": [
+    "jobs/request (GET)",
+    "inventory/response (204)"
+  ],
+  "required_invalid_classes": {
+    "enrol/request": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "over_length",
+      "under_length",
+      "format",
+      "unstorable"
+    ],
+    "enrol/response": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "bad_uuid",
+      "bad_timestamp",
+      "enum",
+      "format"
+    ],
+    "heartbeat/request": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "over_length",
+      "under_length",
+      "bad_uuid",
+      "bad_timestamp",
+      "range",
+      "format",
+      "unstorable"
+    ],
+    "heartbeat/response": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "bad_timestamp",
+      "range"
+    ],
+    "jobs/response": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "under_length",
+      "bad_uuid",
+      "bad_timestamp",
+      "enum",
+      "range"
+    ],
+    "results/request": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "bad_uuid",
+      "bad_timestamp",
+      "enum",
+      "range"
+    ],
+    "results/response": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "range"
+    ],
+    "inventory/request": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "over_length",
+      "under_length",
+      "range",
+      "format",
+      "unstorable"
+    ],
+    "rotate/request": [
+      "extra_key",
+      "wrong_type"
+    ],
+    "rotate/response": [
+      "extra_key",
+      "missing_key",
+      "wrong_type",
+      "bad_timestamp",
+      "format"
+    ]
+  },
+  "fixtures": [
+    {
+      "file": "enrol/request_valid_full.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": true,
+      "reason": "TS §6.5 L1161 all six keys"
+    },
+    {
+      "file": "enrol/request_valid_os_nulls.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: os_* nullable"
+    },
+    {
+      "file": "enrol/request_valid_os_empty.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: os_* 0..n characters"
+    },
+    {
+      "file": "enrol/request_valid_max_lengths.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: hostname 255, agent_version 32, os_id 32, os_version_id 16, os_pretty_name 128"
+    },
+    {
+      "file": "enrol/request_valid_unicode_code_points.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60/#56: lengths in code points (255 x U+00E9 is 510 UTF-8 bytes)"
+    },
+    {
+      "file": "enrol/request_invalid_extra_key.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "#60: unknown keys refused"
+    },
+    {
+      "file": "enrol/request_invalid_missing_hostname.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "hostname required"
+    },
+    {
+      "file": "enrol/request_invalid_missing_machine_id.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "machine_id required"
+    },
+    {
+      "file": "enrol/request_invalid_missing_agent_version.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "agent_version required"
+    },
+    {
+      "file": "enrol/request_invalid_hostname_int.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "hostname is a string"
+    },
+    {
+      "file": "enrol/request_invalid_os_id_int.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "os_id is a string or null"
+    },
+    {
+      "file": "enrol/request_invalid_hostname_null.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "hostname not nullable"
+    },
+    {
+      "file": "enrol/request_invalid_body_array.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "body is an object"
+    },
+    {
+      "file": "enrol/request_invalid_hostname_empty.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "under_length",
+      "reason": "hostname 1..255"
+    },
+    {
+      "file": "enrol/request_invalid_agent_version_empty.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "under_length",
+      "reason": "agent_version 1..32"
+    },
+    {
+      "file": "enrol/request_invalid_hostname_256.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "hostname max 255 (agent.hostname VARCHAR(255))"
+    },
+    {
+      "file": "enrol/request_invalid_hostname_256_code_points.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "256 code points"
+    },
+    {
+      "file": "enrol/request_invalid_agent_version_33.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "agent_version max 32"
+    },
+    {
+      "file": "enrol/request_invalid_os_id_33.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "os_id max 32"
+    },
+    {
+      "file": "enrol/request_invalid_os_version_id_17.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "os_version_id max 16"
+    },
+    {
+      "file": "enrol/request_invalid_os_pretty_name_129.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "os_pretty_name max 128"
+    },
+    {
+      "file": "enrol/request_invalid_machine_id_uppercase.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: 32 lowercase hex"
+    },
+    {
+      "file": "enrol/request_invalid_machine_id_31.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: exactly 32"
+    },
+    {
+      "file": "enrol/request_invalid_machine_id_33.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: exactly 32"
+    },
+    {
+      "file": "enrol/request_invalid_machine_id_non_hex.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: hex only"
+    },
+    {
+      "file": "enrol/request_invalid_machine_id_uuid_form.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: machine-id(5) form, no hyphens"
+    },
+    {
+      "file": "enrol/response_valid_enrolled.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.5 L1161"
+    },
+    {
+      "file": "enrol/response_valid_awaiting_approval.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": true,
+      "reason": "status awaiting_approval; fractional seconds"
+    },
+    {
+      "file": "enrol/response_invalid_extra_key.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "additionalProperties false"
+    },
+    {
+      "file": "enrol/response_invalid_missing_expires_at.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "expires_at required"
+    },
+    {
+      "file": "enrol/response_invalid_missing_agent_token.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "agent_token required"
+    },
+    {
+      "file": "enrol/response_invalid_status_online.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "enum",
+      "reason": "status enrolled | awaiting_approval"
+    },
+    {
+      "file": "enrol/response_invalid_agent_id_ellipsis.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_uuid",
+      "reason": "UUID string"
+    },
+    {
+      "file": "enrol/response_invalid_agent_id_int.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "UUID string, not a number"
+    },
+    {
+      "file": "enrol/response_invalid_issued_at_naive.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "#60: RFC 3339 with offset"
+    },
+    {
+      "file": "enrol/response_invalid_expires_at_epoch.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "#60: RFC 3339 string, not epoch seconds"
+    },
+    {
+      "file": "enrol/response_invalid_token_bse_prefix.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "format",
+      "reason": "#56 (a): bsa_ token"
+    },
+    {
+      "file": "enrol/response_invalid_token_42.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "format",
+      "reason": "#56 (a): 43-character body"
+    },
+    {
+      "file": "enrol/response_invalid_token_padded.json",
+      "route": "enrol",
+      "direction": "response",
+      "valid": false,
+      "class": "format",
+      "reason": "#56 (a): no padding, base64url alphabet"
+    },
+    {
+      "file": "heartbeat/request_valid_full.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": true,
+      "reason": "TS §6.5 L1163 all eight keys"
+    },
+    {
+      "file": "heartbeat/request_valid_first_heartbeat.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: last_pull_at, current_job_id, last_error nullable; runner_helpers may be empty"
+    },
+    {
+      "file": "heartbeat/request_valid_boundaries.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60 as revised (TASK-048 r2, user ruling 2026-10-23): integers to 2^53-1, last_error 1,024 code points, 8 helpers, 32-char name, offsets"
+    },
+    {
+      "file": "heartbeat/request_valid_last_error_text.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": true,
+      "reason": "last_error string"
+    },
+    {
+      "file": "heartbeat/request_invalid_extra_key.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "#60: unknown keys refused"
+    },
+    {
+      "file": "heartbeat/request_invalid_extra_key_jobs.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "#60: unknown keys refused"
+    },
+    {
+      "file": "heartbeat/request_invalid_missing_clock.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "clock required"
+    },
+    {
+      "file": "heartbeat/request_invalid_missing_runner_helpers.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "runner_helpers required"
+    },
+    {
+      "file": "heartbeat/request_invalid_missing_agent_version.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "agent_version required"
+    },
+    {
+      "file": "heartbeat/request_invalid_missing_spool_bytes.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "spool_bytes required"
+    },
+    {
+      "file": "heartbeat/request_invalid_uptime_bool.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "TASK-048 plan: strict integers, no booleans"
+    },
+    {
+      "file": "heartbeat/request_invalid_uptime_float.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "heartbeat/request_invalid_uptime_string.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer, not a numeric string"
+    },
+    {
+      "file": "heartbeat/request_invalid_clock_null.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "clock not nullable"
+    },
+    {
+      "file": "heartbeat/request_invalid_runner_helpers_string.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "array"
+    },
+    {
+      "file": "heartbeat/request_invalid_runner_helpers_item_int.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "array of strings"
+    },
+    {
+      "file": "heartbeat/request_invalid_uptime_negative.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "0..2^53-1 (TASK-048 r2)"
+    },
+    {
+      "file": "heartbeat/request_invalid_spool_bytes_negative.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "0..2^53-1 (TASK-048 r2)"
+    },
+    {
+      "file": "heartbeat/request_invalid_uptime_2_63.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "max 2^53-1 (TASK-048 r2); 2^63 is far above it"
+    },
+    {
+      "file": "heartbeat/request_invalid_uptime_2_53.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "max 2^53-1 (TASK-048 r2, user ruling 2026-10-23: JSON-safe integer, FastAPI exports bounds as floats)"
+    },
+    {
+      "file": "heartbeat/request_invalid_spool_bytes_2_53.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "max 2^53-1 (TASK-048 r2)"
+    },
+    {
+      "file": "heartbeat/request_invalid_runner_helpers_9.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: at most 8"
+    },
+    {
+      "file": "heartbeat/request_invalid_runner_helpers_duplicate.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: distinct"
+    },
+    {
+      "file": "heartbeat/request_invalid_runner_helpers_uppercase.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: ^[a-z][a-z0-9_-]{0,31}$"
+    },
+    {
+      "file": "heartbeat/request_invalid_runner_helpers_33_chars.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: at most 32 characters"
+    },
+    {
+      "file": "heartbeat/request_invalid_runner_helpers_leading_digit.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: starts with a letter"
+    },
+    {
+      "file": "heartbeat/request_invalid_runner_helpers_empty_name.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: at least one character"
+    },
+    {
+      "file": "heartbeat/request_invalid_agent_version_33.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "agent_version max 32"
+    },
+    {
+      "file": "heartbeat/request_invalid_agent_version_empty.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "under_length",
+      "reason": "agent_version 1..32"
+    },
+    {
+      "file": "heartbeat/request_invalid_last_error_1025.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: last_error max 1,024 code points"
+    },
+    {
+      "file": "heartbeat/request_invalid_current_job_id_not_uuid.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_uuid",
+      "reason": "UUID string"
+    },
+    {
+      "file": "heartbeat/request_invalid_current_job_id_ellipsis.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_uuid",
+      "reason": "UUID string"
+    },
+    {
+      "file": "heartbeat/request_invalid_uuid_no_hyphens.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_uuid",
+      "reason": "RFC 9562 hyphenated form (JSON Schema format uuid); pending ruling, test-plan question 1"
+    },
+    {
+      "file": "heartbeat/request_invalid_current_job_id_int.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "UUID string or null"
+    },
+    {
+      "file": "heartbeat/request_invalid_clock_naive.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "#60: offset required"
+    },
+    {
+      "file": "heartbeat/request_invalid_clock_date_only.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "RFC 3339 date-time"
+    },
+    {
+      "file": "heartbeat/request_invalid_clock_epoch_int.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "RFC 3339 string, not epoch seconds"
+    },
+    {
+      "file": "heartbeat/request_invalid_clock_epoch_string.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "RFC 3339 string, not epoch seconds"
+    },
+    {
+      "file": "heartbeat/request_invalid_clock_words.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "RFC 3339"
+    },
+    {
+      "file": "heartbeat/request_invalid_clock_bad_month.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "RFC 3339 month 01..12"
+    },
+    {
+      "file": "heartbeat/request_invalid_last_pull_at_naive.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "#60: offset required"
+    },
+    {
+      "file": "heartbeat/response_valid_defaults.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.5 L1163; TS §8.6 defaults"
+    },
+    {
+      "file": "heartbeat/response_valid_minimums.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §8.6 minimums"
+    },
+    {
+      "file": "heartbeat/response_valid_maximums.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §8.6 maximums"
+    },
+    {
+      "file": "heartbeat/response_invalid_extra_key_jobs.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "REQ-060 (2), REQ-088 (4): only configuration (CHK-M3-345)"
+    },
+    {
+      "file": "heartbeat/response_invalid_extra_key_command.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "TS §3.3 L211: nothing in a heartbeat response can make the agent run anything"
+    },
+    {
+      "file": "heartbeat/response_invalid_missing_server_time.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "server_time required"
+    },
+    {
+      "file": "heartbeat/response_invalid_missing_job_pull_seconds.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "job_pull_seconds required"
+    },
+    {
+      "file": "heartbeat/response_invalid_job_pull_59.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "60..3,600"
+    },
+    {
+      "file": "heartbeat/response_invalid_job_pull_3601.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "60..3,600"
+    },
+    {
+      "file": "heartbeat/response_invalid_max_parallel_0.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "1..8"
+    },
+    {
+      "file": "heartbeat/response_invalid_max_parallel_9.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "1..8"
+    },
+    {
+      "file": "heartbeat/response_invalid_job_pull_string.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "heartbeat/response_invalid_job_pull_float.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "heartbeat/response_invalid_server_time_naive.json",
+      "route": "heartbeat",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "RFC 3339 UTC"
+    },
+    {
+      "file": "jobs/response_valid_empty.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.1 L1064: empty list = idle"
+    },
+    {
+      "file": "jobs/response_valid_inventory.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.5 L1182: inventory job, exactly four keys"
+    },
+    {
+      "file": "jobs/response_valid_compliance.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.5 L1167-L1180 example (ids completed)"
+    },
+    {
+      "file": "jobs/response_valid_mixed.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": true,
+      "reason": "both variants; timeout_s 1 and 600; the five TS §8.6 patterns; empty patterns"
+    },
+    {
+      "file": "jobs/response_invalid_missing_jobs.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "jobs required"
+    },
+    {
+      "file": "jobs/response_invalid_extra_top_key.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "additionalProperties false"
+    },
+    {
+      "file": "jobs/response_invalid_jobs_object.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "array"
+    },
+    {
+      "file": "jobs/response_invalid_inventory_with_plugins.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "TS §6.5 L1182: no plugins on an inventory job"
+    },
+    {
+      "file": "jobs/response_invalid_inventory_with_redaction_patterns.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "TS §6.5 L1182: no redaction_patterns on an inventory job"
+    },
+    {
+      "file": "jobs/response_invalid_job_eval_spec.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "security invariant: eval_spec never sent to agents"
+    },
+    {
+      "file": "jobs/response_invalid_plugin_operator.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "security invariant: Operator stays on the manager (CHK-M3-346)"
+    },
+    {
+      "file": "jobs/response_invalid_plugin_expected_result.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "security invariant: ExpectedResult stays on the manager"
+    },
+    {
+      "file": "jobs/response_invalid_compliance_missing_plugins.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "compliance requires plugins"
+    },
+    {
+      "file": "jobs/response_invalid_compliance_missing_redaction_patterns.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "compliance requires redaction_patterns"
+    },
+    {
+      "file": "jobs/response_invalid_missing_kind.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "kind is the discriminator"
+    },
+    {
+      "file": "jobs/response_invalid_missing_pickup_by.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "pickup_by required"
+    },
+    {
+      "file": "jobs/response_invalid_plugin_missing_execute.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "plugin item exactly plugin_uuid, execute, timeout_s"
+    },
+    {
+      "file": "jobs/response_invalid_compliance_plugins_empty.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: 1..5,000 plugins"
+    },
+    {
+      "file": "jobs/response_invalid_timeout_0.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "timeout_s 1..600"
+    },
+    {
+      "file": "jobs/response_invalid_timeout_601.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "timeout_s 1..600"
+    },
+    {
+      "file": "jobs/response_invalid_timeout_float.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "jobs/response_invalid_timeout_bool.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer, not boolean"
+    },
+    {
+      "file": "jobs/response_invalid_execute_empty.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "under_length",
+      "reason": "#60: execute non-empty"
+    },
+    {
+      "file": "jobs/response_invalid_kind_scan.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "enum",
+      "reason": "kind inventory | compliance"
+    },
+    {
+      "file": "jobs/response_invalid_job_id_ellipsis.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_uuid",
+      "reason": "UUID string (the TS example's elided id)"
+    },
+    {
+      "file": "jobs/response_invalid_agent_id_not_uuid.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_uuid",
+      "reason": "UUID string"
+    },
+    {
+      "file": "jobs/response_invalid_plugin_uuid_short.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_uuid",
+      "reason": "UUID string"
+    },
+    {
+      "file": "jobs/response_invalid_pickup_by_naive.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "RFC 3339 with offset"
+    },
+    {
+      "file": "jobs/response_invalid_redaction_pattern_int.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "array of strings"
+    },
+    {
+      "file": "jobs/response_invalid_redaction_patterns_51.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: 0..50 patterns (TS §8.6)"
+    },
+    {
+      "file": "jobs/response_valid_plugins_5000.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": true,
+      "reason": "#60: 5,000 plugins (TS §4.1); built from this file by repeating plugins[0] with distinct UUIDs",
+      "generate": {
+        "op": "plugins_count",
+        "count": 5000
+      }
+    },
+    {
+      "file": "jobs/response_invalid_plugins_5001.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: at most 5,000 plugins; built from this file",
+      "generate": {
+        "op": "plugins_count",
+        "count": 5001
+      }
+    },
+    {
+      "file": "results/request_valid_start_notice.json",
+      "route": "results",
+      "direction": "request",
+      "valid": true,
+      "reason": "TS §3.3 L222 start notice"
+    },
+    {
+      "file": "results/request_valid_one_final.json",
+      "route": "results",
+      "direction": "request",
+      "valid": true,
+      "reason": "TS §6.5 L1184 all nine item keys"
+    },
+    {
+      "file": "results/request_valid_error_cases.json",
+      "route": "results",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: exit_code nullable; error spool_overflow, runner_unavailable"
+    },
+    {
+      "file": "results/request_valid_boundaries.json",
+      "route": "results",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: exit_code int32 range; any text; offsets"
+    },
+    {
+      "file": "results/request_valid_batch_50.json",
+      "route": "results",
+      "direction": "request",
+      "valid": true,
+      "reason": "TS §3.5 L253: at most 50 results"
+    },
+    {
+      "file": "results/request_invalid_batch_51.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TS §3.5 L253: at most 50 results"
+    },
+    {
+      "file": "results/request_invalid_extra_top_key.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "#60: unknown keys refused"
+    },
+    {
+      "file": "results/request_invalid_item_extra_status.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "the agent never sends a status; evaluation is on the manager"
+    },
+    {
+      "file": "results/request_invalid_missing_final.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "final required"
+    },
+    {
+      "file": "results/request_invalid_item_missing_stdout.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "stdout required"
+    },
+    {
+      "file": "results/request_invalid_item_missing_started_at.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "#60: started_at always required"
+    },
+    {
+      "file": "results/request_invalid_item_missing_finished_at.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "#60: finished_at always required"
+    },
+    {
+      "file": "results/request_invalid_final_string.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "boolean"
+    },
+    {
+      "file": "results/request_invalid_final_int.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "boolean"
+    },
+    {
+      "file": "results/request_invalid_timed_out_string.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "boolean"
+    },
+    {
+      "file": "results/request_invalid_results_object.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "array"
+    },
+    {
+      "file": "results/request_invalid_stdout_null.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "#60: stdout not nullable"
+    },
+    {
+      "file": "results/request_invalid_exit_code_float.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "results/request_invalid_exit_code_2_31.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: int32"
+    },
+    {
+      "file": "results/request_invalid_exit_code_below_int32.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: int32"
+    },
+    {
+      "file": "results/request_invalid_error_timeout.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "enum",
+      "reason": "error null | spool_overflow | runner_unavailable"
+    },
+    {
+      "file": "results/request_invalid_error_empty.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "enum",
+      "reason": "error null | spool_overflow | runner_unavailable"
+    },
+    {
+      "file": "results/request_invalid_plugin_uuid_bad.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_uuid",
+      "reason": "UUID string"
+    },
+    {
+      "file": "results/request_invalid_started_at_naive.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "#60: offset required"
+    },
+    {
+      "file": "results/request_invalid_finished_at_null.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "#60: finished_at always required, not nullable"
+    },
+    {
+      "file": "results/response_valid_zero.json",
+      "route": "results",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.5 L1184"
+    },
+    {
+      "file": "results/response_valid_counts.json",
+      "route": "results",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.5 L1184"
+    },
+    {
+      "file": "results/response_invalid_accepted_negative.json",
+      "route": "results",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: >= 0"
+    },
+    {
+      "file": "results/response_invalid_duplicates_negative.json",
+      "route": "results",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: >= 0"
+    },
+    {
+      "file": "results/response_invalid_extra_key.json",
+      "route": "results",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "exactly accepted and duplicates"
+    },
+    {
+      "file": "results/response_invalid_missing_duplicates.json",
+      "route": "results",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "duplicates required"
+    },
+    {
+      "file": "results/response_invalid_accepted_string.json",
+      "route": "results",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "results/response_invalid_accepted_float.json",
+      "route": "results",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "inventory/request_valid_zero_packages.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "REQ-061 (1): zero packages; list_sha256 of the empty list"
+    },
+    {
+      "file": "inventory/request_valid_multi_arch.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "REQ-061 (1): libc6 amd64 and i386; unsorted input; empty source (stored NULL) and null source; status config-files"
+    },
+    {
+      "file": "inventory/request_valid_os_info_nulls.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: os_info scalars nullable; ip_addresses may be empty; raw {}"
+    },
+    {
+      "file": "inventory/request_valid_max_lengths.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: every string at its column length; integer maxima; INET with and without prefix"
+    },
+    {
+      "file": "inventory/request_valid_hash_mismatch.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "schema-valid; #33: recomputed hash differs",
+      "decoder": {
+        "status": 422,
+        "reason": "list_sha256 mismatch"
+      }
+    },
+    {
+      "file": "inventory/request_valid_duplicate_package.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "schema-valid; #72 (f): duplicate (name, version, architecture)",
+      "decoder": {
+        "status": 422,
+        "reason": "duplicate package"
+      }
+    },
+    {
+      "file": "inventory/request_valid_raw_256k_plus_1.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "schema-valid; #72 (b): os_info.raw compact UTF-8 JSON 262,145 bytes; built from this file",
+      "decoder": {
+        "status": 413,
+        "reason": "raw over 256 KiB"
+      },
+      "generate": {
+        "op": "raw_bytes",
+        "bytes": 262145
+      }
+    },
+    {
+      "file": "inventory/request_valid_raw_256k.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "#72 (b): os_info.raw compact UTF-8 JSON exactly 262,144 bytes; built from this file",
+      "generate": {
+        "op": "raw_bytes",
+        "bytes": 262144
+      }
+    },
+    {
+      "file": "inventory/request_valid_packages_50000.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "TS §3.4 L240: 50,000 rows; built from this file (distinct names, recomputed hash)",
+      "generate": {
+        "op": "packages_count",
+        "count": 50000
+      }
+    },
+    {
+      "file": "inventory/request_invalid_packages_50001.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TS §3.4 L240, #60, #72 (b): more than 50,000 rows (422); built from this file",
+      "decoder": {
+        "status": 422,
+        "reason": "too many packages"
+      },
+      "generate": {
+        "op": "packages_count",
+        "count": 50001
+      }
+    },
+    {
+      "file": "inventory/request_invalid_ip_addresses_257.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: at most 256 addresses; built from this file",
+      "generate": {
+        "op": "ip_addresses_count",
+        "count": 257
+      }
+    },
+    {
+      "file": "inventory/request_valid_ip_addresses_256.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: 256 addresses; built from this file",
+      "generate": {
+        "op": "ip_addresses_count",
+        "count": 256
+      }
+    },
+    {
+      "file": "inventory/request_invalid_extra_top_key.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "#60: unknown keys refused"
+    },
+    {
+      "file": "inventory/request_invalid_os_info_extra_key.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "#60: unknown keys refused"
+    },
+    {
+      "file": "inventory/request_invalid_package_extra_key.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "#60: unknown keys refused"
+    },
+    {
+      "file": "inventory/request_invalid_missing_list_sha256.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "list_sha256 required"
+    },
+    {
+      "file": "inventory/request_invalid_missing_os_info.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "os_info required"
+    },
+    {
+      "file": "inventory/request_invalid_missing_packages.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "packages required"
+    },
+    {
+      "file": "inventory/request_invalid_os_info_missing_raw.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "raw required"
+    },
+    {
+      "file": "inventory/request_invalid_os_info_missing_ip_addresses.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "ip_addresses required (not nullable)"
+    },
+    {
+      "file": "inventory/request_invalid_package_missing_version.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "version required"
+    },
+    {
+      "file": "inventory/request_invalid_package_name_256.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: package name column length 255"
+    },
+    {
+      "file": "inventory/request_invalid_package_version_256.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: package version column length 255"
+    },
+    {
+      "file": "inventory/request_invalid_package_architecture_17.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: package architecture column length 16"
+    },
+    {
+      "file": "inventory/request_invalid_package_status_65.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: package status column length 64"
+    },
+    {
+      "file": "inventory/request_invalid_package_source_256.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: package source column length 255"
+    },
+    {
+      "file": "inventory/request_invalid_package_name_256_code_points.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: lengths in code points"
+    },
+    {
+      "file": "inventory/request_invalid_package_name_empty.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "under_length",
+      "reason": "#60: package name at least 1 character"
+    },
+    {
+      "file": "inventory/request_invalid_package_version_empty.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "under_length",
+      "reason": "#60: package version at least 1 character"
+    },
+    {
+      "file": "inventory/request_invalid_package_architecture_empty.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "under_length",
+      "reason": "#60: package architecture at least 1 character"
+    },
+    {
+      "file": "inventory/request_invalid_package_status_empty.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "under_length",
+      "reason": "#60: package status at least 1 character"
+    },
+    {
+      "file": "inventory/request_invalid_os_info_os_id_33.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: os_info.os_id column length 32"
+    },
+    {
+      "file": "inventory/request_invalid_os_info_os_version_id_17.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: os_info.os_version_id column length 16"
+    },
+    {
+      "file": "inventory/request_invalid_os_info_os_pretty_name_129.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: os_info.os_pretty_name column length 128"
+    },
+    {
+      "file": "inventory/request_invalid_os_info_kernel_release_65.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: os_info.kernel_release column length 64"
+    },
+    {
+      "file": "inventory/request_invalid_os_info_architecture_17.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "over_length",
+      "reason": "#60: os_info.architecture column length 16"
+    },
+    {
+      "file": "inventory/request_invalid_installed_size_2_31.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: INTEGER"
+    },
+    {
+      "file": "inventory/request_invalid_installed_size_negative.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: >= 0"
+    },
+    {
+      "file": "inventory/request_invalid_cpu_count_negative.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: >= 0"
+    },
+    {
+      "file": "inventory/request_invalid_memory_mb_2_31.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: INTEGER"
+    },
+    {
+      "file": "inventory/request_invalid_uptime_negative.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "#60: >= 0"
+    },
+    {
+      "file": "inventory/request_invalid_os_uptime_2_53.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "os_info.uptime_s max 2^53-1 (TASK-048 r2)"
+    },
+    {
+      "file": "inventory/request_invalid_installed_size_string.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "inventory/request_invalid_cpu_count_bool.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer, not boolean"
+    },
+    {
+      "file": "inventory/request_invalid_raw_array.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "#60: raw is a JSON object"
+    },
+    {
+      "file": "inventory/request_invalid_raw_null.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "#60: raw not nullable"
+    },
+    {
+      "file": "inventory/request_invalid_packages_object.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "array"
+    },
+    {
+      "file": "inventory/request_invalid_ip_addresses_string.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "array"
+    },
+    {
+      "file": "inventory/request_invalid_package_name_int.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "string"
+    },
+    {
+      "file": "inventory/request_invalid_list_sha256_63.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: 64 hex"
+    },
+    {
+      "file": "inventory/request_invalid_list_sha256_uppercase.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: lowercase hex"
+    },
+    {
+      "file": "inventory/request_invalid_list_sha256_non_hex.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: hex"
+    },
+    {
+      "file": "inventory/request_invalid_ip_ipv4_octet.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: PostgreSQL INET text (address, optional prefix)"
+    },
+    {
+      "file": "inventory/request_invalid_ip_ipv4_prefix_33.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: PostgreSQL INET text (address, optional prefix)"
+    },
+    {
+      "file": "inventory/request_invalid_ip_ipv6_prefix_129.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: PostgreSQL INET text (address, optional prefix)"
+    },
+    {
+      "file": "inventory/request_invalid_ip_words.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: PostgreSQL INET text (address, optional prefix)"
+    },
+    {
+      "file": "inventory/request_invalid_ip_empty.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "format",
+      "reason": "#60: PostgreSQL INET text (address, optional prefix)"
+    },
+    {
+      "file": "rotate/request_valid_empty_object.json",
+      "route": "rotate",
+      "direction": "request",
+      "valid": true,
+      "reason": "#60: rotate takes no body; an empty body or {} (the empty body is tested at the route)"
+    },
+    {
+      "file": "rotate/request_invalid_extra_key.json",
+      "route": "rotate",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "#60: anything else 400"
+    },
+    {
+      "file": "rotate/request_invalid_array.json",
+      "route": "rotate",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "#60: anything else 400"
+    },
+    {
+      "file": "rotate/request_invalid_null.json",
+      "route": "rotate",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "#60: anything else 400"
+    },
+    {
+      "file": "rotate/response_valid_rotated.json",
+      "route": "rotate",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.5 L1188"
+    },
+    {
+      "file": "rotate/response_invalid_missing_agent_token.json",
+      "route": "rotate",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "agent_token required"
+    },
+    {
+      "file": "rotate/response_invalid_missing_issued_at.json",
+      "route": "rotate",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "issued_at required"
+    },
+    {
+      "file": "rotate/response_invalid_extra_key.json",
+      "route": "rotate",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "exactly three keys"
+    },
+    {
+      "file": "rotate/response_invalid_token_null.json",
+      "route": "rotate",
+      "direction": "response",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "string"
+    },
+    {
+      "file": "rotate/response_invalid_token_bsk_prefix.json",
+      "route": "rotate",
+      "direction": "response",
+      "valid": false,
+      "class": "format",
+      "reason": "#56 (a): bsa_ token"
+    },
+    {
+      "file": "rotate/response_invalid_expires_at_naive.json",
+      "route": "rotate",
+      "direction": "response",
+      "valid": false,
+      "class": "bad_timestamp",
+      "reason": "RFC 3339 with offset"
+    },
+    {
+      "file": "enrol/request_invalid_missing_nullable_os_id.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "enrol/request_invalid_missing_nullable_os_version_id.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "enrol/request_invalid_missing_nullable_os_pretty_name.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "heartbeat/request_invalid_missing_nullable_last_pull_at.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "heartbeat/request_invalid_missing_nullable_current_job_id.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "heartbeat/request_invalid_missing_nullable_last_error.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "results/request_invalid_missing_nullable_exit_code.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "results/request_invalid_missing_nullable_error.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_os_info_os_id.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_os_info_os_version_id.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_os_info_os_pretty_name.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_os_info_kernel_release.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_os_info_architecture.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_os_info_cpu_count.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_os_info_memory_mb.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_os_info_uptime_s.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_package_source.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "inventory/request_invalid_missing_nullable_package_installed_size_kb.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling 2026-10-23: nullable keys are required (may be null)"
+    },
+    {
+      "file": "jobs/response_valid_ten_jobs.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §6.1 L1064, Q3 ruling: up to 10 jobs per pull"
+    },
+    {
+      "file": "jobs/response_invalid_eleven_jobs.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "TS §6.1 L1064, Q3 ruling 2026-10-23: maxItems 10"
+    },
+    {
+      "file": "enrol/request_invalid_nul_hostname.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "enrol/request_invalid_nul_os_pretty_name.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "enrol/request_invalid_lone_surrogate_hostname.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings",
+      "schema_gap": "lone surrogate"
+    },
+    {
+      "file": "enrol/request_valid_emoji_hostname.json",
+      "route": "enrol",
+      "direction": "request",
+      "valid": true,
+      "reason": "a surrogate pair is one code point (U+1F600), not refused"
+    },
+    {
+      "file": "heartbeat/request_invalid_nul_last_error.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "heartbeat/request_invalid_nul_agent_version.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "heartbeat/request_invalid_lone_surrogate_last_error.json",
+      "route": "heartbeat",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings",
+      "schema_gap": "lone surrogate"
+    },
+    {
+      "file": "inventory/request_invalid_nul_package_name.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_package_version.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_package_architecture.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_package_status.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_package_source.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_os_info_kernel_release.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_raw_top_key.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_raw_top_value.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_raw_nested_value.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_nul_raw_nested_key.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings"
+    },
+    {
+      "file": "inventory/request_invalid_lone_surrogate_package_name.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings",
+      "schema_gap": "lone surrogate"
+    },
+    {
+      "file": "inventory/request_invalid_lone_surrogate_raw_deep_key.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "unstorable",
+      "reason": "NUL ruling 2026-10-23 (TASK-048 r1): U+0000 and lone surrogates refused in agent-sent strings",
+      "schema_gap": "lone surrogate"
+    },
+    {
+      "file": "inventory/request_valid_raw_emoji_and_escapes.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": true,
+      "reason": "astral characters and ordinary escapes are allowed in raw"
+    },
+    {
+      "file": "results/request_valid_nul_in_stdout_and_stderr.json",
+      "route": "results",
+      "direction": "request",
+      "valid": true,
+      "reason": "NUL ruling: Results stdout and stderr not restricted until M9"
+    },
+    {
+      "file": "inventory/request_invalid_raw_nan_top.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
+      "schema_gap": "nan_inf"
+    },
+    {
+      "file": "inventory/request_invalid_raw_nan_nested.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
+      "schema_gap": "nan_inf"
+    },
+    {
+      "file": "inventory/request_invalid_raw_infinity_top.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
+      "schema_gap": "nan_inf"
+    },
+    {
+      "file": "inventory/request_invalid_raw_infinity_nested.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
+      "schema_gap": "nan_inf"
+    },
+    {
+      "file": "inventory/request_invalid_raw_minus_infinity_top.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
+      "schema_gap": "nan_inf"
+    },
+    {
+      "file": "inventory/request_invalid_raw_minus_infinity_nested.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
+      "schema_gap": "nan_inf"
+    },
+    {
+      "file": "inventory/request_invalid_raw_overflow_1e400_top.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
+      "schema_gap": "nan_inf"
+    },
+    {
+      "file": "inventory/request_invalid_raw_overflow_1e400_nested.json",
+      "route": "inventory",
+      "direction": "request",
+      "valid": false,
+      "class": "range",
+      "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
+      "schema_gap": "nan_inf"
+    }
+  ],
+  "schema_gaps": {
+    "lone surrogate": "main ruling 2026-10-23: model-only. No portable pattern can name a surrogate range (RE2 has none) and Go's encoding/json decodes a lone-surrogate escape as U+FFFD, so the Go agent cannot send one. The schema accepts these fixtures; the manager model must refuse them. M4: the Go contract test asserts only that the manager refuses (or skips these).",
+    "nan_inf": "main ruling 2026-10-23: model-only. NaN, Infinity and -Infinity are not JSON (RFC 8259) and 1e400 overflows float64, so a JSON Schema \"number\" cannot exclude them. These 8 files are not strict JSON: Python's json reads them, Go's encoding/json refuses them. M4: the Go contract test expects a parse error for them; the manager model must refuse them."
+  }
+}

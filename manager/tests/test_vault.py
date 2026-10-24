@@ -376,6 +376,25 @@ def test_token_appears_only_in_the_vault_request(
         ("https://vault.example", "k" * 129, TOKEN),
         ("https://vault.example", KEY, ""),
     ],
+    # fixed ids: TOKEN is a fresh canary per process, so ids built from it
+    # would differ between pytest-xdist workers and break the collection
+    ids=[
+        "http",
+        "http-upper",
+        "no-scheme",
+        "no-host",
+        "userinfo-token",
+        "query",
+        "fragment",
+        "key-empty",
+        "key-slash",
+        "key-space",
+        "key-query",
+        "key-dotdot",
+        "key-dot",
+        "key-129",
+        "token-empty",
+    ],
 )
 def test_bad_configuration_is_refused_without_echoing_secrets(
     addr: str, key: str, token: str

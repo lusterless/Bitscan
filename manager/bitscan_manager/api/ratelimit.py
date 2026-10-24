@@ -1,11 +1,13 @@
-"""In-memory rate limits and the failed-token-check aggregator (TS §6.3 L1136;
-#54, #55; decisions 2026-10-21 "M2 test-plan answers" (3)).
+"""In-memory rate limits and the failed-token-check aggregator (TS §6.3 L1136,
+§3.4 L239; #54, #55, #72; decisions 2026-10-21 "M2 test-plan answers" (3)).
 
 One manager instance (TS §2.1), so state lives in this process. Windows are
-fixed UTC minutes read from the Clock. Limits: sign-in 10 per IP (every
-attempt counts), 600 requests per user, 20 failed token checks per IP. Every
-failed check counts, including requests answered 429 because the IP is
-already over the limit. Valid tokens are never counted or blocked.
+fixed UTC minutes read from the Clock. Limits: sign-in 10 per IP and enrolment
+10 per IP (every attempt counts), 600 requests per user, 30 per agent, 20
+failed token checks per IP. Every failed check counts, including requests
+answered 429 because the IP is already over the limit. Valid tokens are never
+counted or blocked. Unscheduled inventory uploads: one per agent per 10
+minutes, measured from the last allowed one (#72 (e)).
 """
 
 import math
@@ -13,12 +15,16 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Final
+from uuid import UUID
 
 from bitscan_manager.runtime import Clock
 
 WINDOW_S: Final = 60
 LOGIN_PER_MIN: Final = 10
 USER_PER_MIN: Final = 600
+AGENT_PER_MIN: Final = 30
+ENROL_PER_MIN: Final = 10
+UNSCHEDULED_INVENTORY_EVERY: Final = timedelta(minutes=10)
 FAILED_PER_MIN: Final = 20
 ALERT_EVERY: Final = timedelta(hours=1)  # #54 (b): one alert per IP per hour
 ACTION: Final = "auth.token_check_failed"  # #50 (a)
@@ -51,6 +57,9 @@ class RateLimiter:
         self._lock = threading.Lock()
         self._login: dict[str, tuple[int, int]] = {}  # ip -> (window, count)
         self._user: dict[int, tuple[int, int]] = {}
+        self._agent: dict[UUID, tuple[int, int]] = {}
+        self._enrol: dict[str, tuple[int, int]] = {}
+        self._inventory: dict[UUID, datetime] = {}  # agent -> last allowed upload
         self._failed: dict[tuple[str, int], int] = {}  # (ip, window) -> count
         self._last_alert: dict[str, datetime] = {}
 
@@ -71,6 +80,34 @@ class RateLimiter:
     def allow_user(self, user_id: int) -> bool:
         with self._lock:
             return self._bump(self._user, user_id, self._window()) <= USER_PER_MIN
+
+    def allow_agent(self, agent_id: UUID) -> bool:
+        with self._lock:
+            return self._bump(self._agent, agent_id, self._window()) <= AGENT_PER_MIN
+
+    def allow_enrol(self, ip: str) -> bool:
+        with self._lock:
+            return self._bump(self._enrol, ip, self._window()) <= ENROL_PER_MIN
+
+    def allow_unscheduled_inventory(self, agent_id: UUID) -> bool:
+        """True (and the window restarts) if the agent's last allowed
+        unscheduled upload was at least 10 minutes ago; refusals do not count."""
+        with self._lock:
+            now = self._clock.now()
+            last = self._inventory.get(agent_id)
+            if last is not None and now - last < UNSCHEDULED_INVENTORY_EVERY:
+                return False
+            self._inventory[agent_id] = now
+            return True
+
+    def unscheduled_inventory_retry_after(self, agent_id: UUID) -> int:
+        """Whole seconds until the agent may upload unscheduled again (>= 1)."""
+        with self._lock:
+            last = self._inventory.get(agent_id)
+            if last is None:
+                return 1
+            left = last + UNSCHEDULED_INVENTORY_EVERY - self._clock.now()
+            return max(1, math.ceil(left.total_seconds()))
 
     def failed_check_blocked(self, ip: str) -> bool:
         with self._lock:
@@ -107,6 +144,15 @@ class RateLimiter:
             now = datetime.fromtimestamp(current * WINDOW_S, UTC)
             self._prune(self._login, current)
             self._prune(self._user, current)
+            self._prune(self._agent, current)
+            self._prune(self._enrol, current)
+            moment = self._clock.now()
+            for agent in [
+                a
+                for a, t in self._inventory.items()
+                if moment - t >= UNSCHEDULED_INVENTORY_EVERY
+            ]:
+                del self._inventory[agent]
             for ip in [
                 i for i, t in self._last_alert.items() if now - t >= ALERT_EVERY
             ]:
@@ -124,6 +170,9 @@ class RateLimiter:
             return (
                 len(self._login)
                 + len(self._user)
+                + len(self._agent)
+                + len(self._enrol)
+                + len(self._inventory)
                 + len(self._failed)
                 + len(self._last_alert)
             )

@@ -1,0 +1,10 @@
+{
+  "jobs": [
+    {
+      "job_id": "c1a4e5f6-0718-4293-a4b5-c6d7e8f9a0b1",
+      "agent_id": "agent-1",
+      "kind": "inventory",
+      "pickup_by": "2026-10-20T08:00:00Z"
+    }
+  ]
+}

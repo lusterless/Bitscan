@@ -1,0 +1,5 @@
+{
+  "job_pull_seconds": 300,
+  "max_parallel_plugins": 9,
+  "server_time": "2026-10-19T08:00:00Z"
+}

@@ -438,7 +438,19 @@ def test_openapi_error_contract(source: str) -> None:
         if source == "committed"
         else openapi_document()
     )
-    assert "422" not in json.dumps(doc["paths"])
+    # Narrowed 2026-10-23 (lead ruling, TASK-074 option (a)): FastAPI's own
+    # request-validation 422 (the one that refers to HTTPValidationError) is
+    # never documented, since the app answers 400; the only operation that
+    # lists a 422 is the inventory upload, whose decoder really answers 422
+    # (TS §3.4 L240, #72 (b)), as problem+json (checked in the loop below).
+    assert "HTTPValidationError" not in json.dumps(doc)
+    assert "ValidationError" not in json.dumps(doc["components"])
+    with_422 = [
+        (method, path)
+        for path, method, op in all_operations(doc)
+        if "422" in op["responses"]
+    ]
+    assert with_422 == [("put", "/api/v1/agent/{id}/inventory")], with_422
     schemas = doc["components"]["schemas"]
     assert "HTTPValidationError" not in schemas and "ValidationError" not in schemas
     problem = schemas["Problem"]
@@ -488,21 +500,43 @@ def test_documented_400_matches_what_the_app_returns() -> None:
         expires_at=NOW + timedelta(hours=24),
     )
     doc = openapi_document()
-    with TestClient(app, raise_server_exceptions=False) as c:
+    # A real peer address: enrol refuses a peer that is not an IP (#55 (d)).
+    with TestClient(
+        app, raise_server_exceptions=False, client=("10.20.0.1", 1234)
+    ) as c:
         for path, method, op in all_operations(doc):
             if not op.get("requestBody"):
                 continue
             needs_auth = "401" in op["responses"]
-            bad = {
+            bad: dict[str, Any] = {
                 "content": b"[1, 2]",
                 "headers": {"Content-Type": "application/json"},
             }
             app.dependency_overrides.clear()
-            if needs_auth and path != "/api/v1/auth/login":
-                anonymous = c.request(method.upper(), path, **bad)  # type: ignore[arg-type]
+            if path == "/api/v1/agent/enroll":
+                # TASK-067 (decisions 2026-10-23 (4)): the bse_ check runs
+                # before the body, so every attempt counts (#55 (c), #59). No
+                # token: 401; a well-formed bse_: the bad body is 400. The
+                # token is never looked up for a body that fails validation.
+                anonymous = c.request(method.upper(), path, **bad)
+                assert anonymous.status_code == 401, (method, path)
+                assert anonymous.json()["type"] == "unauthorized"
+                bse = "bse_" + "A" * 43
+                bad["headers"] = {**bad["headers"], "Authorization": f"Bearer {bse}"}
+            elif path.startswith("/api/v1/agent/"):
+                # bsa_ routes: the token check (a database lookup) runs before
+                # the body, so without a token the answer is 401; their 400 for
+                # a bad body with a real agent token is checked on PostgreSQL in
+                # each route's own test file (TASK-072 to TASK-075).
+                anonymous = c.request(method.upper(), path, **bad)
+                assert anonymous.status_code == 401, (method, path)
+                assert anonymous.json()["type"] == "unauthorized"
+                continue
+            elif needs_auth and path != "/api/v1/auth/login":
+                anonymous = c.request(method.upper(), path, **bad)
                 assert anonymous.status_code == 401, (method, path)
                 app.dependency_overrides[current_principal] = lambda: signed_in
-            resp = c.request(method.upper(), path, **bad)  # type: ignore[arg-type]
+            resp = c.request(method.upper(), path, **bad)
             assert resp.status_code == 400, (method, path, resp.status_code)
             assert resp.headers["content-type"].startswith("application/problem+json")
             assert resp.json()["type"] == "invalid_request"

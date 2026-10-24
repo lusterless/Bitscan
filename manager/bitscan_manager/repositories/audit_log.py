@@ -153,3 +153,25 @@ def iter_entries(conn: psycopg.Connection[Any]) -> Generator[ChainRow, None, Non
                     str(row[6]),
                     str(row[7]),
                 )
+
+
+_PAGE = sql.SQL(
+    "SELECT audit_id, actor, action, target, detail::text, at, prev_hash, row_hash"
+    " FROM audit_log WHERE %s::bigint IS NULL OR audit_id < %s"
+    " ORDER BY audit_id DESC LIMIT %s"
+)
+
+# (audit_id, actor, action, target, detail_text, at, prev_hash, row_hash)
+PageRow = tuple[int, str, str, str | None, str | None, Any, str, str]
+
+
+def page_newest_first(
+    conn: psycopg.Connection[Any], limit: int, before_id: int | None
+) -> list[PageRow]:
+    """GET /audit-log (#68): newest first, keyset by audit_id; read-only.
+    detail is PostgreSQL's own detail::text, the form the chain hashes."""
+    rows = conn.execute(_PAGE, (before_id, before_id, limit)).fetchall()
+    return [
+        (int(r[0]), str(r[1]), str(r[2]), r[3], r[4], r[5], str(r[6]), str(r[7]))
+        for r in rows
+    ]

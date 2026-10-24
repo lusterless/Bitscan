@@ -19,7 +19,7 @@ from bitscan_manager.services.audit import alerts as alerts_module
 from bitscan_manager.services.audit.alerts import ALERT_KINDS, raise_alert
 from bitscan_manager.services.audit.metrics import REGISTRY
 
-SPEC_KINDS = {
+M2_KINDS = {
     "api_token_created",
     "totp_enrolled",
     "totp_replaced",
@@ -30,6 +30,36 @@ SPEC_KINDS = {
     "audit_sink_unreachable",
     "login_failures",
     "token_check_failures",
+}
+# M3 (TASK-056): the #71 kinds, agreed 2026-10-23.
+M3_KINDS = {
+    "enrolment_token_risky",
+    "enrolments_per_hour",
+    "reenrolment_approved",
+    "machine_id_mismatch",
+    "token_reuse",
+    "rotation_outside_window",
+    "rotation_new_ip",
+    "runner_helper_changed",
+    "settings_changed",
+    "redaction_default_removed",
+    "clock_skew",
+    "agents_offline",
+    "job_queue_age",
+    "inventory_stale",
+    "new_packages_burst",
+    "result_409_flood",
+    "agent_auth_failures",
+    "default_partition_rows",
+}
+SPEC_KINDS = M2_KINDS | M3_KINDS
+# REQ-086 (TS §8.4 L1288): the registry the #70 route serves.
+REGISTRY_FAMILIES = {
+    "bitscan_alerts",
+    "bitscan_agents",
+    "bitscan_heartbeat_latency_seconds",
+    "bitscan_jobs_queued",
+    "bitscan_jobs_expired",
 }
 
 
@@ -95,8 +125,14 @@ def count(kind: str) -> float:
 # ------------------------------------------------------------ CHK-M2-135
 
 
-def test_kinds_are_exactly_the_50_list() -> None:
+def test_kinds_are_exactly_the_50_and_71_lists() -> None:
+    """#50 (c) for M2 and #71 for M3 (CHK-M3-103); one union, no other kind."""
+    from bitscan_manager.services.audit.alerts import M2_ALERT_KINDS, M3_ALERT_KINDS
+
+    assert set(M2_ALERT_KINDS) == M2_KINDS
+    assert set(M3_ALERT_KINDS) == M3_KINDS
     assert set(ALERT_KINDS) == SPEC_KINDS
+    assert len(ALERT_KINDS) == 28
 
 
 @pytest.mark.parametrize("kind", sorted(SPEC_KINDS))
@@ -217,13 +253,14 @@ def test_failed_append_registers_no_hook() -> None:
 # ------------------------------------------------------------ CHK-M2-137
 
 
-def test_every_kind_is_exported_from_zero_in_its_own_registry() -> None:
+def test_every_kind_is_exported_from_zero_in_the_shared_registry() -> None:
     text = generate_latest(REGISTRY).decode()
     assert "# TYPE bitscan_alerts_total counter" in text
     for kind in SPEC_KINDS:
         assert f'bitscan_alerts_total{{kind="{kind}"}}' in text
     names = {m.name for m in REGISTRY.collect()}
-    assert names == {"bitscan_alerts"}  # nothing else lives in this registry
+    # REQ-055 (3) is superseded by REQ-086: the M3 metrics share this registry
+    assert names == REGISTRY_FAMILIES
 
 
 def test_registry_is_not_the_global_default() -> None:
