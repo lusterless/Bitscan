@@ -1,0 +1,16 @@
+{
+  "os_info": {
+    "os_id": null,
+    "os_version_id": null,
+    "os_pretty_name": null,
+    "kernel_release": null,
+    "architecture": null,
+    "cpu_count": null,
+    "memory_mb": null,
+    "ip_addresses": [],
+    "uptime_s": null,
+    "raw": {}
+  },
+  "packages": [],
+  "list_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

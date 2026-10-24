@@ -632,11 +632,21 @@ def markers(app: FastAPI) -> dict[tuple[str, str], AuthMarker | None]:
 
 def test_route_walk_every_user_route_declares_a_requirement() -> None:
     walked = markers(create_app())
-    user_routes = [k for k in walked if k[1].startswith("/api/v1/")]
+    user_routes = [
+        k
+        for k in walked
+        if k[1].startswith("/api/v1/") and not k[1].startswith("/api/v1/agent/")
+    ]
     assert len(user_routes) >= 10  # the walk must see the real routes, not none
     for (method, path), marker in walked.items():
         if not path.startswith("/api/v1/"):
             continue  # health routes are outside the walk (#5)
+        if path.startswith("/api/v1/agent/"):
+            # TASK-067 (decisions 2026-10-23 (4)): the agent group has its own
+            # token dependency (bse_ on enrol, bsa_ elsewhere; walked in
+            # test_agent_auth_pg / test_enrol_api_pg) and never a user one.
+            assert marker is None, f"{method} {path} carries a user dependency"
+            continue
         if (method, path) == ("POST", "/api/v1/auth/login"):
             assert marker is None
             continue
@@ -644,6 +654,28 @@ def test_route_walk_every_user_route_declares_a_requirement() -> None:
         if path == "/api/v1/users" or path.startswith("/api/v1/users/"):
             assert marker.check == "totp_session" and marker.minimum == "admin"
             assert marker.sink_gate is True
+
+
+def test_route_walk_enrolment_tokens_need_the_admin_totp_session() -> None:
+    """TASK-066 (TS §6.2 L1084, L1116; REQ-067 (5)): every enrolment-token
+    method is an admin TOTP-session route with the sink gate; no PATCH."""
+    walked = markers(create_app())
+    routes = {
+        k: m for k, m in walked.items() if k[1].startswith("/api/v1/enrollment-tokens")
+    }
+    assert set(routes) == {
+        ("GET", "/api/v1/enrollment-tokens"),
+        ("POST", "/api/v1/enrollment-tokens"),
+        ("GET", "/api/v1/enrollment-tokens/{token_id}"),
+        ("DELETE", "/api/v1/enrollment-tokens/{token_id}"),
+    }
+    for key, marker in routes.items():
+        assert marker is not None, key
+        assert (marker.check, marker.minimum, marker.sink_gate) == (
+            "totp_session",
+            "admin",
+            True,
+        ), key
 
 
 def test_route_walk_can_fail() -> None:

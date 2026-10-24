@@ -1,0 +1,44 @@
+{
+  "os_info": {
+    "os_id": "ubuntu",
+    "os_version_id": "24.04",
+    "os_pretty_name": "Ubuntu 24.04.1 LTS",
+    "kernel_release": "6.8.0-45-generic",
+    "architecture": "x86_64",
+    "cpu_count": 4,
+    "memory_mb": 7962,
+    "ip_addresses": [
+      "10.0.0.5/24",
+      "fe80::1/64"
+    ],
+    "uptime_s": 86400,
+    "raw": {
+      "os_release": {
+        "ID": "ubuntu",
+        "VERSION_ID": "24.04"
+      },
+      "hostnamectl": {
+        "Chassis": "vm"
+      }
+    }
+  },
+  "packages": [
+    {
+      "name": "libc6",
+      "version": "2.39-0ubuntu8.3",
+      "architecture": "amd64",
+      "status": "install ok installed",
+      "source": "glibc",
+      "installed_size_kb": 13627
+    },
+    {
+      "name": "libc6",
+      "version": "2.39-0ubuntu8.3",
+      "architecture": "amd64",
+      "status": "deinstall ok config-files",
+      "source": "glibc",
+      "installed_size_kb": 1
+    }
+  ],
+  "list_sha256": "92e768f9785bc2d42a68f1bb9684a0a7fae33920fb31f292f7945e222279b4f2"
+}

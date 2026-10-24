@@ -341,7 +341,10 @@ def test_v_plugin_display_name_as_app(migrated_db: PgServer, app_conn: Conn) -> 
             " '1.1.1 - Ensure x', 'true', %s, 'equals')",
             (fam[0], pol[0], "b" * 64),
         )
-        name = app_conn.execute("SELECT display_name FROM v_plugin").fetchone()
+        # only this test's plugin: the session database is shared (M3 gate fix)
+        name = app_conn.execute(
+            "SELECT display_name FROM v_plugin WHERE family_id = %s", (fam[0],)
+        ).fetchone()
         assert name == ("CIS Ubuntu 24.04 - 1.1.1 - Ensure x",)
 
 

@@ -137,3 +137,78 @@ describe("generated paths (CHK-M2-281)", () => {
     expectTypeOf<M2UserPaths>().toExtend<keyof paths>();
   });
 });
+
+// TASK-081 TEST (REQ-089; tests/m3/test-plan.md CHK-M3-299). TS §6.1: exactly
+// six agent operations under /api/v1/agent/; TS §6.2 and REQ-081 to REQ-086:
+// the M3 user routes; #70: metrics is GET /api/v1/metrics (so HealthPath is
+// unchanged).
+type AgentItem = components["schemas"]["AgentItem"];
+
+describe("M3 generated paths (CHK-M3-299)", () => {
+  it("has exactly the six TS §6.1 agent paths", () => {
+    expectTypeOf<
+      Extract<keyof paths, `/api/v1/agent/${string}`>
+    >().toEqualTypeOf<
+      | "/api/v1/agent/enroll"
+      | "/api/v1/agent/{id}/heartbeat"
+      | "/api/v1/agent/{id}/jobs"
+      | "/api/v1/agent/{id}/jobs/{job_id}/results"
+      | "/api/v1/agent/{id}/inventory"
+      | "/api/v1/agent/{id}/token/rotate"
+    >();
+  });
+
+  it("has every M3 user route", () => {
+    type M3UserPaths =
+      | "/api/v1/agents"
+      | "/api/v1/agents/{id}"
+      | "/api/v1/agents/{id}/packages"
+      | "/api/v1/agents/{id}/tags"
+      | "/api/v1/agents/{id}/revoke"
+      | "/api/v1/enrollment-tokens"
+      | "/api/v1/enrollment-tokens/{token_id}"
+      | "/api/v1/enrollment-requests"
+      | "/api/v1/enrollment-requests/{request_id}/approve"
+      | "/api/v1/enrollment-requests/{request_id}/reject"
+      | "/api/v1/settings"
+      | "/api/v1/audit-log"
+      | "/api/v1/metrics";
+    expectTypeOf<M3UserPaths>().toExtend<keyof paths>();
+  });
+
+  it("keeps the metrics route inside /api/v1 (#70)", () => {
+    expectTypeOf<"/api/v1/metrics">().toExtend<keyof paths>();
+    expectTypeOf<"/metrics">().not.toExtend<keyof paths>();
+  });
+
+  it("lists agents with a typed GET /api/v1/agents (REQ-089 (3))", async () => {
+    const { data } = await api.GET("/api/v1/agents", {
+      params: { query: { limit: 2, cursor: null } },
+    });
+    expect(built.at(-1)).toBe("/api/v1/agents?limit=2");
+    expect(sent.at(-1)?.method).toBe("GET");
+    expectTypeOf(data).toEqualTypeOf<
+      { items: AgentItem[]; next_cursor: string | null } | undefined
+    >();
+    expectTypeOf<AgentItem["agent_id"]>().toEqualTypeOf<string>();
+    expectTypeOf<AgentItem["tags"]>().toEqualTypeOf<string[]>();
+    // Type-checked only, never called.
+    const refused = async (): Promise<void> => {
+      // @ts-expect-error -- the list takes no body
+      await api.GET("/api/v1/agents", { body: {} });
+      // @ts-expect-error -- the unprefixed path does not exist
+      await api.GET("/agents");
+      // @ts-expect-error -- limit is a number
+      await api.GET("/api/v1/agents", { params: { query: { limit: "2" } } });
+    };
+    expect(typeof refused).toBe("function");
+  });
+
+  it("fills the agent id under the prefix", async () => {
+    const id = "0b9e4a52-8f43-4d8e-9a2f-6a1c2d3e4f50";
+    await api.GET("/api/v1/agents/{id}/packages", {
+      params: { path: { id } },
+    });
+    expect(built.at(-1)).toBe(`/api/v1/agents/${id}/packages`);
+  });
+});

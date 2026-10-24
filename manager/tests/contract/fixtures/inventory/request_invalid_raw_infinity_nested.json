@@ -1,0 +1,25 @@
+{
+  "os_info": {
+    "os_id": "ubuntu",
+    "os_version_id": "24.04",
+    "os_pretty_name": "Ubuntu 24.04.1 LTS",
+    "kernel_release": "6.8.0-45-generic",
+    "architecture": "x86_64",
+    "cpu_count": 4,
+    "memory_mb": 7962,
+    "ip_addresses": [
+      "10.0.0.5/24",
+      "fe80::1/64"
+    ],
+    "uptime_s": 86400,
+    "raw": {
+      "a": [
+        {
+          "b": Infinity
+        }
+      ]
+    }
+  },
+  "packages": [],
+  "list_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

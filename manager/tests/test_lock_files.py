@@ -23,6 +23,9 @@ TOOLS = {
     "testcontainers",
     "coverage",
     "hatchling",
+    # PD-21 (TASK-058): contract and fuzz suites only, never in the runtime lock
+    "jsonschema",
+    "hypothesis",
 }
 DEV_REQUIRED = TOOLS | {"httpx", "psycopg"}
 OUT_OF_SCOPE = {

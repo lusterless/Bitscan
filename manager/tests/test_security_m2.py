@@ -154,6 +154,11 @@ def user_routes() -> list[tuple[str, str]]:
         for method in sorted(route.methods or ()):
             if not route.path.startswith("/api/v1/"):
                 continue  # health routes (#5)
+            if route.path.startswith("/api/v1/agent/"):
+                # M3 (TASK-067 on): the agent group, with its own bsa_/bse_
+                # dependency, is not a user route; its matrix is in
+                # test_agent_auth_pg.py and test_enrol_api_pg.py (TS §6 L1056)
+                continue
             if (method, route.path) == ("POST", "/api/v1/auth/login"):
                 continue
             out.append((method, route.path))

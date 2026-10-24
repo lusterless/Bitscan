@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 import psycopg
 import pytest
@@ -97,6 +98,19 @@ class FakeLimits:
 
     def record_failed_check(self, ip: str) -> None:
         return None
+
+    # M3 (TASK-057): the agent-route limits; this fake never refuses.
+    def allow_agent(self, agent_id: UUID) -> bool:
+        return True
+
+    def allow_enrol(self, ip: str) -> bool:
+        return True
+
+    def allow_unscheduled_inventory(self, agent_id: UUID) -> bool:
+        return True
+
+    def unscheduled_inventory_retry_after(self, agent_id: UUID) -> int:
+        return 1
 
 
 def fake_runtime() -> Runtime:

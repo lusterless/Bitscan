@@ -25,9 +25,20 @@ from bitscan_manager.services.audit.disk_queue import DiskQueue
 from bitscan_manager.services.audit.shipper import DbOutageAudit, PgAuditTail, Shipper
 from bitscan_manager.services.audit.sink_transport import SinkRecord
 
-from .conftest import PgServer
+from .conftest import PgServer, own_migrated_server
 
 pytestmark = pytest.mark.pg
+
+
+# The shipper starts from an empty queue folder at audit_id 0 and so re-ships
+# the whole audit history first (agreed at-least-once delivery, #51 (f)); the
+# 5 s delivery checks here therefore run on a freshly migrated database of
+# this module's own, not the session one the whole suite writes to (M3 gate
+# fix, lead ruling 2026-10-23). The bound is unchanged.
+@pytest.fixture(scope="module")
+def migrated_db(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PgServer]:
+    with own_migrated_server(tmp_path_factory.mktemp("own-db")) as server:
+        yield server
 
 
 class Recorder:

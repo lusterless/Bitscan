@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "plugin_uuid": "3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c48",
+      "exit_code": 0,
+      "stdout": "install ok installed",
+      "stderr": "",
+      "started_at": "2026-10-19T08:00:00Z",
+      "finished_at": "2026-10-19T08:00:05Z",
+      "timed_out": "false",
+      "truncated": false,
+      "error": null
+    }
+  ],
+  "final": true
+}

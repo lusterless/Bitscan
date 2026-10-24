@@ -1,0 +1,4 @@
+{
+  "job_pull_seconds": 300,
+  "max_parallel_plugins": 2
+}

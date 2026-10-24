@@ -5,13 +5,40 @@ L1317-L1339 (patterns read from the spec at test time) and questions #42, #43.
 """
 
 import importlib
+from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
 
 import pytest
 
-from .conftest import Conn, PgServer, migrate_to
+from .conftest import (
+    Conn,
+    PgServer,
+    _role_conn,
+    migrate_to,
+    own_migrated_server,
+)
 from .spec_sql import redaction_patterns
+
+
+# This module checks what the migration seeds, so it runs on a freshly
+# migrated database of its own: later tests change settings and add rows in
+# the session database (M3 gate fix, lead ruling 2026-10-23).
+@pytest.fixture(scope="module")
+def migrated_db(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PgServer]:
+    with own_migrated_server(tmp_path_factory.mktemp("seeds-credentials")) as server:
+        yield server
+
+
+@pytest.fixture
+def app_conn(migrated_db: PgServer) -> Iterator[Conn]:
+    yield from _role_conn(migrated_db, "bitscan_app")
+
+
+@pytest.fixture
+def owner_conn(migrated_db: PgServer) -> Iterator[Conn]:
+    yield from _role_conn(migrated_db, "bitscan_migrate", set_role="bitscan_owner")
+
 
 NUMERIC = {
     "agent_token_ttl_days": "365",

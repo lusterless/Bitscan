@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "plugin_uuid": "4a7d3b0f-9c2e-4f68-8b4d-3e8a1f7c2d59",
+      "exit_code": null,
+      "stdout": "",
+      "stderr": "",
+      "started_at": "2026-10-19T08:00:00Z",
+      "finished_at": "2026-10-19T08:00:05Z",
+      "timed_out": true,
+      "truncated": false,
+      "error": null
+    },
+    {
+      "plugin_uuid": "3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c48",
+      "exit_code": null,
+      "stdout": "",
+      "stderr": "",
+      "started_at": "2026-10-19T08:00:00Z",
+      "finished_at": "2026-10-19T08:00:05Z",
+      "timed_out": false,
+      "truncated": false,
+      "error": "spool_overflow"
+    },
+    {
+      "plugin_uuid": "4a7d3b0f-9c2e-4f68-8b4d-3e8a1f7c2d59",
+      "exit_code": null,
+      "stdout": "",
+      "stderr": "",
+      "started_at": "2026-10-19T08:00:00Z",
+      "finished_at": "2026-10-19T08:00:05Z",
+      "timed_out": false,
+      "truncated": false,
+      "error": "runner_unavailable"
+    }
+  ],
+  "final": false
+}

@@ -1,0 +1,12 @@
+{
+  "agent_version": "1.0.0",
+  "uptime_s": 86400,
+  "last_pull_at": "2026-10-19T07:55:00Z",
+  "current_job_id": "c1a4e5f6-0718-4293-a4b5-c6d7e8f9a0b1",
+  "spool_bytes": 9007199254740992,
+  "last_error": null,
+  "runner_helpers": [
+    "capread"
+  ],
+  "clock": "2026-10-19T08:00:00Z"
+}
