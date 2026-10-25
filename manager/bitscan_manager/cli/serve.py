@@ -28,6 +28,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from pydantic import SecretStr
 from uvicorn.server import HANDLED_SIGNALS
 
+from bitscan_manager.api import webui
 from bitscan_manager.api.ratelimit import FailedChecks, RateLimiter
 from bitscan_manager.api.request_log import configure_logging
 from bitscan_manager.app import create_app
@@ -257,9 +258,12 @@ def serve_main(environ: Mapping[str, str], *, queue_dir: Path = AUDIT_QUEUE_DIR)
         config.listen_port,
         scheme,
     )
+    ui = webui.load(webui.DEFAULT_WEBUI_DIR)
+    if ui.index is None:
+        log.info("web ui not built; serving the API only")
     server = _Server(
         uvicorn.Config(
-            create_app(runtime),
+            create_app(runtime, webui=ui),
             host=config.listen_host,
             port=config.listen_port,
             workers=1,

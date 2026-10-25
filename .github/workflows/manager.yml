@@ -116,6 +116,22 @@ jobs:
       - name: mypy --strict
         run: mypy --strict --config-file manager/pyproject.toml manager
 
+      # PD-28: the M5 tests that serve the UI need the built bundle, which Vite
+      # writes into manager/bitscan_manager/webui/ (gitignored); with CI=true
+      # they fail rather than skip when it is missing.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci --ignore-scripts
+
+      - name: npm run build
+        working-directory: web
+        run: npm run build
+
       - name: pytest with coverage gate
         working-directory: manager
         env:

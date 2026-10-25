@@ -103,7 +103,14 @@ USER_OPS |= _crud(V1 + "/enrollment-tokens")
 USER_OPS |= _crud(V1 + "/scan-schedules")
 USER_OPS |= _crud(V1 + "/users")
 HEALTH_OPS = {("GET", "/healthz"), ("GET", "/readyz")}  # #5
-SPEC_OPS = AGENT_OPS | USER_OPS | HEALTH_OPS
+# M5 (REQ-118, REQ-088 (1) as changed for M5; #6 M5 half, decisions 2026-10-24):
+# the built web UI, served without a token and not in the OpenAPI document.
+STATIC_OPS = {("GET", "/"), ("GET", "/assets/{}")}
+SPEC_OPS = AGENT_OPS | USER_OPS | HEALTH_OPS | STATIC_OPS
+# TS §7.1 L1198-L1210: the package search parameters (REQ-113).
+SEARCH_PARAMS = {"q", "name", "version", "version_op", "arch", "status", "os",
+                 "tag", "host", "agent_id", "group_by"}  # fmt: skip
+PACKAGE_PATHS = {V1 + "/packages/search", V1 + "/packages/search.csv"}
 
 # The M3 head (REQ-062 to REQ-086): the operations that must exist now.
 M3_USER_OPS = {
@@ -125,6 +132,9 @@ M3_USER_OPS = {
         ("PATCH", "/settings"),
         ("GET", "/audit-log"),
         ("GET", "/metrics"),
+        # M5 (REQ-113, REQ-116)
+        ("GET", "/packages/search"),
+        ("GET", "/packages/search.csv"),
     ]
 }
 
@@ -189,7 +199,28 @@ def test_the_documented_operations_are_the_app_operations() -> None:
         for path, ops in doc["paths"].items()
         for method in ops
     }
-    assert documented == operations(app)
+    # The two static UI routes are the only operations not in the document.
+    assert STATIC_OPS <= operations(app)
+    assert documented == operations(app) - STATIC_OPS
+
+
+def test_the_static_routes_take_no_input_but_the_file_name() -> None:
+    """REQ-088 (1) as changed for M5: GET / and GET /assets/{name} read no
+    query parameter, header, cookie or body; the only input is the path
+    segment `name`, which is a dictionary key (REQ-118)."""
+    static = [
+        r for r in api_routes(create_app().routes) if r.path in ("/", "/assets/{name}")
+    ]
+    assert sorted((r.path, sorted(r.methods)) for r in static) == [
+        ("/", ["GET"]),
+        ("/assets/{name}", ["GET"]),
+    ]
+    for r in static:
+        d = r.dependant
+        assert d.query_params == [] and d.header_params == [], r.path
+        assert d.cookie_params == [] and d.body_params == [], r.path
+        assert d.dependencies == [], r.path
+        assert [p.name for p in d.path_params] == (["name"] if r.path != "/" else [])
 
 
 def schema_properties(doc: dict[str, Any], schema: Any) -> Iterator[str]:
@@ -258,8 +289,14 @@ def test_no_query_parameter_can_switch_inventory_off() -> None:
         if p.get("in") == "query"
     }
     assert ("PUT", V1 + "/agent/{id}/inventory", "job_id") in params
-    names = {name for _, _, name in params}
+    names = {name for _, path, name in params if path not in PACKAGE_PATHS}
     assert names <= {"limit", "cursor", "state", "job_id"}, names
+    # M5: the two package routes take exactly the TS §7.1 filters; the JSON
+    # route also pages, the CSV export does not (#84 (a)).
+    search = {n for _, p, n in params if p == V1 + "/packages/search"}
+    csv = {n for _, p, n in params if p == V1 + "/packages/search.csv"}
+    assert search == SEARCH_PARAMS | {"limit", "cursor"}
+    assert csv == SEARCH_PARAMS
     assert [p for p in params if INVENTORY_SWITCH.search(p[2])] == []
 
 
@@ -323,6 +360,9 @@ def test_no_code_reads_an_inventory_switch() -> None:
     for path in sorted(PKG.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for text in string_constants(tree):
+            # re2 needs encodable text; a lone surrogate literal (M5 query.py
+            # checks for them) is replaced, never skipped.
+            text = text.encode("utf-8", "replace").decode("utf-8")
             if switch.search(text):
                 hits.append((path.relative_to(PKG).as_posix(), text[:60]))
         for node in ast.walk(tree):

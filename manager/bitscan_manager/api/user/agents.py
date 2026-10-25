@@ -6,7 +6,7 @@ verbatim as JSON strings; no response holds a token or a token hash.
 """
 
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response
@@ -43,12 +43,16 @@ RUNTIME = Annotated[Runtime, Depends(get_runtime)]
 PAGE = Annotated[PageParams, Depends(page_params)]
 _BASE = (401, 403, 429, 503)
 SCOPE = "agents"
+# The agent_status enum (TS §5.2 L710), in the contract (REQ-117, PD-29).
+AgentStatus = Literal[
+    "awaiting_approval", "enrolled", "online", "stale", "offline", "decommissioned"
+]
 
 
 class AgentItem(BaseModel):
     agent_id: UUID
     hostname: str
-    status: str
+    status: AgentStatus
     agent_version: str
     os_id: str | None
     os_version_id: str | None

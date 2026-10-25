@@ -28,6 +28,7 @@ from bitscan_manager.api.pagination import (
 from bitscan_manager.api.problems import Problem
 from bitscan_manager.api.timestamps import UtcDatetime
 from bitscan_manager.api.user import problem_responses
+from bitscan_manager.api.user.agents import AgentStatus
 from bitscan_manager.auth.dependencies import require_role, require_totp_session
 from bitscan_manager.auth.principal import Principal
 from bitscan_manager.repositories.agents import AgentRepo
@@ -180,14 +181,16 @@ class MatchItem(BaseModel):
     agent_id: UUID
     hostname: str
     machine_id: str
-    status: str
+    status: AgentStatus
 
 
 class RequestItem(BaseModel):
     """Never the new token or its hash (REQ-063 (5))."""
 
     request_id: int
-    kind: str
+    # kind and decision: the enrollment_request CHECK values (TS §5.2 L763,
+    # L774; PD-29).
+    kind: Literal["new", "reenrol"]
     agent_id: UUID
     hostname: str
     machine_id: str
@@ -196,7 +199,7 @@ class RequestItem(BaseModel):
     source_ip: str
     requested_at: UtcDatetime
     token_expires_at: UtcDatetime
-    decision: str | None
+    decision: Literal["approved", "rejected"] | None
     decided_by: int | None
     decided_at: UtcDatetime | None
     matches: list[MatchItem]

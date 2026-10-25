@@ -1,0 +1,3 @@
+# TASK-125 TEST: package name type-ahead and CSV download
+
+Verdict: **PASS**. Tests: web/src/components/TypeAhead.test.tsx (10), web/src/app/download.test.ts (5), and the export cases in PackageSearch.test.tsx (3), from REQ-130 (per #32), REQ-131, TS §7.3 L1223-L1224, §6.3 L1142, #84 (c). Command (L): `npx vitest run src/components/TypeAhead.test.tsx src/app/download.test.ts`: 15/15 passed; the screen file 20/20. AC: REQ-130 (1) CHK-M5-270, -271 + plants 427, 428, 429, 432; (2) stale answers, CHK-M5-272 + plant 430; (3) choosing, CHK-M5-273 + plant 431; REQ-131 (1) query and bearer, CHK-M5-274 + mutation row CHK-M5-351 + plant 423; (2) same bytes, CHK-M5-275 + plant 426; (3) URL revoked after, CHK-M5-275 + plants 424, 425; (4) 400 detail, CHK-M5-276. All plants red.
