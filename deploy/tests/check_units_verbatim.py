@@ -1,8 +1,10 @@
-"""Check deploy/systemd/* against the TS ini blocks (REQ-016 (1)-(3)).
+"""Check deploy/systemd/* and deploy/dbus/* against the TS blocks (REQ-016, REQ-106 (2)).
 
 Usage: python deploy/tests/check_units_verbatim.py [agent|manager|all] [--root DIR]
-Exit 0 when every selected unit is byte-identical to its spec block with the
-fence lines removed, has no end-of-line comment and the set of files is exact.
+Exit 0 when every selected file is byte-identical to its spec block with the
+fence lines removed (LF endings, one final newline), units have no end-of-line
+comment, and the set of files in each checked folder is exact. `agent` and
+`all` also check the D-Bus policy (TS §3.7, M4 TP-M4-07).
 """
 
 from __future__ import annotations
@@ -27,11 +29,15 @@ MANAGER: dict[str, tuple[int, int]] = {
     "bitscan-manager-maintain.service": (1439, 1467),
     "bitscan-manager-maintain.timer": (1469, 1480),
 }
+# D-Bus policy (TS §3.7): ```xml fence at L412, closing fence at L431
+DBUS: dict[str, tuple[int, int]] = {
+    "bitscan-runner.conf": (412, 431),
+}
 
 
-def spec_block(lines: list[bytes], start: int, end: int) -> bytes:
-    if lines[start - 1].rstrip(b"\r\n") != b"```ini":
-        raise SystemExit(f"spec line {start} is not an ```ini fence")
+def spec_block(lines: list[bytes], start: int, end: int, lang: bytes = b"ini") -> bytes:
+    if lines[start - 1].rstrip(b"\r\n") != b"```" + lang:
+        raise SystemExit(f"spec line {start} is not an ```{lang.decode()} fence")
     if lines[end - 1].rstrip(b"\r\n") != b"```":
         raise SystemExit(f"spec line {end} is not a closing fence")
     body = lines[start : end - 1]
@@ -49,41 +55,28 @@ def eol_comment_lines(data: bytes) -> list[int]:
     return bad
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("which", choices=["agent", "manager", "all"], default="all", nargs="?")
-    ap.add_argument("--root", default=".")
-    args = ap.parse_args()
-    root = Path(args.root)
-    units = {}
-    if args.which in ("agent", "all"):
-        units.update(AGENT)
-    if args.which in ("manager", "all"):
-        units.update(MANAGER)
-
-    spec_lines = (root / SPEC).read_bytes().splitlines(keepends=True)
-    unit_dir = root / "deploy" / "systemd"
+def check_file(
+    path: Path, name: str, want: bytes, start: int, end: int, unit: bool
+) -> int:
+    if not path.is_file():
+        print(f"MISSING {name}")
+        return 1
+    got = path.read_bytes()
+    if got != want:
+        for i, (a, b) in enumerate(
+            zip(got.split(b"\n"), want.split(b"\n"), strict=False), 1
+        ):
+            if a != b:
+                print(f"DIFF {name} line {i}: got {a!r} want {b!r}")
+                break
+        else:
+            print(f"DIFF {name}: length got {len(got)} want {len(want)}")
+        return 1
     failures = 0
-    for name, (start, end) in units.items():
-        path = unit_dir / name
-        if not path.is_file():
-            print(f"MISSING {name}")
-            failures += 1
-            continue
-        want = spec_block(spec_lines, start, end)
-        got = path.read_bytes()
-        if got != want:
-            for i, (a, b) in enumerate(zip(got.split(b"\n"), want.split(b"\n"), strict=False), 1):
-                if a != b:
-                    print(f"DIFF {name} line {i}: got {a!r} want {b!r}")
-                    break
-            else:
-                print(f"DIFF {name}: length got {len(got)} want {len(want)}")
-            failures += 1
-            continue
-        if b"\r" in got:
-            print(f"CR {name}")
-            failures += 1
+    if b"\r" in got:
+        print(f"CR {name}")
+        failures += 1
+    if unit:
         bad = eol_comment_lines(got)
         if bad:
             print(f"EOL-COMMENT {name} lines {bad}")
@@ -91,15 +84,54 @@ def main() -> int:
         if name == "bitscan-capread.service" and b"[Install]" in got:
             print("INSTALL-SECTION bitscan-capread.service")
             failures += 1
+    if not failures:
         print(f"IDENTICAL {name} (TS L{start + 1}-L{end - 1}, {len(got)} bytes)")
+    return failures
+
+
+def exact_set(folder: Path, expected: set[str], label: str) -> int:
+    present = (
+        {p.name for p in folder.iterdir() if p.is_file()} if folder.is_dir() else set()
+    )
+    extra = present - expected
+    if extra:
+        print(f"EXTRA files in {label}: {sorted(extra)}")
+        return 1
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "which", choices=["agent", "manager", "all"], default="all", nargs="?"
+    )
+    ap.add_argument("--root", default=".")
+    args = ap.parse_args()
+    root = Path(args.root)
+    units: dict[str, tuple[int, int]] = {}
+    if args.which in ("agent", "all"):
+        units.update(AGENT)
+    if args.which in ("manager", "all"):
+        units.update(MANAGER)
+    policies = DBUS if args.which in ("agent", "all") else {}
+
+    spec_lines = (root / SPEC).read_bytes().splitlines(keepends=True)
+    unit_dir = root / "deploy" / "systemd"
+    dbus_dir = root / "deploy" / "dbus"
+    failures = 0
+    for name, (start, end) in units.items():
+        want = spec_block(spec_lines, start, end)
+        failures += check_file(unit_dir / name, name, want, start, end, unit=True)
+    for name, (start, end) in policies.items():
+        want = spec_block(spec_lines, start, end, b"xml")
+        failures += check_file(dbus_dir / name, name, want, start, end, unit=False)
 
     if args.which == "all":
-        present = {p.name for p in unit_dir.iterdir() if p.is_file()}
-        extra = present - set(units)
-        if extra:
-            print(f"EXTRA files in deploy/systemd: {sorted(extra)}")
-            failures += 1
-    print("FAIL" if failures else "OK", f"{len(units)} units checked, {failures} problems")
+        failures += exact_set(unit_dir, set(units), "deploy/systemd")
+    if policies:
+        failures += exact_set(dbus_dir, set(policies), "deploy/dbus")
+    total = len(units) + len(policies)
+    print("FAIL" if failures else "OK", f"{total} files checked, {failures} problems")
     return 1 if failures else 0
 
 
