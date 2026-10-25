@@ -363,13 +363,21 @@ def test_slow_runs_never_execute_twice_at_once(launch: Any) -> None:
         ),
         timeout=30,
     )
+    signalled = time.monotonic()  # CLOCK_MONOTONIC is shared by processes
     assert t.stop() == 0
+    in_flight = 0
     for kind in ("sweep", "inventory"):
         spans = t.runs(kind)
         assert overlaps(spans) == [], (kind, spans)
         open_runs = [k for k, v in spans.items() if len(v) != 2]
         assert open_runs == [], (kind, spans)  # stop waited for the last one
-    assert failures(t) == []
+        in_flight += sum(v[0] < signalled < v[1] for v in spans.values())
+    # TASK-071 r1 (lead ruling 2026-10-23), as in the G27 test below: a run
+    # still in progress at SIGTERM gives up its later steps with
+    # SchedulerStopping. Only such a run may log a failure; nothing else fails.
+    got = failures(t)
+    assert [r["exc_type"] for r in got] == ["SchedulerStopping"] * len(got), got
+    assert len(got) <= in_flight, (got, in_flight)
 
 
 # ------------------------------------------------------------ CHK-M3-233 (G27)
