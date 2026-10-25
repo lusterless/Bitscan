@@ -1,0 +1,290 @@
+name: package
+
+# The agent .deb (TS 3.1; REQ-106, REQ-109, REQ-111): amd64 only, for
+# Ubuntu 22.04 and 24.04 (decisions 2026-10-24). The assertions live in the
+# tester's scripts under deploy/tests/; this file builds, compares and calls
+# them.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  sources:
+    name: Units, D-Bus policy and package metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Agent units and D-Bus policy match TS 3.7 verbatim
+        run: python deploy/tests/check_units_verbatim.py agent
+
+      - name: Package metadata (control, rules flags, changelog, copyright, install)
+        run: python deploy/tests/check_debian_meta.py
+
+  # Reproducibility (TS 3.1): two builds in separate VMs, from clones at
+  # different absolute paths, on the same runner image. dpkg defaults differ
+  # between Ubuntu releases, so both builds use ubuntu-24.04.
+  build:
+    name: Build (${{ matrix.artifact }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - src: src
+            artifact: bitscan-agent-amd64
+          - src: rebuild/copy/src
+            artifact: bitscan-agent-amd64-rebuild
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SRC: ${{ matrix.src }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: ${{ matrix.src }}
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ matrix.src }}/agent/go.mod
+          cache: false
+
+      - name: Install build-essential, dpkg-dev and debhelper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential dpkg-dev debhelper
+
+      # Printed so a mismatch between the two builds can be traced to an
+      # image or tool update between the two jobs.
+      - name: Record the toolchain
+        run: |
+          echo "runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          go version
+          dpkg-query -W dpkg dpkg-dev debhelper
+
+      - name: Build the .deb, its SHA-256 file and the SBOMs
+        run: bash "$SRC/deploy/debian/build-deb.sh" "$RUNNER_TEMP/out"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+
+  reproducible:
+    name: Double build is byte-identical
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bitscan-agent-amd64
+          path: ${{ runner.temp }}/one
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bitscan-agent-amd64-rebuild
+          path: ${{ runner.temp }}/two
+
+      - name: Install dpkg-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev
+
+      - name: Same files, same SHA-256, every file time at SOURCE_DATE_EPOCH
+        run: |
+          version="$(dpkg-parsechangelog -l deploy/debian/changelog -S Version)"
+          sde="$(dpkg-parsechangelog -l deploy/debian/changelog -S Timestamp)"
+          base="bitscan-agent_${version}_amd64"
+          deb="$base.deb"
+          expect="$(printf '%s\n' "$deb" "$deb.sha256" "$base.bitscan-agent.cdx.json" \
+            "$base.bitscan-runner.cdx.json" "$base.bitscan-capread.cdx.json" | sort)"
+          mapfile -t files <<<"$expect"
+          cd "$RUNNER_TEMP"
+          for d in one two; do
+            got="$(cd "$d" && find . -mindepth 1 -printf '%P\n' | sort)"
+            if [ "$got" != "$expect" ]; then
+              printf 'build %s holds:\n%s\nwant exactly:\n%s\n' "$d" "$got" "$expect"
+              exit 1
+            fi
+            (cd "$d" && sha256sum -- "${files[@]}") >"$d.sums"
+          done
+          if ! diff -u one.sums two.sums; then
+            echo "the two builds differ; compare the 'runner image' lines of both build logs"
+            exit 1
+          fi
+          (cd one && sha256sum -c "$deb.sha256")
+          want="$(date -u -d "@$sde" '+%Y-%m-%d %H:%M:%S')"
+          for part in --ctrl-tarfile --fsys-tarfile; do
+            bad="$(dpkg-deb "$part" "one/$deb" | TZ=UTC tar -tv --full-time |
+              awk -v w="$want" '($4 " " $5) != w')"
+            if [ -n "$bad" ]; then
+              printf 'members of %s not dated %s (SOURCE_DATE_EPOCH from the changelog):\n%s\n' \
+                "$part" "$want" "$bad"
+              exit 1
+            fi
+          done
+
+  lintian:
+    name: lintian (errors and warnings fail; overrides must be used)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bitscan-agent-amd64
+          path: ${{ runner.temp }}/deb
+
+      - name: Install lintian
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lintian
+
+      # Overrides ship in the package (deploy/debian/bitscan-agent.lintian-overrides),
+      # each with its reason; an unused or mismatched one fails the job.
+      - name: lintian
+        run: |
+          lintian --version
+          set +e
+          out="$(lintian --display-info --pedantic --show-overrides --fail-on error,warning \
+            "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "lintian reports an error or a warning (exit $rc)"
+            exit 1
+          fi
+          if grep -qE '(unused|mismatched)-override' <<<"$out"; then
+            echo "an override is unused or mismatched; keep only overrides for tags lintian emits"
+            exit 1
+          fi
+
+  package-checks:
+    name: Contents, static binaries, SBOM, SHA-256 and build flags
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bitscan-agent-amd64
+          path: ${{ runner.temp }}/deb
+
+      - name: Install dpkg-dev and file
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev file
+
+      - name: test_build_deb.sh on the CI-built .deb
+        run: |
+          bash deploy/tests/test_build_deb.sh --deb "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb \
+            contents static sbom sha256 flags
+
+  # systemd-analyze verify (TS 8.3) on the units as packaged, with the
+  # packaged binaries in /usr/sbin, on both supported releases.
+  packaged-units:
+    name: systemd-analyze verify (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bitscan-agent-amd64
+          path: ${{ runner.temp }}/deb
+
+      - name: systemd-analyze verify the packaged units
+        run: |
+          systemd-analyze --version
+          x="$RUNNER_TEMP/x"
+          dpkg-deb -x "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb "$x"
+          sudo install -m 0755 "$x/usr/sbin/bitscan-agent" "$x/usr/sbin/bitscan-runner" \
+            "$x/usr/sbin/bitscan-capread" /usr/sbin/
+          mapfile -t units < <(find "$x" -path '*/systemd/system/*' -type f | sort)
+          if [ "${#units[@]}" -ne 5 ]; then
+            printf 'want the 5 agent units in the .deb, found %s:\n' "${#units[@]}"
+            printf '%s\n' "${units[@]}"
+            exit 1
+          fi
+          if ! out="$(systemd-analyze verify "${units[@]}" 2>&1)"; then
+            printf 'systemd-analyze verify failed:\n%s\n' "$out"
+            exit 1
+          fi
+          if [ -n "$out" ]; then
+            printf 'systemd-analyze verify printed output:\n%s\n' "$out"
+            exit 1
+          fi
+
+  # Install, reinstall, upgrade and purge, each twice (TS 3.1; G38), on a
+  # throwaway runner VM with systemd as PID 1.
+  install-test:
+    name: Maintainer scripts (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bitscan-agent-amd64
+          path: ${{ runner.temp }}/deb
+
+      - name: Install debconf-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends debconf-utils
+
+      - name: test_maintainer_scripts.sh (all)
+        run: |
+          sudo env BITSCAN_TEST_DISPOSABLE=1 bash deploy/tests/test_maintainer_scripts.sh \
+            --deb "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb all

@@ -1,0 +1,36 @@
+#!/bin/sh
+# debconf questions for bitscan-agent (TS 3.1). Values are checked by
+# postinst, which also clears the enrolment token after use.
+set -e
+
+. /usr/share/debconf/confmodule
+
+# A root-only /etc/bitscan/install.env replaces the questions; postinst
+# reads and deletes it.
+if [ -e /etc/bitscan/install.env ]; then
+    exit 0
+fi
+
+if [ -e /etc/bitscan/agent.yaml ]; then
+    # Re-enrolment (#81): dpkg-reconfigure asks only for a new enrolment
+    # token. An upgrade or reinstall asks nothing (TS 3.1).
+    if [ "$1" = "reconfigure" ]; then
+        db_input high bitscan/enrol_token || true
+        db_go || true
+    fi
+    exit 0
+fi
+
+# First install. Preseeded answers are not asked again. A required answer
+# left empty (postinst then failed) is asked again on the next configure.
+for q in bitscan/manager_url bitscan/enrol_token; do
+    db_get "$q"
+    if [ -z "$RET" ]; then
+        db_fset "$q" seen false
+    fi
+done
+db_input high bitscan/manager_url || true
+db_input high bitscan/enrol_token || true
+db_input low bitscan/ca_file || true
+db_input low bitscan/manager_spki_sha256 || true
+db_go || true

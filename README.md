@@ -1,6 +1,6 @@
 # Bitscan
 
-Bitscan is a manager + agent platform that inventories Ubuntu/Debian endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported hosts are Ubuntu 22.04, Ubuntu 24.04 and Debian 12 (amd64 and arm64, cgroup v2).
+Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported hosts are Ubuntu 22.04 and Ubuntu 24.04 (amd64, cgroup v2).
 
 **Status:** M3 (agent API and inventory scheduler). The manager runs:
 
@@ -249,12 +249,13 @@ curl -s https://manager.example:8443/api/v1/enrollment-tokens \
 
 - **`POST /enrollment-requests/{request_id}/approve`:**
   - A new host becomes `enrolled`.
-  - A re-enrolment moves the existing host record, with its history, tags and packages, to the new token. That ends the old token and writes a `reenrolment_approved` alert.
+  - A re-enrolment moves the existing host record, with its history, tags and packages, to the new token. That ends the old token and writes a `reenrolment_approved` alert. A call with the old token then gets 401 `unauthorized`.
   - A request whose token has expired cannot be approved (409); the host must enrol again.
 - **`POST /enrollment-requests/{request_id}/reject`:**
   - A new host is set to `decommissioned` (never deleted), and its agent gets 401 `enrollment_rejected`.
   - A rejected re-enrolment leaves the existing host and its old token as they were. That machine has already replaced its token, so it must enrol again with a new enrolment token.
 - Deciding a request twice gets 409. Each decision is audit-logged. An approved host gets its first inventory job straight away.
+- An operator who calls approve or reject gets 403 `totp_session_required` with an API token or a session not verified with TOTP, and 403 `forbidden` with a TOTP-verified session.
 
 ## Agent API
 
