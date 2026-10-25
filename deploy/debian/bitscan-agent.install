@@ -1,0 +1,4 @@
+bin/bitscan-agent usr/sbin
+bin/bitscan-runner usr/sbin
+bin/bitscan-capread usr/sbin
+debian/dbus/bitscan-runner.conf etc/dbus-1/system.d

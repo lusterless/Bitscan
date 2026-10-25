@@ -1,0 +1,7 @@
+bitscan-agent (0.1.0~pre1-1) unstable; urgency=medium
+
+  * First pre-release package of the Bitscan agent: enrolment, heartbeat,
+    job pull and mandatory inventory. The runner and the capread helper
+    are idle in 0.x.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Sat, 24 Oct 2026 00:00:00 +0000

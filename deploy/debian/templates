@@ -1,0 +1,25 @@
+Template: bitscan/manager_url
+Type: string
+Description: Bitscan manager URL:
+ HTTPS address of the Bitscan manager, for example
+ https://mgr.example:8443. Plain HTTP is refused.
+
+Template: bitscan/enrol_token
+Type: password
+Description: Bitscan enrolment token:
+ Enrolment token (bse_...) created by an administrator in the Bitscan
+ manager. It is written to /var/lib/bitscan-agent/enroll.token and then
+ cleared from the debconf database.
+
+Template: bitscan/ca_file
+Type: string
+Description: CA bundle for the manager certificate (optional):
+ Path to the CA bundle that signed the manager's certificate, for a
+ private manager. Leave it empty to use the system CA store.
+
+Template: bitscan/manager_spki_sha256
+Type: string
+Description: Pin of the manager public key (optional):
+ SHA-256 of the DER SubjectPublicKeyInfo of the manager's certificate, as
+ 64 hexadecimal characters. The pin is checked in addition to the
+ certificate chain. Leave it empty for no pin.

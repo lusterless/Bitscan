@@ -1,0 +1,25 @@
+#!/bin/sh
+# bitscan-agent postrm. remove: the debhelper snippets stop and disable the
+# units. purge (#82): only the agent's own files; /etc/bitscan may also hold
+# the manager's configuration and secrets, so it goes only if it is empty.
+# The debhelper snippet purges the debconf answers. Users are kept.
+set -e
+
+case "$1" in
+    purge)
+        rm -rf /var/lib/bitscan-agent
+        rm -f /etc/bitscan/agent.yaml /etc/bitscan/agent.yaml.tmp /etc/bitscan/install.env
+        if [ -d /etc/bitscan ]; then
+            rmdir --ignore-fail-on-non-empty /etc/bitscan
+        fi
+        ;;
+    remove | upgrade | failed-upgrade | abort-install | abort-upgrade | disappear) ;;
+    *)
+        echo "bitscan-agent: postrm called with an unknown argument" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

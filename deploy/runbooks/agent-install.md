@@ -1,0 +1,196 @@
+# Install, re-enrol and remove the Bitscan agent
+
+The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-runner`, and the optional `bitscan-capread` helper (installed but disabled). The agent opens every connection to the manager; the host needs no inbound port.
+
+**0.x is a pre-release** (for example `0.1.0~pre1-1`). Enrolment, heartbeat, job pull and the mandatory inventory work. The runner and the helper are idle: a compliance scan on a 0.x host reports every check as `runner_unavailable`.
+
+## 1. Before you start
+
+- **Supported hosts:** Ubuntu 22.04 LTS and Ubuntu 24.04 LTS on amd64, with the default unified cgroup v2 hierarchy. No other release or architecture is supported.
+- **Time:** the host must be NTP-synced. `timedatectl` must show `System clock synchronized: yes`. The manager alerts on a clock skew over 5 minutes.
+- **Network:** outbound HTTPS from the host to the manager URL, for example `https://mgr.example:8443`. Plain HTTP is refused.
+- **Cloned hosts:** hosts cloned from one image share `/etc/machine-id`, so the second host appears as a re-enrolment of the first. Regenerate the machine id on every clone before you install the agent. Remove both copies: if `/var/lib/dbus/machine-id` is still a file, `systemd-machine-id-setup` copies the old id from it instead of making a new one. Then restore the usual link:
+
+  ```sh
+  cat /etc/machine-id    # note the old id
+  sudo rm -f /etc/machine-id /var/lib/dbus/machine-id
+  sudo systemd-machine-id-setup
+  if [ -d /var/lib/dbus ]; then sudo ln -sf /etc/machine-id /var/lib/dbus/machine-id; fi
+  cat /etc/machine-id    # must now differ from the old id
+  ```
+
+  Install the agent after cloning, never in the template image. A cloned agent token used with a different machine id gets 401 and the manager revokes it.
+- **Enrolment token:** an admin creates a `bse_` enrolment token in the manager. Use one single-use token per host where you can. For a scripted install across many hosts, set `max_uses` to the number of hosts, a short expiry and `allowed_cidrs`. Leave `auto_approve` off unless you need it; a token with `auto_approve` or more than 100 uses raises an alert.
+- **Private manager CA:** if the manager's certificate is not signed by a CA in the system store, copy that CA certificate (that CA only, not a bundle) to the host under `/etc`, readable by every user. Do not keep it under `/home`, `/root`, `/run/user` or `/tmp`: the install accepts such a path, but the agent service cannot see those folders, so it fails to start and keeps restarting.
+
+  ```sh
+  sudo install -d -m 0755 /etc/bitscan
+  sudo install -m 0644 manager-ca.pem /etc/bitscan/ca.pem
+  ```
+
+- **Key pin (recommended):** the pin is the SHA-256 of the manager certificate's public key (DER `SubjectPublicKeyInfo` of the leaf certificate), as 64 hexadecimal characters. Compute it **on the manager host**, from the certificate it serves, not over the network:
+
+  ```sh
+  sudo openssl x509 -in /etc/bitscan/secrets/tls.crt -noout -pubkey |
+      openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1
+  ```
+
+  `openssl x509` reads the first certificate in the file, which must be the manager's own (leaf) certificate. The pin is checked in addition to normal certificate verification, never instead of it. Without a pin, anyone holding a publicly trusted certificate for the manager's host name could impersonate the manager to the agent. Keep the same key when you renew the certificate, and the pin stays valid. Pinning is optional.
+
+## 2. Check the package
+
+Download `bitscan-agent_<version>_amd64.deb`. Copy its SHA-256 line from the release page, which is served from a different origin than the download, into `bitscan-agent_<version>_amd64.deb.sha256` next to the file. Never use a checksum file fetched from the same host as the package.
+
+```sh
+sha256sum -c bitscan-agent_<version>_amd64.deb.sha256
+```
+
+It must print `bitscan-agent_<version>_amd64.deb: OK`. Stop if it does not. Each release also ships CycloneDX SBOMs, one per binary.
+
+## 3. Install
+
+Give the install inputs in **one** of three ways. Never pass them as command-line environment variables: they end up in shell history and process lists, and the package ignores them.
+
+| Input | debconf question | `install.env` key | Required |
+| --- | --- | --- | --- |
+| Manager URL (`https://` only) | `bitscan/manager_url` | `MANAGER_URL` | yes |
+| Enrolment token (`bse_…`) | `bitscan/enrol_token` | `ENROL_TOKEN` | yes |
+| CA file (absolute path the `bitscan` user can read) | `bitscan/ca_file` | `CA_FILE` | no |
+| Key pin (64 hexadecimal characters) | `bitscan/manager_spki_sha256` | `MANAGER_SPKI_SHA256` | no |
+
+### 3a. Preseed (recommended)
+
+Create the preseed file root-only and edit it with `sudoedit`, so the token never appears on a command line:
+
+```sh
+sudo install -m 0600 /dev/null /root/bitscan.preseed
+sudoedit /root/bitscan.preseed
+```
+
+Content (the token question is a `password` question, so debconf keeps it only in its root-only `passwords.dat`):
+
+```text
+bitscan-agent bitscan/manager_url string https://mgr.example:8443
+bitscan-agent bitscan/enrol_token password bse_REPLACE_WITH_THE_ENROLMENT_TOKEN
+# Optional, for a private CA and a key pin:
+# bitscan-agent bitscan/ca_file string /etc/bitscan/ca.pem
+# bitscan-agent bitscan/manager_spki_sha256 string <64 hexadecimal characters>
+```
+
+Then load it, install the package and delete the preseed file:
+
+```sh
+sudo debconf-set-selections /root/bitscan.preseed
+sudo apt install ./bitscan-agent_<version>_amd64.deb
+sudo rm -f /root/bitscan.preseed
+```
+
+> **Warning: always preseed `bitscan/enrol_token` as `password`, as shown above, never as `string`.** A `string` answer goes to debconf's `/var/cache/debconf/config.dat`, which every local user can read. The install clears the token there, but a copy stays in the backup file `/var/cache/debconf/config.dat-old` (also readable by every user) until debconf next saves its database. If you used `string`, clear that copy after the install, either by removing the backup file as root (debconf writes a new one at its next save):
+>
+> ```sh
+> sudo rm -f /var/cache/debconf/config.dat-old
+> ```
+>
+> or by making debconf save once more, for example by loading the manager URL line again:
+>
+> ```sh
+> echo 'bitscan-agent bitscan/manager_url string https://mgr.example:8443' | sudo debconf-set-selections
+> ```
+>
+> Use your own manager URL in that line. Treat the token as exposed to the host's local users until then.
+
+### 3b. Interactive
+
+`sudo apt install ./bitscan-agent_<version>_amd64.deb` asks for the manager URL and the enrolment token. The CA file and the key pin are asked only at low debconf priority, so a normal interactive install does not ask them. If you need a private CA or a pin, preseed those two questions first (3a) or use `install.env` (3c).
+
+### 3c. `/etc/bitscan/install.env`
+
+A root-only file that replaces debconf completely while it exists. Create it with the right owner and mode first, then edit it:
+
+```sh
+sudo install -d -m 0755 /etc/bitscan
+sudo install -m 0600 /dev/null /etc/bitscan/install.env
+sudoedit /etc/bitscan/install.env
+```
+
+```text
+MANAGER_URL=https://mgr.example:8443
+ENROL_TOKEN=bse_REPLACE_WITH_THE_ENROLMENT_TOKEN
+# CA_FILE=/etc/bitscan/ca.pem
+# MANAGER_SPKI_SHA256=<64 hexadecimal characters>
+```
+
+Rules: one `KEY=value` per line, taken literally (no quotes, no `export`, no variables); blank lines and lines starting with `#` are skipped; only the four keys above, each at most once. The file must be a regular file owned by `root:root` with mode 0600, and `/etc/bitscan` must be owned by root and not writable by group or others. Otherwise the install stops, the file is left in place and the package stays unconfigured. After a successful install the file is deleted.
+
+Then run `sudo apt install ./bitscan-agent_<version>_amd64.deb`.
+
+### What the install does
+
+It creates the system users `bitscan` and `bitscan-runner` (no shell, no home). It writes `/etc/bitscan/agent.yaml` (`root:bitscan`, 0640, without the token) and `/var/lib/bitscan-agent/enroll.token` (`bitscan:bitscan`, 0600). It clears the token from debconf. Then it enables and starts `bitscan-runner.socket` and `bitscan-agent.service`.
+
+## 4. Check the result
+
+```sh
+systemctl is-enabled bitscan-agent.service bitscan-runner.socket
+systemctl is-active bitscan-agent.service bitscan-runner.socket
+sudo journalctl -u bitscan-agent -n 20
+```
+
+Both units must be `enabled` and `active`. The capread units stay disabled.
+
+The host then appears in the manager. Unless the enrolment token has `auto_approve` and the machine id is new, an admin must approve the enrolment request; until then the agent keeps retrying with back-off. After the agent's first enrolment call, even while the request still waits for approval, `/var/lib/bitscan-agent/` holds `agent_id` and `token` and `enroll.token` is gone, so these files do not show that the host is approved. The host is enrolled once an admin approves it in the manager (or at once with `auto_approve` and a new machine id). The first inventory follows the first inventory job.
+
+## 5. If the install stops
+
+A missing or invalid input stops the install with one line starting `bitscan-agent:` and leaves the package unconfigured, with no service enabled or started. Fix the cause, then run `sudo dpkg --configure bitscan-agent`.
+
+| Message (after `bitscan-agent:`) | Fix |
+| --- | --- |
+| `the manager URL is missing; …` / `the enrolment token is missing; …` | Preseed the question named in the line, or write `install.env` |
+| `the manager URL must be an https:// URL with a host` | Use `https://host[:port]`, no spaces or quotes |
+| `the enrolment token must be a bse_ enrolment token` | Copy the full `bse_` token from the manager |
+| `the CA file must be an absolute path the bitscan user can read` | Absolute path under `/etc` to a regular file with mode 0644 in readable folders (section 1) |
+| `the manager key pin must be empty or 64 hexadecimal characters` | Recompute the pin (section 1) |
+| `/etc/bitscan/install.env must be a regular file owned by root:root with mode 0600` | `sudo chown root:root` and `sudo chmod 0600` the file |
+| `/etc/bitscan/install.env: every line must be KEY=value` / `a key is given twice` / `unknown key` | Correct the file (section 3c) |
+| `/etc/bitscan/install.env may hold only ENROL_TOKEN once agent.yaml exists` | On an installed host the file may hold only a new token (section 7) |
+| `/etc/bitscan must be a directory owned by root and not writable by group or others` | `sudo chown root /etc/bitscan` and `sudo chmod go-w /etc/bitscan`, after checking who changed it |
+
+For the interactive route, `dpkg --configure` asks again for a required answer that was left empty.
+
+## 6. Upgrade
+
+Upgrade the manager first: it supports agents of its own version and the one before. Check the new package as in section 2, then:
+
+```sh
+sudo apt install ./bitscan-agent_<new version>_amd64.deb
+```
+
+An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services.
+
+## 7. Re-enrol a host
+
+Re-enrol when the agent log says the host must be re-enrolled (its token was revoked or has expired, or the host was decommissioned), or when it logs `enrolment did not complete; the agent stays idle until it is restarted` with the reason `enrolment refused; the host needs a new enrolment token`. In both cases the agent stays idle until it is restarted. Get a new enrolment token from an admin, then either:
+
+- run `sudo dpkg-reconfigure bitscan-agent`, which asks only for the new enrolment token; or
+- write `/etc/bitscan/install.env` holding only `ENROL_TOKEN=…` (section 3c for owner and mode), then run `sudo dpkg-reconfigure bitscan-agent`. Any other key in the file is refused on an installed host.
+
+The package writes the new `enroll.token`, clears the token from debconf and restarts the agent, which enrols again; `agent.yaml` is not changed. A re-enrolment onto the same machine id is always held for admin approval, even with `auto_approve`; on approval the host keeps its history and the old token is revoked.
+
+To change the CA file or the key pin of an installed host, edit `/etc/bitscan/agent.yaml` as root (`sudoedit /etc/bitscan/agent.yaml`; keep the owner `root:bitscan` and mode 0640), then run `sudo systemctl restart bitscan-agent`. `dpkg-reconfigure` does not ask these questions.
+
+## 8. Remove and purge
+
+```sh
+sudo apt remove bitscan-agent
+```
+
+stops and disables the units and keeps the configuration and state.
+
+```sh
+sudo apt purge bitscan-agent
+```
+
+also removes `/var/lib/bitscan-agent`, `/etc/bitscan/agent.yaml` and any leftover `/etc/bitscan/install.env`, and the package's debconf answers. It removes `/etc/bitscan` only if the folder is then empty, so a manager's `manager.env` and `secrets/` on the same host are kept. The `bitscan` and `bitscan-runner` users and a CA file you copied are kept; if that is `/etc/bitscan/ca.pem`, `/etc/bitscan` stays too.
+
+Removing the package does not deregister the host. It goes `offline` after 30 minutes and is decommissioned after `decommission_after_days` (default 7; 0 means never), which also revokes its token. To cut the host off at once, an admin revokes the agent in the manager.

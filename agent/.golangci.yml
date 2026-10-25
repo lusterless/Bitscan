@@ -61,6 +61,14 @@ linters:
         linters:
           - forbidigo
         text: no listening socket
+      # Lead ruling 2026-10-24 (TASK-094): exec.CommandContext in the inventory
+      # command runner. Its paths and arguments come only from the fixed #35
+      # command list in that file (never from a job, the manager or config),
+      # and no shell is used. Only G204, only this one file.
+      - path: ^internal/inventory/command\.go$
+        linters:
+          - gosec
+        text: G204
 
 formatters:
   enable:

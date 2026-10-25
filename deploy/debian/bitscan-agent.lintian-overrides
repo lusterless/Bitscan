@@ -1,0 +1,43 @@
+# Each override names its reason. package.yml fails on an unused or
+# mismatched override, so this list holds only tags lintian really emits.
+
+# TS 3.1 and 3.7 place the runner's D-Bus policy at
+# /etc/dbus-1/system.d/bitscan-runner.conf (decisions 2026-10-24).
+bitscan-agent: dbus-policy-in-etc [etc/dbus-1/system.d/bitscan-runner.conf]
+
+# TS 3 and the stack rules require static Go binaries built with
+# CGO_ENABLED=0; they have no shared library dependencies by design.
+bitscan-agent: statically-linked-binary [usr/sbin/bitscan-agent]
+bitscan-agent: statically-linked-binary [usr/sbin/bitscan-runner]
+bitscan-agent: statically-linked-binary [usr/sbin/bitscan-capread]
+
+# Services started only by their systemd units (TS 3.7), never run by
+# hand; the agent install runbook documents them.
+bitscan-agent: no-manual-page [usr/sbin/bitscan-agent]
+bitscan-agent: no-manual-page [usr/sbin/bitscan-runner]
+bitscan-agent: no-manual-page [usr/sbin/bitscan-capread]
+
+# TS 3.4: the agent watches /var/lib/dpkg/ with inotify (IN_MOVED_TO and
+# IN_CLOSE_WRITE on status) to upload a snapshot when packages change. It
+# reads the package list only through dpkg-query.
+bitscan-agent: uses-dpkg-database-directly [usr/sbin/bitscan-agent]
+
+# The package is shipped directly as a .deb (TS 3.1), never uploaded to the
+# Debian archive, so its changelog has no Debian bug to close.
+bitscan-agent: initial-upload-closes-no-bugs [usr/share/doc/bitscan-agent/changelog.Debian.gz:1]
+
+# Policy text fixed verbatim by TS 3.7 (decisions 2026-10-25); it applies
+# only to bitscan-runner's own user. Properties Get and GetAll are read-only
+# calls that systemctl is-active, is-enabled and list-units need on any
+# destination; Set is not allowed.
+bitscan-agent: dbus-policy-excessively-broad <policy user="bitscan-runner"><allow send_interface="org.freedesktop.DBus.Properties" send_member="Get"/> [etc/dbus-1/system.d/bitscan-runner.conf:3]
+bitscan-agent: dbus-policy-excessively-broad <policy user="bitscan-runner"><allow send_interface="org.freedesktop.DBus.Properties" send_member="GetAll"/> [etc/dbus-1/system.d/bitscan-runner.conf:4]
+
+# Policy text fixed verbatim by TS 3.7 (decisions 2026-10-25); it applies
+# only to bitscan-runner's own user. Rule 1 denies every method call on any
+# destination on purpose; rules 3 to 5 then allow only read-only calls
+# (Properties Get, GetAll and Introspectable) that systemctl needs.
+bitscan-agent: dbus-policy-without-send-destination <policy user="bitscan-runner"><deny send_type="method_call"/> [etc/dbus-1/system.d/bitscan-runner.conf:1]
+bitscan-agent: dbus-policy-without-send-destination <policy user="bitscan-runner"><allow send_interface="org.freedesktop.DBus.Properties" send_member="Get"/> [etc/dbus-1/system.d/bitscan-runner.conf:3]
+bitscan-agent: dbus-policy-without-send-destination <policy user="bitscan-runner"><allow send_interface="org.freedesktop.DBus.Properties" send_member="GetAll"/> [etc/dbus-1/system.d/bitscan-runner.conf:4]
+bitscan-agent: dbus-policy-without-send-destination <policy user="bitscan-runner"><allow send_interface="org.freedesktop.DBus.Introspectable"/> [etc/dbus-1/system.d/bitscan-runner.conf:5]
