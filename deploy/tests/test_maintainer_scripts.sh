@@ -863,7 +863,16 @@ sub_static() {
         ! grep -nE '\$\{?(BITSCAN_|MANAGER_URL|ENROL_TOKEN|CA_FILE|MANAGER_SPKI)' "$W/ctl/$f" | grep -v 'ENV_FILE\|ENV_KEYS' | grep -vE '^\s*[0-9]+:\s*#' >/dev/null
         ok $? "$f reads no BITSCAN_ or install-input environment variable"
         if command -v shellcheck >/dev/null; then
-            shellcheck -s sh "$W/ctl/$f" >"$W/sc_$f.txt" 2>&1; ok $? "shellcheck -s sh $f ($(wc -l <"$W/sc_$f.txt") lines)"
+            # -e SC1091 only: shellcheck cannot follow the sourced
+            # /usr/share/debconf/confmodule (not given as input), which is an
+            # info note, not a finding in the script; same as CHK-M4-176 and
+            # CHK-M4-176-r2. Every other code at every severity still fails.
+            local sc_rc
+            shellcheck -s sh -e SC1091 "$W/ctl/$f" >"$W/sc_$f.txt" 2>&1; sc_rc=$?
+            ok "$sc_rc" "shellcheck -s sh -e SC1091 $f (rc $sc_rc, $(wc -l <"$W/sc_$f.txt") lines)"
+            if [ "$sc_rc" != 0 ] || [ -s "$W/sc_$f.txt" ]; then
+                sed "s|^|    shellcheck $f: |" "$W/sc_$f.txt"
+            fi
         else
             echo "NOT RUN shellcheck $f (shellcheck not installed)"
         fi
