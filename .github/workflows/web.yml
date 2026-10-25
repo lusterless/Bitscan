@@ -72,3 +72,124 @@ jobs:
             printf 'OpenAPI document or client is not the committed version:\n%s\n' "$changed"
             exit 1
           fi
+
+      # PD-28: Vite writes the UI into manager/bitscan_manager/webui/ (gitignored).
+      - name: npm run build
+        working-directory: web
+        run: npm run build
+
+      # G42: the built HTML must load only same-origin files, so it works under
+      # the TS 6.3 CSP (default-src 'self'): no <script> without src, no <style>,
+      # no style= attribute, no URL with a scheme or //, and (lead ruling) no
+      # on<event>= or srcdoc= attribute. Every .html file in the build output is
+      # checked; the JS bundle is not (React DOM holds onClick and srcDoc as
+      # plain strings). Parsed with the stdlib HTML parser, which decodes
+      # entities and lowercases names.
+      - name: Bundle check (G42) on the built HTML
+        run: |
+          python - manager/bitscan_manager/webui <<'EOF'
+          import re
+          import sys
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          URL_ATTRS = {
+              "action", "background", "cite", "data", "formaction", "href",
+              "imagesrcset", "manifest", "ping", "poster", "src", "srcset",
+              "xlink:href",
+          }
+          SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
+          C0_AND_SPACE = "".join(chr(c) for c in range(0x21))
+          # <meta http-equiv=refresh content="N; url=X">: the browser loads X,
+          # with or without the url= prefix and quotes.
+          REFRESH = re.compile(r"\s*[0-9.]*\s*[;,]?\s*(?:url\s*=\s*)?[\"']?(.*)", re.I | re.S)
+
+
+          def external(url):
+              # Browsers drop tabs and newlines, trim C0 controls and spaces, and
+              # read a backslash as a slash.
+              u = re.sub(r"[\t\n\r]", "", url).strip(C0_AND_SPACE).replace("\\", "/")
+              return u.startswith("//") or SCHEME.match(u) is not None
+
+
+          class Check(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.problems = []
+                  self.in_script = False
+                  self.script_src = 0
+
+              def problem(self, text):
+                  self.problems.append(f"line {self.getpos()[0]}: {text}")
+
+              def handle_starttag(self, tag, attrs):
+                  self.element(tag, attrs)
+
+              def handle_startendtag(self, tag, attrs):
+                  self.element(tag, attrs)
+
+              def element(self, tag, attrs):
+                  names = [n for n, _ in attrs]
+                  if tag == "script":
+                      self.in_script = True
+                      # The browser uses the first src attribute.
+                      src = next((v for n, v in attrs if n == "src"), None)
+                      if src is None or not src.strip():
+                          self.problem("a <script> without src")
+                      else:
+                          self.script_src += 1
+                  if tag == "style":
+                      self.problem("a <style> element")
+                  if "style" in names:
+                      self.problem(f"a style= attribute on <{tag}>")
+                  for name in names:
+                      if re.fullmatch(r"on[a-z0-9_-]+", name):
+                          self.problem(f"an event-handler attribute {name}= on <{tag}>")
+                      if name == "srcdoc":
+                          self.problem(f"a srcdoc= attribute on <{tag}>")
+                  for name, value in attrs:
+                      if value is None:
+                          continue
+                      if name in URL_ATTRS:
+                          parts = [value, *re.split(r"[\s,]+", value)]
+                          bad = any(p and external(p) for p in parts)
+                      else:
+                          bad = "://" in value or value.strip(C0_AND_SPACE).startswith("//")
+                      if bad:
+                          self.problem(f"a URL with a scheme or // in {name}= on <{tag}>")
+                  if tag == "meta":
+                      equiv = next((v for n, v in attrs if n == "http-equiv"), None) or ""
+                      content = next((v for n, v in attrs if n == "content"), None) or ""
+                      if equiv.strip().lower() == "refresh":
+                          target = REFRESH.match(content).group(1).rstrip("\"'")
+                          if target and external(target):
+                              self.problem("a refresh URL with a scheme or // in content= on <meta>")
+
+              def handle_endtag(self, tag):
+                  if tag == "script":
+                      self.in_script = False
+
+              def handle_data(self, data):
+                  if self.in_script and data.strip():
+                      self.problem("inline code inside <script>")
+
+
+          root = Path(sys.argv[1])
+          index = root / "index.html"
+          if not index.is_file():
+              print(f"G42 FAIL: {index} is missing; did the build run?")
+              sys.exit(1)
+          failed = False
+          for path in sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() == ".html"):
+              check = Check()
+              check.feed(path.read_text(encoding="utf-8"))
+              check.close()
+              if path == index and check.script_src == 0:
+                  check.problems.append("no <script src=...>: the build wrote no app entry")
+              for p in check.problems:
+                  print(f"G42 FAIL {path} {p}")
+              failed = failed or bool(check.problems)
+              if not check.problems:
+                  print(f"G42 OK {path}")
+          sys.exit(1 if failed else 0)
+          EOF

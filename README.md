@@ -1,14 +1,14 @@
 # Bitscan
 
-Bitscan is a manager + agent platform that inventories Ubuntu/Debian endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported hosts are Ubuntu 22.04, Ubuntu 24.04 and Debian 12 (amd64 and arm64, cgroup v2).
+Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported hosts are Ubuntu 22.04 and Ubuntu 24.04 (amd64, cgroup v2).
 
-**Status:** M3 (agent API and inventory scheduler). The manager runs:
+**Status:** M5 (web UI and package search). The manager runs:
 
-- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; and the scheduler (inventory runs and `offline_sweep`);
+- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), fleet package search and its CSV export (`/api/v1/packages/search`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; the scheduler (inventory runs and `offline_sweep`); and the [web UI](#web-ui);
 - the server commands `users create-admin`, `users create-api-token` and `users reset-totp`;
 - `db migrate` and `db maintain`.
 
-The agent package, the web UI and compliance scans do not run yet.
+The agent package and compliance scans do not run yet.
 
 The specifications are in `docs/spec/`: `Technical_Specification.md` and `bit_Schema_Reference.md`.
 
@@ -17,6 +17,7 @@ The specifications are in `docs/spec/`: `Technical_Specification.md` and `bit_Sc
 - Python 3.12, and `uv` to regenerate the lock files.
 - PostgreSQL 16 with the `pg_trgm`, `pgcrypto` and `debversion` extensions (Debian/Ubuntu package `postgresql-16-debversion`). The server must accept TLS connections.
 - To run the PostgreSQL tests: Docker. On Windows, use Docker Engine inside WSL2 (Ubuntu 24.04).
+- To build the web UI: Node.js 24 and npm.
 
 ## Setup (development)
 
@@ -159,9 +160,50 @@ The tests run the installed `bitscan-manager` command, so the editable install i
 
 `bitscan-manager --help` lists the commands that work: `serve`, `users …`, `db migrate` and `db maintain`. Every other command, including `bits rebuild`, prints a usage line and `unknown or not yet implemented command`, and exits 2, without reading configuration or touching the database.
 
+## Web UI
+
+The manager serves the web UI from its own address, for example `https://manager.example:8443/`. The browser must trust the manager's certificate; with a private CA, add the CA to the browser.
+
+**Building.** From the repository root:
+
+```sh
+cd web
+npm ci --ignore-scripts
+npm run build
+```
+
+The build replaces the contents of `manager/bitscan_manager/webui/` with `index.html` and `assets/index-<hash>.js`. `serve` reads that folder once, at start-up, so restart it after a new build. Without a build, `serve` logs `web ui not built; serving the API only` and every UI address answers 404. A build larger than 32 MiB in total is not served, and one error line is logged.
+
+**How it is served.**
+
+- `GET /` returns the build's `index.html`, and `GET /assets/<file>` returns a file that was in the build's `assets/` folder when `serve` started. Both need no token, like the health routes; they hold no data. Every API call the UI makes carries the session token.
+- Only `.js`, `.css`, `.svg`, `.png`, `.ico` and `.woff2` files are served, each with its fixed content type. Any other path, including `/index.html`, a sub-folder and `/favicon.ico`, gets the normal problem+json 404. There is no directory listing.
+- UI pages use addresses after `#`, such as `/#/hosts/<agent_id>`, so they never reach the manager as paths.
+- The UI keeps the session token in memory only. Reloading the page, signing out or any 401 answer signs you out.
+
+**Signing in.** Enter the username, password and, for admins and users with TOTP, the current TOTP code. A failed sign-in always shows the same message. The password and code fields are emptied after every attempt.
+
+- **An admin without TOTP** sees only the TOTP page until enrolment is done. Press **Start**, scan the QR code with an authenticator app (or type the secret shown under it), enter a code and press **Confirm**. A wrong code, or more than 10 minutes since Start, means you press Start again for a new secret.
+- **A viewer or operator without TOTP** is offered the same page after each sign-in and may choose **Not now**.
+- **TOTP** in the menu replaces an existing TOTP: give the current password and code, then confirm a code from the new secret. **Password** changes the password (at least 12 characters, typed twice); every session of the user ends, so sign in again.
+
+**Pages by role:**
+
+| Page | viewer | operator | admin |
+| --- | --- | --- | --- |
+| Hosts, host detail, Package search, TOTP, Password | yes | yes | yes |
+| Enrolment requests, Enrolment tokens | no | no | yes |
+
+Admin actions on the enrolment pages need a TOTP-verified session. If the session is not TOTP-verified, the page offers **Sign in again**.
+
+- **Enrolment tokens:** the form's defaults create a single-use token valid for 24 hours, for any source address, without auto-approve. The new `bse_` token is shown once, with a **Copy** button; it cannot be shown again after **Done**. A token can be revoked from the list.
+- **Enrolment requests:** **Show** switches between pending and decided requests. Each request shows the host, its source address, OS, agent version and machine-id. Any existing agent with the same hostname or machine-id is listed under a warning, because a cloned image shares the machine-id. **Approve** and **Reject** each ask for confirmation. A request already decided elsewhere shows "This request was already decided."
+- **Hosts:** every host with its status, OS, agent version, last heartbeat and inventory, tags and runner helpers. A hostname opens the host page: identity and token times (never the token), the operating system and its raw `os_info`, the packages added and removed by the last inventory that changed the list, and the full package list.
+- **Package search:** the fields are the [package search parameters](#package-search). From 3 characters, **Name contains** suggests up to 10 package names; choosing one fills **Exact name**. **View** groups the results by package and version (the default) or by host. A version opens the hosts that have it, keeping the search's other filters. **Export CSV** downloads the result set on screen as `packages.csv`.
+
 ## API
 
-Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, except sign-in. Session tokens start `bsu_`, API tokens `bsk_`; agent tokens are refused here. Errors are `application/problem+json` with `type`, `title`, `status`, `detail` and `instance`; invalid input gets 400. Timestamps are UTC and end in `Z`. Lists return `{"items": [...], "next_cursor": ...}` and take `?limit=` (1–500, default 50) and `?cursor=`; a cursor stops working when the manager restarts.
+Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, except sign-in. Session tokens start `bsu_`, API tokens `bsk_`; agent tokens are refused here. Errors are `application/problem+json` with `type`, `title`, `status`, `detail` and `instance`; invalid input gets 400. Timestamps are UTC and end in `Z`. Lists return `{"items": [...], "next_cursor": ...}` and take `?limit=` (1–500, default 50) and `?cursor=`; a cursor stops working when the manager restarts. Paths are matched exactly: a trailing slash (`/api/v1/agents/`) is not redirected and gets 404.
 
 - **Sign-in:** `POST /auth/login` with `{"username", "password", "totp_code"}` returns `{token, expires_at, role, totp_enrolled, totp_verified}`. The session lasts at most 24 hours and ends after 8 hours without use. Every failure gives the same 401. Users with TOTP must give a code, and each code works once. Failed sign-ins slow the account down (1 second, doubling to 15 minutes; never a hard lock), and each source address may try 10 times a minute. An admin without TOTP gets a session that can only enrol TOTP or sign out.
 - **Sign-out:** `POST /auth/logout` ends the presenting session.
@@ -179,6 +221,7 @@ Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, 
   - `GET /agents/{agent_id}` adds `machine_id`, `enrolled_at`, `last_seen_ip`, the token times, `os_info` and `last_snapshot`. The snapshot is `{snapshot_id, collected_at, package_count, added, removed}`: the package lines added and removed by the last inventory that changed the list.
   - `GET /agents/{agent_id}/packages` lists the host's packages by name, architecture and version (Debian version order).
   - No response holds a token or a token hash.
+- **Package search:** `GET /packages/search` and `GET /packages/search.csv` (viewer). See [Package search](#package-search).
 - **Tags:** `PUT /agents/{agent_id}/tags` (operator) with `{"tags": [...]}` replaces the whole set: up to 32 distinct tags, each 1–64 characters from `A–Z a–z 0–9 . _ : -`. `[]` clears them.
 - **Revoke:**
   - `POST /agents/{agent_id}/revoke` (admin, TOTP-verified session) ends the agent's token at once, including a token still inside its rotation overlap. It answers 204.
@@ -209,6 +252,42 @@ Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, 
   - After 20 failed token checks in a minute from one address, counted across user and agent routes together, further bad tokens get 429. Valid tokens still work.
   - Request bodies are limited to 1 MiB.
 
+## Package search
+
+`GET /api/v1/packages/search` (viewer, session or API token) searches the packages of every host that is not decommissioned. It writes nothing.
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` | Package name contains this text (any letter case), or is similar to it (`pg_trgm`); 3–255 characters |
+| `name` | Exact package name; not together with `q` |
+| `version` | A Debian version; alone it matches that exact text |
+| `version_op` | `lt`, `le`, `eq`, `ge` or `gt`: compare with `version` in Debian order (`1.10` is after `1.9`); needs `version` |
+| `arch` | Exact architecture, for example `amd64` |
+| `status` | `installed` (default): `install ok installed`, `hold ok installed` or `deinstall ok installed`. `any`: also removed packages whose configuration files remain |
+| `os` | `ubuntu` (every version) or `ubuntu:24.04`, from the host's `os_info` |
+| `tag` | Exact host tag |
+| `host` | Hostname contains this text (any letter case) |
+| `agent_id` | One host, in the hyphenated form |
+| `group_by` | `package` (hosts per name, version and architecture) or `host` (matching packages per host) |
+
+- Filters combine with AND. An empty or too long value, an unknown `version_op`, `status` or `group_by`, an invalid version or `agent_id`, `q` with `name`, or `version_op` without `version` gets 400 `invalid_request`. Its `detail` names the parameters, for example `Invalid request: query.q`, never the value. The characters `%`, `_` and `\` in `q` and `host` match literally.
+- Items are `{name, version, architecture, status, agent_id, hostname}`; with `group_by=package` `{name, version, architecture, host_count}`; with `group_by=host` `{agent_id, hostname, package_count}`.
+- Order: by name, then Debian version, architecture and hostname; host groups by hostname.
+- `limit` (1–500, default 50) and `cursor` page as on every list. A cursor works only with the same filters and `group_by`; with others, or once the package or host it points at is gone, it gets 400 `Invalid request: query.cursor`.
+
+```sh
+curl -s -G https://manager.example:8443/api/v1/packages/search \
+  -H 'Authorization: Bearer <token>' \
+  --data-urlencode name=openssl --data-urlencode version=3.0.13 \
+  --data-urlencode version_op=lt --data-urlencode group_by=package
+```
+
+**CSV export.** `GET /api/v1/packages/search.csv` takes the same parameters, except `limit` and `cursor`, and returns the whole result set as one file.
+
+- The answer is `text/csv; charset=utf-8` (UTF-8 without BOM, CRLF line ends), with `Content-Disposition: attachment; filename="packages.csv"`. The first line holds the item keys, in the order above.
+- At most 100,000 rows or groups. A larger result gets 400 `Invalid request: more than 100000 rows; narrow the filters`, before any CSV is sent.
+- **Formula escaping:** a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return, or with whitespace followed by one of these, gets a leading `'`, so a spreadsheet shows it as text. Cells holding a comma, a double quote or a line break are then quoted, so `=HYPERLINK("http://x")` is written as `"'=HYPERLINK(""http://x"")"`.
+
 ## Users
 
 The `users` commands run on the server as root (`sudo bitscan-manager users …`). They read the `bitscan_app` DSN from `/etc/bitscan/secrets/app.dsn`, with the same checks as the server's DSN (readable, at most 64 KiB, and `sslmode` set to `require`, `verify-ca` or `verify-full`). They contact only PostgreSQL. Each writes an audit entry with actor `cli:root`; a running `serve` sends it to the audit sink.
@@ -221,7 +300,7 @@ Exit codes: 0 success; 1 refused (an existing or unknown user, a password or opt
 
 ## Enrolling agents
 
-Agents enrol with a `bse_` enrolment token that an admin creates through the API. There is no command for it: sign in as an admin with TOTP, then call `/enrollment-tokens` with that TOTP-verified session (API tokens are refused). If the manager's certificate comes from a private CA, add `--cacert <ca.pem>` to each `curl` command.
+Agents enrol with a `bse_` enrolment token that an admin creates on the **Enrolment tokens** page of the [web UI](#web-ui), or through the API. There is no command for it. To script it, sign in as an admin with TOTP, then call `/enrollment-tokens` with that TOTP-verified session (API tokens are refused). If the manager's certificate comes from a private CA, add `--cacert <ca.pem>` to each `curl` command.
 
 ```sh
 # 1. Sign in (admin with TOTP); keep the session token from the answer.
@@ -245,16 +324,17 @@ curl -s https://manager.example:8443/api/v1/enrollment-tokens \
 - **Alerts:** creating a token with `auto_approve` or more than 100 uses writes an `enrolment_token_risky` alert. More than `enrolment_alert_per_hour` enrolments on one token within an hour writes an `enrolments_per_hour` alert.
 - **Managing tokens:** `GET /enrollment-tokens` and `GET /enrollment-tokens/{token_id}` list and read tokens, never the token itself. `DELETE /enrollment-tokens/{token_id}` revokes one (204; the record is kept).
 
-**Approving enrolments.** Without `auto_approve`, a new host waits as `awaiting_approval`, and every agent call it makes gets 403 `pending_approval`. A host whose machine-id is already known, such as a reinstall or a cloned image, is always held, even with an `auto_approve` token. List the held enrolments with `GET /enrollment-requests`, then decide each one with an admin TOTP-verified session:
+**Approving enrolments.** Without `auto_approve`, a new host waits as `awaiting_approval`, and every agent call it makes gets 403 `pending_approval`. A host whose machine-id is already known, such as a reinstall or a cloned image, is always held, even with an `auto_approve` token. Decide them on the **Enrolment requests** page, or list them with `GET /enrollment-requests` and decide each one with an admin TOTP-verified session:
 
 - **`POST /enrollment-requests/{request_id}/approve`:**
   - A new host becomes `enrolled`.
-  - A re-enrolment moves the existing host record, with its history, tags and packages, to the new token. That ends the old token and writes a `reenrolment_approved` alert.
+  - A re-enrolment moves the existing host record, with its history, tags and packages, to the new token. That ends the old token and writes a `reenrolment_approved` alert. A call with the old token then gets 401 `unauthorized`.
   - A request whose token has expired cannot be approved (409); the host must enrol again.
 - **`POST /enrollment-requests/{request_id}/reject`:**
   - A new host is set to `decommissioned` (never deleted), and its agent gets 401 `enrollment_rejected`.
   - A rejected re-enrolment leaves the existing host and its old token as they were. That machine has already replaced its token, so it must enrol again with a new enrolment token.
 - Deciding a request twice gets 409. Each decision is audit-logged. An approved host gets its first inventory job straight away.
+- An operator who calls approve or reject gets 403 `totp_session_required` with an API token or a session not verified with TOTP, and 403 `forbidden` with a TOTP-verified session.
 
 ## Agent API
 

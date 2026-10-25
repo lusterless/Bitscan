@@ -15,6 +15,7 @@ node_modules/
 web/dist/
 web/build/
 web/coverage/
+manager/bitscan_manager/webui/
 *.tsbuildinfo
 npm-debug.log*
 

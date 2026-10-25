@@ -23,6 +23,9 @@ from bitscan_manager.api.agent import (
 from bitscan_manager.api.problems import ABOUT_BLANK, PROBLEM_JSON, problem_body
 from bitscan_manager.api.request_log import RequestLog
 from bitscan_manager.api.user import PROBLEM_REF, build_user_router
+from bitscan_manager.api.webui import DEFAULT_WEBUI_DIR, WebUi
+from bitscan_manager.api.webui import build_router as build_webui_router
+from bitscan_manager.api.webui import load as load_webui
 from bitscan_manager.auth.vault import VaultUnavailable
 from bitscan_manager.db.pool import DatabaseUnavailable
 from bitscan_manager.runtime import Lifecycle, Runtime
@@ -275,11 +278,18 @@ def _lifespan(
     return lifespan
 
 
-def create_app(runtime: Runtime | None = None) -> FastAPI:
+def create_app(
+    runtime: Runtime | None = None, *, webui: WebUi | None = None
+) -> FastAPI:
     """runtime is None for the OpenAPI export and tests that need no
-    database; routes that need it then answer 503 (get_runtime)."""
+    database; routes that need it then answer 503 (get_runtime). webui None
+    loads the build from DEFAULT_WEBUI_DIR."""
     # No docs or schema routes: every call needs a bearer token (TS §2.3) and
     # TS §6.2 lists no such route. No CORS middleware (TS §6.3).
+    # redirect_slashes off: a path that matches no route is a problem+json 404,
+    # never a 307 whose Location is built from the client's Host header
+    # (decisions 2026-10-25, TASK-112 r1). Only the app's own router redirects;
+    # included routers never run their own redirect check.
     lifecycle = runtime.lifecycle if runtime is not None else None
     app = BitscanApp(
         title="Bitscan",
@@ -287,6 +297,7 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
         openapi_url=None,
         docs_url=None,
         redoc_url=None,
+        redirect_slashes=False,
         telemetry=TELEMETRY_OFF,
         lifespan=_lifespan(lifecycle) if lifecycle is not None else None,
     )
@@ -299,6 +310,9 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
     app.add_exception_handler(DatabaseUnavailable, _unavailable("database"))
     app.add_exception_handler(VaultUnavailable, _unavailable("vault"))
     app.include_router(health.router)  # outside /api/v1, no token (#5)
+    # GET / and /assets/{name}: no token (#6 (f)), inside SecurityHeaders.
+    ui = webui if webui is not None else load_webui(DEFAULT_WEBUI_DIR)
+    app.include_router(build_webui_router(ui))
     app.include_router(build_user_router())
     app.include_router(build_agent_router())  # bsa_ and bse_ only (TS §6)
     app.openapi = _problem_openapi(app.openapi)  # type: ignore[method-assign]

@@ -30,6 +30,7 @@ def build_user_router() -> APIRouter:
         auth,
         enrolment,
         metrics,
+        packages,
         settings,
         users,
     )
@@ -41,6 +42,7 @@ def build_user_router() -> APIRouter:
     router.include_router(settings.router)
     router.include_router(enrolment.router)
     router.include_router(agents.router)
+    router.include_router(packages.router)
     router.include_router(audit_log.router)
     router.include_router(metrics.router)
     return router

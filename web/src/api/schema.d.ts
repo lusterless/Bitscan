@@ -428,6 +428,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/packages/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Search Packages */
+    get: operations["search_packages_api_v1_packages_search_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/packages/search.csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Search Packages Csv
+     * @description The whole result set (#84 (a)): no limit or cursor. The body is built
+     *     in full inside one read-only snapshot before the response starts, so an
+     *     over-cap or failing export never sends a CSV byte.
+     */
+    get: operations["search_packages_csv_api_v1_packages_search_csv_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/settings": {
     parameters: {
       query?: never;
@@ -555,8 +594,17 @@ export interface components {
       os_version_id: string | null;
       /** Runner Helpers */
       runner_helpers: string[];
-      /** Status */
-      status: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | "awaiting_approval"
+        | "enrolled"
+        | "online"
+        | "stale"
+        | "offline"
+        | "decommissioned";
       /** Tags */
       tags: string[];
       /**
@@ -595,8 +643,17 @@ export interface components {
       os_version_id: string | null;
       /** Runner Helpers */
       runner_helpers: string[];
-      /** Status */
-      status: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | "awaiting_approval"
+        | "enrolled"
+        | "online"
+        | "stale"
+        | "offline"
+        | "decommissioned";
       /** Tags */
       tags: string[];
     };
@@ -859,6 +916,18 @@ export interface components {
        */
       server_time: string;
     };
+    /** HostGroupItem */
+    HostGroupItem: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Hostname */
+      hostname: string;
+      /** Package Count */
+      package_count: number;
+    };
     /** InventoryBody */
     InventoryBody: {
       /** List Sha256 */
@@ -931,8 +1000,17 @@ export interface components {
       hostname: string;
       /** Machine Id */
       machine_id: string;
-      /** Status */
-      status: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | "awaiting_approval"
+        | "enrolled"
+        | "online"
+        | "stale"
+        | "offline"
+        | "decommissioned";
     };
     /** OsInfo */
     OsInfo: {
@@ -989,6 +1067,17 @@ export interface components {
       /** Uptime S */
       uptime_s: number | null;
     };
+    /** PackageGroupItem */
+    PackageGroupItem: {
+      /** Architecture */
+      architecture: string;
+      /** Host Count */
+      host_count: number;
+      /** Name */
+      name: string;
+      /** Version */
+      version: string;
+    };
     /** PackageItem */
     PackageItem: {
       /** Architecture */
@@ -1008,6 +1097,24 @@ export interface components {
     PackageLine: {
       /** Architecture */
       architecture: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
+      /** Version */
+      version: string;
+    };
+    /** PackageRowItem */
+    PackageRowItem: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Architecture */
+      architecture: string;
+      /** Hostname */
+      hostname: string;
       /** Name */
       name: string;
       /** Status */
@@ -1040,6 +1147,27 @@ export interface components {
     Page_AuditItem_: {
       /** Items */
       items: components["schemas"]["AuditItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[HostGroupItem] */
+    Page_HostGroupItem_: {
+      /** Items */
+      items: components["schemas"]["HostGroupItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[PackageGroupItem] */
+    Page_PackageGroupItem_: {
+      /** Items */
+      items: components["schemas"]["PackageGroupItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[PackageRowItem] */
+    Page_PackageRowItem_: {
+      /** Items */
+      items: components["schemas"]["PackageRowItem"][];
       /** Next Cursor */
       next_cursor: string | null;
     };
@@ -1127,11 +1255,14 @@ export interface components {
       /** Decided By */
       decided_by: number | null;
       /** Decision */
-      decision: string | null;
+      decision: ("approved" | "rejected") | null;
       /** Hostname */
       hostname: string;
-      /** Kind */
-      kind: string;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "new" | "reenrol";
       /** Machine Id */
       machine_id: string;
       /** Matches */
@@ -3264,6 +3395,165 @@ export interface operations {
         };
         content: {
           "text/plain; version=0.0.4; charset=utf-8": string;
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  search_packages_api_v1_packages_search_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        q?: string | null;
+        name?: string | null;
+        version?: string | null;
+        version_op?: ("lt" | "le" | "eq" | "ge" | "gt") | null;
+        arch?: string | null;
+        status?: "installed" | "any";
+        os?: string | null;
+        tag?: string | null;
+        host?: string | null;
+        agent_id?: string | null;
+        group_by?: ("package" | "host") | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["Page_PackageRowItem_"]
+            | components["schemas"]["Page_PackageGroupItem_"]
+            | components["schemas"]["Page_HostGroupItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  search_packages_csv_api_v1_packages_search_csv_get: {
+    parameters: {
+      query?: {
+        q?: string | null;
+        name?: string | null;
+        version?: string | null;
+        version_op?: ("lt" | "le" | "eq" | "ge" | "gt") | null;
+        arch?: string | null;
+        status?: "installed" | "any";
+        os?: string | null;
+        tag?: string | null;
+        host?: string | null;
+        agent_id?: string | null;
+        group_by?: ("package" | "host") | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/csv": string;
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
         };
       };
       /** @description Unauthorized */
