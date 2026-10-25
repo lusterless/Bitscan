@@ -1,0 +1,3 @@
+# TASK-120 TEST: enrolment tokens screen
+
+Verdict: **PASS**. Tests: web/src/screens/EnrolmentTokens.test.tsx (23), from REQ-124 (1)-(5), REQ-126, REQ-132, TS §3.2 L181, §8.4, §6.2 L1084/L1116. Command (L): `npx vitest run src/screens/EnrolmentTokens.test.tsx`: 23/23 passed, 0 failed, 0 skipped; lint, typecheck and format clean. AC: (1) defaults CHK-M5-220 + plants 392, 393, 394; (2) hint and note CHK-M5-221 + plant 398; (3) bse_ shown once, copy, gone after close CHK-M5-222 + mutation row CHK-M5-346; (4) revoke CHK-M5-223 + plants 395, 397; (5) 400 detail and the REQ-126 refusals CHK-M5-224 + plant 396; paging and plain text CHK-M5-225. All plants red.

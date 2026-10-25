@@ -1,0 +1,3 @@
+# TASK-122 TEST: client regeneration (status enums) and the host list
+
+Verdict: **PASS**. Tests: web/src/screens/Hosts.test.tsx (10), from REQ-127, REQ-136, REQ-117, TS §6.2 L1108, §5.2 L710. Commands (L): `npx vitest run src/screens/Hosts.test.tsx` 10/10 passed, 0 failed, 0 skipped; `npm run gen:api` gives a byte-identical schema.d.ts (G16). AC: (1) paging CHK-M5-240; (2) six distinct labels and the typecheck plant CHK-M5-241, -242; (3) plain text and "never" CHK-M5-243 + mutation row CHK-M5-345 (lint and test red); (4) navigation CHK-M5-244 + plant 406; REQ-136 regeneration and union types CHK-M5-245. Extra plants 405-408 red.

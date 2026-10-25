@@ -1039,3 +1039,242 @@ All are in `work/open-questions.md`. "Needed by" is the start of the wave whose 
 | TS §8.3 End-to-end, Load | TP-M4-23 (one host in WSL) | 3 VMs and 10,000 agents are **M6** |
 | TS §8.7 | none | Manager deployment unchanged; #6 is **M5** |
 | CLAUDE.md out of scope | none | Nothing planned: no signed APT repository, no client certificates, no job or `.bit` signing |
+
+## M5 minimal host UI and package search
+
+Planned 2026-10-24 (planner); consistency pass done (every TASK links a REQ and every REQ has a TASK, waves file-disjoint, at most 5 files and about 200 lines per task, the spine acyclic, no gate lowered, M3-file work after the M3 gate verdict, TASK-128 after M4's TASK-085). Plans: `work/plans/TASK-110.md` (TASK-109, 110), `TASK-112.md`, `TASK-113.md` (TASK-113, 114), `TASK-116.md`. Awaiting the lead's review and the user's approval.
+
+Scope: REQ-113 to REQ-136 in `work/requirements.md`. Planned 2026-10-24 alongside M4 (speed rule 7) in the worktree `Bitscan-m4` (branch `m4-agent`). In this section `bm/` means `manager/bitscan_manager/` and `w/` means `web/`.
+
+**M5 needs only the M3 manager API, not the Go agent.** No M5 task depends on an M4 task, except that TASK-128 (README) follows M4's TASK-085, which also edits `README.md`. Every UI screen is built and tested against the M3 contract in `manager/openapi.json` with component tests; nothing waits for a real agent.
+
+**When each task may start (M3 gate).** Tasks that edit files the M3 PR changes (`bm/api/user/*.py`, `bm/app.py`, `bm/cli/serve.py`, `manager/openapi.json`, `w/src/api/schema.d.ts`) start only after the M3 gate verdict, as TASK-085 does, so the gate runs on a fixed tree and the later rebase onto main has no conflicts: TASK-108, 112, 113 (and the tasks after them on the same files: 114, 122, 124). Two smaller edits wait for the same verdict: the tester's TP-M5-05 allow-list change in `manager/tests/test_invariants_m3.py` (an M3 test file), and TASK-115's one `.gitignore` line (the M3 tree has an uncommitted `.gitignore` change; until the line lands the build folder shows as untracked, and nobody commits); the rest of TASK-115 does not wait. Every other M5 task touches new files, or files M3 did not change (`w/package.json`, `.github/workflows/web.yml`), and **can start now**: TASK-109, 110, 111, 115 (without the `.gitignore` line), 116, 117, 118 to 121, 127, and tester TP-M5-00.
+
+**No migration, no new index.** Rules every M5 task follows:
+- **Tests per task (speed rule 1):** the tester runs only the affected tests (for a manager task its own suites plus what imports the changed modules; for a web task `vitest run <files>` plus lint and typecheck); the full manager suite, the whole web suite and the build run at the end of each wave, at the M5 gate and in CI.
+- **Linux only for Python (speed rule 2):** pytest runs in WSL with `CI=true`; web lint, typecheck, tests and the build may run on Windows and also run in CI on Ubuntu.
+- **Rigor (speed rule 6):** UI and package search get **one review round**. No M5 task changes manager auth, the importer, the agent or the runner, so none is on the TS §8.2 two-approval list; PD-30 asks whether the user also wants a second look at the web session and sign-in tasks.
+- **Per-wave second approval (speed rule 4):** asked once per wave only if PD-30 adds tasks to the list.
+- Manager: `api → services → repositories`; SQL only through `psycopg.sql` composition of fixed fragments with bound values (ruff S608); RE2 for any pattern on input; every route task re-exports `manager/openapi.json` (G6).
+- Web: call the API only through `w/src/api/client.ts`; the `bsu_` token in memory only; render API data as text; no new runtime dependency outside PD-28; screens are standalone components that TASK-126 wires into the routes, so screen tasks share no file.
+- No task adds a route, setting or parameter that queues a command or disables inventory (REQ-088); the M3 route walk (G34) is re-run in every manager route task's TEST.
+- Implementers check `work/reviews/builder-checklist.md` before every hand-off.
+
+### M5 tasks
+
+| TASK | Title | REQ links | Area | Owner | Files expected | Depends on | Est. LOC | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TASK-108 | Status and kind enums in the user-route models: `AgentItem`, `AgentDetailItem` and `MatchItem` `status` as the six-value `agent_status`; `RequestItem.kind` and `decision` (PD-29); re-export | REQ-117 | manager | impl-manager | `bm/api/user/agents.py`, `bm/api/user/enrolment.py`, `manager/openapi.json` | M3 gate verdict; PD-29 | 30 (+1 generated) | The exported document gives exactly the six `agent_status` values (TS §5.2 L710) to the three `status` properties and the PD-29 values to `kind` and `decision`, and the M3 agents and enrolment-request route suites pass unchanged. |
+| TASK-109 | Package search query: `GroupBy`, `SearchQuery` (wrapping TASK-110's `SearchFilter`, with `cursor_scope()`), `InvalidSearch` and `parse_search(params) -> SearchQuery` with every REQ-113 rule (pure; plain ASCII character checks for `os`, `agent_id` and the Debian version, no regular expression) (plan: `work/plans/TASK-110.md`) | REQ-113 | manager | impl-manager | `bm/services/packages/__init__.py`, `bm/services/packages/query.py` | TASK-110 (the `SearchFilter` and `VersionOp` types only: built in parallel against the plan's signatures, TESTed after TASK-110 IMPL); #83, #88 | 140 | Unit: each REQ-113 (1) case gives its 400 `invalid_request` naming the parameter (never the value), and every valid combination returns a `SearchQuery` with the #83 (a), (c), (d) and (f) normalised fields. |
+| TASK-110 | Package search repository: the `SearchFilter`, `VersionOp` and row types, rows, `group_by=package` and `group_by=host` queries with all filters, Debian-order `version_op`, the #83 (e) agent scope, escaped `LIKE`, keyset paging in the #83 (b) order from id anchors (`AnchorGone`) (plan: `work/plans/TASK-110.md`) | REQ-114, REQ-115 | manager | impl-manager | `bm/repositories/packages.py` | none; #83, #87 | 200 | PostgreSQL as `bitscan_app` on a fixture fleet: each filter alone, every pair and one five-filter combination give exactly the independently computed sets for all three shapes; `version_op` agrees with `dpkg --compare-versions` on 50 fixture pairs; paging with `limit=N` returns each item once, including `1.0` versus `1.0-0`; `q=%_` matches literally; ruff S608 passes. |
+| TASK-111 | CSV writer with TS §6.3 formula escaping (one shared function for every export) and RFC 4180 quoting, header row (#84) | REQ-116 | manager | impl-manager | `bm/services/packages/csv_export.py` | TASK-109 (creates the package's `__init__.py`; TASK-111 is built in parallel and TESTed after TASK-109 IMPL); #84 | 70 | Unit: every trigger and every #84 (d) whitespace-then-trigger form gets exactly one leading `'`, non-trigger cells are unchanged, and commas, quotes, CR and LF are quoted after the prefix, so `=HYPERLINK("http://x")` becomes `"'=HYPERLINK(""http://x"")"`. |
+| TASK-112 | Serve the built UI: `GET /` and `GET /assets/{name}` from the PD-28 folder, files fixed at app creation, fixed content types, no token, not in the document, problem 404 otherwise; `serve` logs when the UI is not built (plan: `work/plans/TASK-112.md`) | REQ-118 | manager | impl-manager | `bm/api/webui.py`, `bm/app.py`, `bm/cli/serve.py` | M3 gate verdict; #6 (M5 half), PD-28 | 120 | With a fixture build folder, `/` and each asset answer 200 with their content type and exactly the TS §6.3 headers; every REQ-118 (2) traversal, encoded, late-added, sub-folder and unknown-extension request answers 404 with no file content; no response has an `Access-Control-Allow-*` header; `manager/openapi.json` is byte-identical; with no folder `/` is 404 and the API suites pass. |
+| TASK-113 | Package search service and `GET /api/v1/packages/search` (viewer): query parameters, the three response shapes, cursor scope bound to the filters and `group_by`, invalid-version mapping to 400; router registration; re-export (plan: `work/plans/TASK-113.md`) | REQ-113, REQ-114, REQ-115 | manager | impl-manager | `bm/services/packages/search.py`, `bm/api/user/packages.py`, `bm/api/user/__init__.py`, `manager/openapi.json` | TASK-108 (OpenAPI order), TASK-109, TASK-110; #83 | 170 (+1 generated) | Through the API on PostgreSQL: REQ-113 refusals answer 400 problem+json; the three shapes return exactly their keys and the fixture-fleet sets; a cursor reused with other filters is refused; no token, `bsa_` and `bse_` get 401 and a viewer `bsk_` 200; hostile names come back verbatim; nothing is written. |
+| TASK-114 | `GET /api/v1/packages/search.csv` (viewer): the same filters, the whole result set in one REPEATABLE READ, READ ONLY transaction up to the #84 cap (repository `read_only_snapshot`, `count_capped`, `stream`), refused over it before any byte, the #84 headers; documented as `text/csv`; re-export (plan: `work/plans/TASK-113.md`) | REQ-116, REQ-115 | manager | impl-manager | `bm/api/user/packages.py`, `bm/services/packages/search.py`, `bm/repositories/packages.py`, `manager/openapi.json` | TASK-110, TASK-111, TASK-113; #84 | 140 (+1 generated) | Through the API on PostgreSQL: the CSV's data rows equal the JSON items of every page for the same filters in all three shapes, with the header row and escaped hostile cells; a result one row over the cap answers 400 with no CSV body; `Content-Type` and `Content-Disposition` follow #84; no token and agent tokens get 401. |
+| TASK-115 | Web toolchain: Vite pinned as a direct dev dependency, `build` script into the PD-28 folder, `w/index.html`, `w/vite.config.ts` (also the Vitest jsdom environment), jsdom and Testing Library dev-only, any PD-28 runtime addition; lock regenerated | REQ-119 | web | impl-web | `w/package.json`, `w/package-lock.json` (generated), `w/vite.config.ts`, `w/index.html`, `.gitignore` (one line, only under PD-28 (b); the lead names its owner) | none; PD-28 | 60 (+1 generated) | `npm ci --ignore-scripts && npm run build` exits 0 and writes `index.html` with external assets only; the G42 check passes and turns red on each planted inline script, style element, `style=` attribute and `https://` link; `npm ls --omit=dev --all` lists only React, React DOM, `openapi-fetch` and the PD-28 additions; lint, typecheck, format and test still pass. |
+| TASK-116 | Web session core: in-memory session store with `useSession()`, the bearer and 401 middleware registered on the generated client (no change to `client.ts`), problem reading and the REQ-126 message map, the hash router and `Route` type (plan: `work/plans/TASK-116.md`) | REQ-120, REQ-126 | web | impl-web | `w/src/app/session.ts`, `w/src/app/problems.ts`, `w/src/app/router.ts` | none (its DOM tests run once TASK-115 is in) | 170 | Unit: after `setSession` every client request carries `Authorization: Bearer <token>` and none before it; a 401 from any route clears the session; no storage API, cookie or console receives the token (spies); each REQ-126 problem `type` maps to its message; every `Route` round-trips through `formatHash` and `parseHash`, and a malformed hash or a non-UUID host id parses to the host list. |
+| TASK-117 | Shared display components: cursor `Pager` (next and previous from returned cursors), `ProblemBanner` (REQ-126 messages and `detail` as text), the time format ("never" for null), a confirm dialog | REQ-126, REQ-127, REQ-132 | web | impl-web | `w/src/components/Pager.tsx`, `w/src/components/ProblemBanner.tsx`, `w/src/components/Confirm.tsx`, `w/src/format.ts` | TASK-115, TASK-116 | 150 | UI test: the pager walks N + 1 items with page size N forwards and back showing each once; `ProblemBanner` shows hostile `detail` text literally and the REQ-126 message per `type`; `Confirm` calls its action only after confirmation; a null time renders "never". |
+| TASK-118 | Sign-in screen (REQ-121), including the `Retry-After` wait and the next-screen choice from the response | REQ-121, REQ-120, REQ-132 | web | impl-web | `w/src/screens/SignIn.tsx` | TASK-116, TASK-117; #85 (e) | 130 | UI test: the body is exactly `{username, password, totp_code}` (null when empty); two different 401s show one message; a 429 with `Retry-After: 7` disables the button for 7 s; the fields are cleared after each attempt; success calls `setSession` and reports the REQ-133 next screen. |
+| TASK-119 | Account screens: TOTP enrolment (start, secret and URI as text, PD-28 QR, confirm, session swap), replacement (current password and code), the first-sign-in offer for non-admins, and password change (REQ-123) | REQ-122, REQ-123, REQ-132 | web | impl-web | `w/src/screens/TotpEnrol.tsx`, `w/src/screens/PasswordChange.tsx`, `w/src/components/QrCode.tsx` (only under PD-28 (e)) | TASK-116, TASK-117; #85 (a); PD-28 | 190 | UI test: start shows the secret and URI as text; a good confirm swaps the token for the next request; 403 and 409 behave as REQ-122 (3); replacement sends `{current_password, current_code}` first; the secret is gone from the DOM, storage and console after leaving; a mismatched or short new password sends nothing and a 204 clears the session. |
+| TASK-120 | Enrolment tokens screen (REQ-124): create form with defaults and the TS §3.2 hint and alert notes, token shown once with copy, paginated list, revoke with confirmation | REQ-124, REQ-126, REQ-132 | web | impl-web | `w/src/screens/EnrolmentTokens.tsx` | TASK-116, TASK-117 | 180 | UI test: an untouched form posts the REQ-124 (1) defaults; the hint is shown; the token is in the DOM only on the creation result and in no storage; revoke calls `DELETE` once after confirmation; a `totp_session_required` answer shows the sign-in-again prompt and no token field. |
+| TASK-121 | Enrolment approval screen (REQ-125): pending and decided lists with matching agents flagged, approve and reject with confirmation, 409 handling | REQ-125, REQ-126, REQ-132 | web | impl-web | `w/src/screens/EnrolmentRequests.tsx` | TASK-116, TASK-117 | 170 | UI test: a request with two matches shows both; hostile hostnames, match hostnames and OS names render as text; approve calls the route once and the item leaves the pending list; 409 shows "already decided"; `totp_session_required` and `audit_sink_unavailable` show their REQ-126 messages. |
+| TASK-122 | Regenerate `schema.d.ts` (status enums); host list screen (REQ-127) with an exhaustive status-label map | REQ-127, REQ-136, REQ-117, REQ-132 | web | impl-web | `w/src/api/schema.d.ts` (generated), `w/src/screens/Hosts.tsx`, `w/src/components/StatusBadge.tsx` | TASK-108, TASK-117 | 140 (+1 generated) | After `npm run gen:api` G16 shows no diff against the tree at that time; UI test: paging shows each host once, each of the six statuses has its label (removing one fails typecheck), hostile hostnames and tags render as text, and a null heartbeat shows "never". |
+| TASK-123 | Host detail screen (REQ-128): identity and token times, tags and helpers, every `os_info` field with `raw` as JSON text, "Added / removed since last snapshot", paginated packages | REQ-128, REQ-132 | web | impl-web | `w/src/screens/HostDetail.tsx` | TASK-117, TASK-122 | 190 | UI test: every REQ-128 field is shown; null `os_info` and null `last_snapshot` show their empty states; the added and removed lists equal the snapshot's items; a hostile `raw` key and value show as text; a 404 shows "Host not found"; package paging shows each package once. |
+| TASK-124 | Regenerate `schema.d.ts` (package routes); package search screen (REQ-129): form, grouped results, click-through to hosts and host detail, per-host view | REQ-129, REQ-136, REQ-132 | web | impl-web | `w/src/api/schema.d.ts` (generated), `w/src/screens/PackageSearch.tsx` | TASK-113, TASK-114, TASK-117, TASK-122 (generated-file order); #86 | 190 (+1 generated) | G16 shows no diff and `UserPathsArePrefixed` passes with both package paths; UI test: the form sends exactly the filled parameters, a `group_by=package` answer renders name → version → host count, a version click requests `name`, `version`, `arch` without `group_by`, a host click opens `#/hosts/<agent_id>`, and hostile names render as text. |
+| TASK-125 | Type-ahead (REQ-130, per #32) and the CSV download (REQ-131) | REQ-130, REQ-131 | web | impl-web | `w/src/components/TypeAhead.tsx`, `w/src/screens/PackageSearch.tsx`, `w/src/app/download.ts` | TASK-124; #32, #84 | 130 | UI test with fake timers: 2 characters send nothing, a quick 5-character burst sends one request, at most 10 distinct names show, a stale response is ignored, choosing sets `name` and clears `q`; Export sends the visible filters without `limit` or `cursor`, saves the body unchanged and revokes the Blob URL; a 400 shows its `detail`. |
+| TASK-126 | App shell: route table for every M5 screen, navigation by role, restricted-admin and first-sign-in gating, sign-out, a "not available for your role" page | REQ-133, REQ-120, REQ-122 | web | impl-web | `w/src/main.tsx`, `w/src/app/App.tsx`, `w/src/app/routes.tsx` | TASK-118 to TASK-125 | 160 | UI test per role: the navigation shows exactly the REQ-133 entries; a viewer opening an admin route sees the role page and no request is sent to it; an admin with `totp_enrolled: false` reaches only TOTP and sign-out; sign-out clears the session even when logout fails; a reload (fresh module state) starts at sign-in. |
+| TASK-127 | Web CI: `npm run build` and the G42 bundle check after the existing web steps | REQ-134 | deploy | impl-deploy | `.github/workflows/web.yml` | TASK-115; PD-28 | 40 | On a PR the build and check run, and a failing build and each G42 plant (inline script, style element, `style=` attribute, `https://` link in `index.html`) turn the job red; every action stays pinned. |
+| TASK-128 | README: building and opening the UI, sign-in and TOTP, enrolment tokens and approvals in the UI (API path kept), host pages, package search parameters, CSV export and escaping | REQ-135 | manager | impl-manager | `README.md` | TASK-112, TASK-114, TASK-126, M4 TASK-085 (same file) | 120 (docs) | The tester follows every new section against a WSL manager serving the built UI and each step behaves as written; the README holds no real secret, task id or process note. |
+
+Totals: 24 REQ (REQ-113 to REQ-136), 21 TASK (TASK-108 to TASK-128), 23 test-plan items (TP-M5-00 to TP-M5-22), 7 waves plus the gate. Every task is within 5 files and about 200 hand-written lines; generated files and test files are not counted.
+
+REQ to TASK: REQ-113 TASK-109, TASK-113; REQ-114 TASK-110, TASK-113; REQ-115 TASK-110, TASK-113, TASK-114; REQ-116 TASK-111, TASK-114; REQ-117 TASK-108, TASK-122; REQ-118 TASK-112; REQ-119 TASK-115; REQ-120 TASK-116, TASK-118, TASK-126; REQ-121 TASK-118; REQ-122 TASK-119, TASK-126; REQ-123 TASK-119; REQ-124 TASK-120; REQ-125 TASK-121; REQ-126 TASK-116, TASK-117, TASK-120, TASK-121; REQ-127 TASK-117, TASK-122; REQ-128 TASK-123; REQ-129 TASK-124; REQ-130 TASK-125; REQ-131 TASK-125; REQ-132 TASK-117 to TASK-124 (every screen's UI tests); REQ-133 TASK-126; REQ-134 TASK-127; REQ-135 TASK-128; REQ-136 TASK-122, TASK-124. Every M5 REQ has at least one TASK, and every TASK has at least one REQ.
+
+### M5 owner and review notes
+
+- **Owners:** impl-manager: TASK-108 to TASK-114 and TASK-128. impl-web: TASK-115 to TASK-126. impl-deploy: TASK-127 (impl-deploy also carries the M4 packaging tasks; TASK-127 is about 40 lines and has no deadline before the M5 gate). The tester owns every test file (`manager/tests/`, `w/src/**/*.test.ts(x)`), the fixture build folder for TASK-112, and `tests/m5/`.
+- **Two approvals (TS §8.2 L1268):** none required. No M5 task changes manager auth, the importer, the agent or the runner. TASK-108 changes only response types in two M3 route files (as the TASK-084 ruling: not on the list unless behaviour changes). **PD-30** asks whether the user wants the second look anyway for TASK-116 (session token handling), TASK-118 (sign-in) and TASK-119 (TOTP and password), which handle `bsu_` tokens, passwords and TOTP secrets in the browser.
+- **Recommended second look (reviewer's choice):** TASK-110 and TASK-113 (the only new SQL that takes user input), TASK-112 (unauthenticated file serving).
+- **One review round** for every M5 task (speed rule 6); a security-invariant finding is still blocking.
+- **Shared files, never in the same wave:** `manager/openapi.json` (TASK-108 W1, 113 W2, 114 W3); `bm/api/user/packages.py` and `bm/services/packages/search.py` (TASK-113 W2, 114 W3); `bm/repositories/packages.py` (TASK-110 W1, 114 W3); `w/src/api/schema.d.ts` (TASK-122 W3, 124 W4); `w/src/screens/PackageSearch.tsx` (TASK-124 W4, 125 W5); `README.md` (M4 TASK-085, then TASK-128 W7). `bm/app.py` and `bm/cli/serve.py` change once (TASK-112). `bm/services/packages/__init__.py` is created by TASK-109 only; TASK-111 adds a sibling module and does not edit it.
+- **G16 between regenerations:** `manager/openapi.json` changes in W1 to W3 while `schema.d.ts` is regenerated in W3 (TASK-122) and W4 (TASK-124); G16 is checked in those two TESTs and at the gate, as PD-20 allowed in M3.
+- **Built-key lint nit (TASK-005, carried to M5):** the rule stays as written; screens use a `Map` or a variable key, never a template-literal or concatenated computed key. Changing the rule needs the lead.
+- Planted violations are made in a throwaway copy or branch, never left in the tree.
+
+### M5 test-plan items (tester)
+
+Drafted from the acceptance criteria at phase start (`tests/m5/test-plan.md`, check ids `CHK-M5-###`). Python items run in WSL with `CI=true`; web items run with Vitest (jsdom) on Windows or Linux and in CI.
+
+| TP | What | REQ | Runs in | Files (tester) | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| TP-M5-00 | Phase test plan and the M5 index row | all M5 | phase start; report at the gate | `tests/m5/test-plan.md`, `tests/test-plan.md` | none |
+| TP-M5-01 | Enum types in the document; M3 agents and enrolment-request suites targeted | REQ-117 | TASK-108 TEST | `manager/tests/test_user_enums.py` | TASK-108 IMPL |
+| TP-M5-02 | Query parsing, one case per rule and limit (U+0000 and empty values per #88; every M1 corpus version accepted) | REQ-113 | TASK-109 TEST | `manager/tests/test_package_query.py` | #83; TASK-109 IMPL, TASK-110 IMPL |
+| TP-M5-03 | Fixture fleet and repository queries on PostgreSQL; `dpkg` corpus pairs; keyset paging from id anchors; literal wildcards; the #87 probe (reported as a finding) | REQ-114, REQ-115 | TASK-110 TEST | `manager/tests/test_package_repo_pg.py`, `manager/tests/package_fleet.py` (fixture builder) | TASK-110 IMPL |
+| TP-M5-04 | CSV escaping and quoting, one case per trigger (TS §8.3 Unit) | REQ-116 | TASK-111 TEST | `manager/tests/test_csv_export.py` | #84 |
+| TP-M5-05 | Static UI serving with a fixture build folder; traversal and encoding probes; headers; no CORS; G6; route walk (G34) updated for the two static routes | REQ-118 | TASK-112 TEST | `manager/tests/test_webui_serving.py`, `manager/tests/test_invariants_m3.py` (allow-list update) | TASK-112 IMPL |
+| TP-M5-06 | Search route integration (TS §8.3 Integration: every endpoint) and token groups | REQ-113, REQ-114, REQ-115 | TASK-113 TEST | `manager/tests/test_package_search_pg.py` | TP-M5-03 |
+| TP-M5-07 | CSV route integration: JSON equivalence, cap, headers | REQ-116, REQ-115 | TASK-114 TEST | `manager/tests/test_package_search_csv_pg.py` | TP-M5-04, TP-M5-06 |
+| TP-M5-08 | Build, G42 plants, dependency list | REQ-119 | TASK-115 TEST | none in the tree (evidence) | TASK-115 IMPL |
+| TP-M5-09 | Session store, middleware, problem map, router | REQ-120, REQ-126 | TASK-116 TEST | `w/src/app/session.test.ts`, `w/src/app/problems.test.ts`, `w/src/app/router.test.ts` | TASK-115 IMPL |
+| TP-M5-10 | Shared components | REQ-126, REQ-127, REQ-132 | TASK-117 TEST | `w/src/components/components.test.tsx` | TP-M5-09 |
+| TP-M5-11 | Sign-in | REQ-121, REQ-120 | TASK-118 TEST | `w/src/screens/SignIn.test.tsx` | TP-M5-10 |
+| TP-M5-12 | TOTP enrolment, replacement, offer; password change | REQ-122, REQ-123 | TASK-119 TEST | `w/src/screens/Account.test.tsx` | TP-M5-10 |
+| TP-M5-13 | Enrolment tokens | REQ-124, REQ-126 | TASK-120 TEST | `w/src/screens/EnrolmentTokens.test.tsx` | TP-M5-10 |
+| TP-M5-14 | Enrolment approval | REQ-125, REQ-126 | TASK-121 TEST | `w/src/screens/EnrolmentRequests.test.tsx` | TP-M5-10 |
+| TP-M5-15 | Host list; G16 at that time | REQ-127, REQ-136 | TASK-122 TEST | `w/src/screens/Hosts.test.tsx` | TP-M5-10, TP-M5-01 |
+| TP-M5-16 | Host detail | REQ-128 | TASK-123 TEST | `w/src/screens/HostDetail.test.tsx` | TP-M5-15 |
+| TP-M5-17 | Package search screen; G16 | REQ-129, REQ-136 | TASK-124 TEST | `w/src/screens/PackageSearch.test.tsx` | TP-M5-07, TP-M5-15 |
+| TP-M5-18 | Type-ahead and CSV download | REQ-130, REQ-131 | TASK-125 TEST | `w/src/components/TypeAhead.test.tsx`, `w/src/app/download.test.ts` | TP-M5-17 |
+| TP-M5-19 | Shell: navigation per role, gating, sign-out, reload | REQ-133, REQ-120, REQ-122 | TASK-126 TEST | `w/src/app/App.test.tsx` | TP-M5-11 to TP-M5-18 |
+| TP-M5-20 | Web CI plants | REQ-134 | TASK-127 TEST | none in the tree (evidence) | TASK-127 IMPL |
+| TP-M5-21 | README walk-through against a WSL manager serving the built UI | REQ-135 | TASK-128 TEST | none in the tree (evidence) | TASK-128 IMPL |
+| TP-M5-22 | M5 security and invariants suite (G46): route walk with the package and static routes, token groups on both package routes, canary sweep (no hostile package name, CSV cell or token in any log), served-bundle check against a real `serve` in WSL (every asset `index.html` references answers 200 with headers), the mutation table below, and the user's PD-28 (f) browser walk-through recorded | REQ-113 to REQ-136 | M5 gate | `manager/tests/test_security_m5.py` | all above |
+
+### M5 waves and dependency spine
+
+Spine (manager): `TASK-110 → TASK-109 → TASK-113 → TASK-114` (TASK-109 needs only TASK-110's types, so both are built in W1); `TASK-109 → TASK-111` (package `__init__.py`); `TASK-111 → TASK-114`; `TASK-108 → TASK-113` (OpenAPI order); `TASK-108 → TASK-122`; `TASK-112 → TASK-128`.
+Spine (web): `TASK-115, TASK-116 → TASK-117 → TASK-118, 119, 120, 121, 122`; `TASK-122 → TASK-123`; `TASK-113, TASK-114, TASK-122 → TASK-124 → TASK-125`; `TASK-118 to TASK-125 → TASK-126 → TASK-128`; `TASK-115 → TASK-127`. The graph is acyclic.
+
+Interface first: the filter and row types (TASK-110) and the query type (TASK-109), both fixed in `work/plans/TASK-110.md` so the two are written in parallel (repositories never import services, so the filter type lives in the repository), the CSV function (TASK-111), the enums (TASK-108), the static-serving contract (TASK-112, fixed by #6 and PD-28) and the web session, problem and route interfaces (TASK-116, fixed in `work/plans/TASK-116.md`) all land in W1, before any route or screen consumes them.
+
+| Wave | Tasks (parallel) | Files touched (disjoint within the wave) | Can start before M4 finishes? |
+| --- | --- | --- | --- |
+| W1 | TASK-108\*, 109, 110, 111, 112\*, 115, 116; tester TP-M5-00 | `bm/api/user/{agents,enrolment}.py`, `manager/openapi.json` · `bm/services/packages/{__init__,query}.py` · `bm/repositories/packages.py` · `bm/services/packages/csv_export.py` · `bm/api/webui.py`, `bm/app.py`, `bm/cli/serve.py` · `w/{package.json,package-lock.json,vite.config.ts,index.html}` (+ `.gitignore` under PD-28 (b)) · `w/src/app/{session,problems,router}.ts` | yes; \* after the M3 gate verdict |
+| W2 | TASK-113\*, 117, 127 | `bm/services/packages/search.py`, `bm/api/user/{packages,__init__}.py`, `manager/openapi.json` · `w/src/components/{Pager,ProblemBanner,Confirm}.tsx`, `w/src/format.ts` · `.github/workflows/web.yml` | yes; \* after the M3 gate verdict |
+| W3 | TASK-114, 118, 119, 120, 121, 122 | `bm/api/user/packages.py`, `bm/services/packages/search.py`, `bm/repositories/packages.py`, `manager/openapi.json` · `w/src/screens/SignIn.tsx` · `w/src/screens/{TotpEnrol,PasswordChange}.tsx`, `w/src/components/QrCode.tsx` · `w/src/screens/EnrolmentTokens.tsx` · `w/src/screens/EnrolmentRequests.tsx` · `w/src/api/schema.d.ts`, `w/src/screens/Hosts.tsx`, `w/src/components/StatusBadge.tsx` | yes |
+| W4 | TASK-123, 124 | `w/src/screens/HostDetail.tsx` · `w/src/api/schema.d.ts`, `w/src/screens/PackageSearch.tsx` | yes |
+| W5 | TASK-125 | `w/src/components/TypeAhead.tsx`, `w/src/screens/PackageSearch.tsx`, `w/src/app/download.ts` | yes |
+| W6 | TASK-126 | `w/src/main.tsx`, `w/src/app/{App,routes}.tsx` | yes |
+| W7 | TASK-128; tester TP-M5-22 and the M5 gate | `README.md` | after M4's TASK-085 (same file); the gate needs nothing from M4 |
+
+With one impl-web instance the web column is sequential in practice (W1 to W6 hold 12 web tasks); the waves show what a second impl-web instance could take in parallel without a file clash (for example TASK-118 to TASK-122 in W3).
+
+### M5 gate
+
+On a clean tree every command below is green, and each gate turns red on its planted violation. G7 to G11, G17 and G35 to G41 belong to M4 and are not re-run for M5 unless an M5 task touches their files (none does). "Local" is Windows 11 + Git Bash; "WSL" is WSL2 Ubuntu 24.04 with Docker.
+
+| Gate | Command | Planted violation that must turn it red | Where |
+| --- | --- | --- | --- |
+| G1 | `ruff check manager` | an f-string query in `bm/repositories/packages.py` (S608); `import re` in `bm/services/packages/query.py` | local |
+| G2 | `ruff format --check manager` | one misformatted line in `bm/api/webui.py` | local |
+| G3 | `mypy --strict --config-file manager/pyproject.toml manager` | an untyped function in `bm/services/packages/csv_export.py` | local |
+| G4 | `pip install --require-hashes` of both locks | every hash of one dev package altered (M3 G4 rule) | local and CI |
+| G5 | coverage of `bm/services` at 85 % or more, measured by the Linux run (speed rule 2) | an untested function in `bm/services/packages/search.py` sized from the clean report | WSL; CI |
+| G6 | OpenAPI export, then `git diff --exit-code -- manager/openapi.json` plus the untracked check | the static routes included in the schema; `status` reverted to `str` without re-export | local |
+| G12 | `cd web && npm run lint` | `dangerouslySetInnerHTML` in `Hosts.tsx`; `sessionStorage.setItem` in `session.ts`; a `fetch(` in `download.ts` | local and CI |
+| G13 | `cd web && npm run typecheck` | a status label removed from `StatusBadge.tsx` (exhaustive map) | local and CI |
+| G14 | `cd web && npm run format:check` | one misformatted line in `PackageSearch.tsx` | local and CI |
+| G15 | `cd web && npm test` (every M5 UI suite) | the web rows of the mutation table | local and CI |
+| G16 | G6, then `cd web && npm run gen:api`, then the diff and untracked check on `manager/openapi.json web/src/api/` | `manager/openapi.json` changed without regenerating the client | local and CI |
+| G18 | `cd /root/bitscan/manager && CI=true python3.12 -m pytest -n auto --cov=bitscan_manager/services --cov-fail-under=85`: all pass, 0 skipped | any of G43 to G46 | WSL; CI |
+| G42 | `cd web && npm run build`, then the bundle check on the built `index.html` (no `<script>` without `src`, no `<style>`, no `style=`, no URL with a scheme or `//`) | each REQ-119 (2) plant | local and CI |
+| G43 | `… pytest tests/test_package_query.py tests/test_package_repo_pg.py tests/test_package_search_pg.py` | the G43 rows of the mutation table | WSL; CI |
+| G44 | `… pytest tests/test_csv_export.py tests/test_package_search_csv_pg.py` | the G44 rows | WSL; CI |
+| G45 | `… pytest tests/test_webui_serving.py` | the G45 rows | WSL; CI |
+| G46 | `… pytest tests/test_security_m5.py tests/test_invariants_m3.py` | the G46 rows; the M3 G34 plants | WSL; CI |
+
+No performance gate: the TS §7 "< 1 s" target has no TS §8.3 gate (testing.md open question), and the user deferred every load and long-running test until after M6 (2026-10-24).
+
+### M5 mutation table (tester; CHK-M5-320 onwards)
+
+Each row is planted in a throwaway copy and must turn the named gate red; at the gate it is re-planted only if its target code changed after it was last proven red (decisions 2026-10-23, "Targeted test runs").
+
+| CHK | Plant | Red in | Code owned by |
+| --- | --- | --- | --- |
+| CHK-M5-320 | `version_op` compared as text (`p.version < %s`) | G43 | TASK-110 |
+| CHK-M5-321 | `status` defaults to `any` | G43 | TASK-109 |
+| CHK-M5-322 | `q` with `name` accepted | G43 | TASK-109 |
+| CHK-M5-323 | `version_op` without `version` accepted | G43 | TASK-109 |
+| CHK-M5-324 | a 2-character `q` accepted | G43 | TASK-109 |
+| CHK-M5-325 | `%` and `_` in `q` not escaped | G43 | TASK-110 |
+| CHK-M5-326 | `%` and `_` in `host` not escaped | G43 | TASK-110 |
+| CHK-M5-327 | the text tie-breaker dropped from the order (`1.0` and `1.0-0` repeat or vanish across pages) | G43 | TASK-110 |
+| CHK-M5-328 | the cursor scope ignores the filters (a cursor from another query is accepted) | G43 | TASK-113 |
+| CHK-M5-329 | the #83 (e) agent scope removed | G43 | TASK-110 |
+| CHK-M5-330 | an invalid `version` reaches the cast and answers 500 | G43 | TASK-109, TASK-113 |
+| CHK-M5-331 | the `-` trigger removed from the CSV escape | G44 | TASK-111 |
+| CHK-M5-332 | whitespace followed by a trigger not escaped | G44 | TASK-111 |
+| CHK-M5-333 | the CSV route writes cells without the shared escape | G44 | TASK-114 |
+| CHK-M5-334 | the CSV cap removed, or checked after streaming started | G44 | TASK-114 |
+| CHK-M5-335 | `/packages/search` needs no role (any valid token) or accepts no token | G46 | TASK-113 |
+| CHK-M5-336 | `bsa_` accepted on `/packages/search.csv` | G46 | TASK-114 |
+| CHK-M5-337 | `/assets/{name}` resolves `..` or an encoded slash and serves a file outside the build | G45 | TASK-112 |
+| CHK-M5-338 | a static route answered without the security headers (mounted outside the middleware) | G45 | TASK-112 |
+| CHK-M5-339 | a catch-all returns `index.html` for unknown paths, including `/api/v1/unknown` | G45 | TASK-112 |
+| CHK-M5-340 | an `Access-Control-Allow-Origin` header added to static responses | G45 | TASK-112 |
+| CHK-M5-341 | the static routes included in the OpenAPI document | G6 | TASK-112 |
+| CHK-M5-342 | the session token kept in `sessionStorage` (variable key, so lint stays green) | G15 | TASK-116 |
+| CHK-M5-343 | the bearer header omitted on one route | G15 | TASK-116 |
+| CHK-M5-344 | a 401 that does not clear the session | G15 | TASK-116 |
+| CHK-M5-345 | a hostname rendered through `dangerouslySetInnerHTML` | G12, G15 | TASK-122 |
+| CHK-M5-346 | the created `bse_` token kept in state after the result is closed | G15 | TASK-120 |
+| CHK-M5-347 | `totp_session_required` answered with an API-token prompt | G15 | TASK-116, TASK-120 |
+| CHK-M5-348 | the TOTP secret logged to the console | G15 | TASK-119 |
+| CHK-M5-349 | an admin without TOTP can open the host list | G15 | TASK-126 |
+| CHK-M5-350 | an inline `<script>` in `w/index.html` | G42 | TASK-115 |
+| CHK-M5-351 | the CSV download built as a link to `/packages/search.csv` without the bearer header | G15 | TASK-125 |
+| CHK-M5-352 | the search cursor carries the sort values instead of the id anchors (a 255-character non-ASCII package name on a page boundary makes the next page answer 400) | G43 | TASK-113 |
+| CHK-M5-353 | a U+0000 in `q` (or any text parameter) reaches the database and answers 500 | G43 | TASK-109 |
+| CHK-M5-354 | a 401 for a request sent with an older token clears the current session | G15 | TASK-116 |
+
+### Open items for M5
+
+All are in `work/open-questions.md`. "Needed by" is the start of the wave whose task cannot be finished without the answer.
+
+| Item | Blocks | Needed by |
+| --- | --- | --- |
+| #83 (new): package search semantics (matching, order and cursor, `os`, `host`, agent scope, `hold ok installed`, version validity, lengths) | TASK-109, TASK-110, TP-M5-02, TP-M5-03 | W1 |
+| #84 (new): CSV format, cap and headers | TASK-111 (escaping and quoting, W1), TASK-114 | W1 |
+| #87 (new): stored versions the `debversion` comparison may refuse (the M3 decoder stores any storable text) | TASK-110 edge handling (none until answered); a possible M3 decoder follow-up | W1 (the TP-M5-03 probe answers the factual half) |
+| #88 (new): empty search values and U+0000 | TASK-109, TP-M5-02 | W1 |
+| #89 (new): M3 cursors can exceed the 512-character cursor limit | none in M5 (the search cursors use id anchors); an M3 follow-up for `/agents` and `/agents/{id}/packages` | after M5 (lead to schedule) |
+| #6 (re-checked, M5 half): how the manager serves the UI; static files without a token | TASK-112 | W1 |
+| PD-28 (new): web build, output folder, test and QR libraries, no browser automation | TASK-112, TASK-115, TASK-119 | W1 |
+| PD-29 (new): which enums go into the contract | TASK-108 | W1 |
+| #85 (new): sign-in and TOTP behaviours the spec leaves open | TASK-118, TASK-119 (W3), TASK-116 problem map (W1, adjustable) | W3 |
+| #86 (new): package search UI reading (click-through, grouping) | TASK-124 | W4 |
+| #32 (re-checked): type-ahead | TASK-125 | W5 |
+| PD-30 (new): extra screens in M5; a second look at the web auth tasks | wave plan (W3 to W6 if screens are added); REVIEW of TASK-116, 118, 119 | W1 |
+| testing.md performance-gate marker (re-checked) | none in M5: no gate, measurement after M6 (user, 2026-10-24) | after M6 |
+
+### Coverage matrix (M5)
+
+| Spec section | Covered by | Status in M5 |
+| --- | --- | --- |
+| TS §1.1 G3 (fleet-wide package search) | REQ-113 to REQ-116, REQ-129 to REQ-131 | Covered |
+| TS §2.1 Web UI component (L101) | REQ-118 to REQ-133 | Hosts and package search covered; profiles, scans and results are **M7 to M11** |
+| TS §2.3 every call carries a bearer token (L118) | REQ-118 (#6 (f) exception for the static files), REQ-120 | Covered, with the static-file exception for the owner (#6 (f)) |
+| TS §3.2 step 1 (enrolment token in the UI, L181) and step 5 (approval screen, L185) and step 9 (cloned images, L192) | REQ-124, REQ-125 | Covered |
+| TS §3.7 helper changes shown (L484) | REQ-127, REQ-128 (current `runner_helpers`) | Current list shown; the change history needs an audit-log screen (PD-30) |
+| TS §5.2 inventory tables and indexes | REQ-114 | Read only, no migration |
+| TS §6.2 sessions, TOTP, password (L1080–L1090, L1096–L1097) | REQ-120 to REQ-123, REQ-126, REQ-133 | Covered in the UI (routes are M2) |
+| TS §6.2 `/packages/search`, `/packages/search.csv` (L1117) | REQ-113 to REQ-116 | Covered |
+| TS §6.2 `/agents`, `/agents/{id}`, `/agents/{id}/packages`, `/enrollment-requests`, `/enrollment-tokens` (UI) | REQ-124, REQ-125, REQ-127, REQ-128 | Covered |
+| TS §6.2 `/agents/{id}/tags`, `/agents/{id}/revoke`, `/api-tokens`, `/users`, `/settings`, `/audit-log` (UI) | none | **Uncovered in M5 by scope** (PD-30); routes exist since M2 and M3 |
+| TS §6.2 `/agents/{id}/scans` and every policy, task, import, scan and schedule route | none | **M7 to M11** |
+| TS §6.3 errors, pagination, rate limits, timestamps | REQ-113, REQ-115 (M2 machinery) | Covered for the new routes |
+| TS §6.3 headers, CSP, no CORS (L1140) | REQ-118, REQ-119, REQ-134 | Covered, including the served UI |
+| TS §6.3 plain text (L1141) | REQ-115 (4), REQ-132 | Covered |
+| TS §6.3 CSV escaping (L1142) | REQ-116 | Covered for the only M5 export; the shared function is reused by M11 `results.csv` |
+| TS §7 performance target (L1194) | none | **No gate** (testing.md open question); any timing at 20 M rows is after M6 (user, 2026-10-24) |
+| TS §7.1 parameters and shapes | REQ-113, REQ-114 | Covered, with #83 |
+| TS §7.2 version comparison | REQ-114 (2) | Covered through `debversion`; the ≥ 500-pair dpkg test is M1's |
+| TS §7.3 UI (type-ahead, grouping, click-through, CSV, host page added/removed) | REQ-128 to REQ-131 | Covered, type-ahead per #32 |
+| TS §7.4 v2 CVE matching | none | Out of scope (CLAUDE.md) |
+| TS §8.1 stolen web session (XSS), SQL injection | REQ-115, REQ-120, REQ-132 | Covered |
+| TS §8.2 TypeScript standards, generated client, reviews | REQ-119, REQ-136; owner notes | Covered; no two-approval task (PD-30) |
+| TS §8.3 Unit (CSV escaping) | REQ-116 / G44 | Covered |
+| TS §8.3 Integration (every endpoint) | TP-M5-06, TP-M5-07 | Covered for both package routes |
+| TS §8.3 Security (tokens on the wrong route group) | REQ-115 / G46 | Covered for the new routes |
+| TS §8.3 End-to-end, Load | none | 3-VM end-to-end is **M6**; the 10,000-agent load test is **after M6** (user, 2026-10-24) |
+| TS §8.7 manager deployment (install method) | none | **M6** (#6 install half) |
+| CLAUDE.md out of scope | none | Nothing planned: no policy editor, no CVE data, no signing, no OIDC |
+
+**M6 items this user decision moves (2026-10-24, load and long-running tests deferred until after M6).** From the M6 scope in `work/decisions.md` (2026-10-20 reorder: "enrol, approve, heartbeat, inventory on 3 VMs, heartbeat load test, inventory alerts"), these leave M6 and run after it:
+1. The TS §8.3 Load test: 10,000 simulated agents heartbeating, p95 under 200 ms.
+2. The cost checks tied to that test (decisions 2026-10-23, W3 ruling (3)): the `inventory_snapshot` latest-snapshot lookup without an `agent_id` index (TASK-064) and the decoder's 64 MiB `bytes(out)` copy (TASK-060 review nit, also in `work/status.md` W2 "one memory nit carried to M6").
+3. Any long-running agent idle or soak measurement beyond the single M4 recording (REQ-103 (6)).
+4. Any timing of the TS §7 search target at 10,000 hosts × 2,000 packages (never gated; testing.md open question).
+
+Staying in M6: the 3-VM end-to-end (enrol, approve, heartbeat, inventory) on amd64 Ubuntu 22.04 and 24.04 VMs (Hyper-V on the dev PC; Debian 12 was dropped from v1 on 2026-10-24, so PD-27's "real Debian 12 host in the M6 gate" no longer applies), the inventory alerts on real hosts, the release step (SHA-256 on a page from another origin), #28 and the N / N−1 marker before the first supported release, and the #6 install half.

@@ -24,3 +24,6 @@ Owner: reviewer. Each line is a finding that came back more than once in review.
 
 ## OpenAPI
 13. Re-export `manager/openapi.json`, keep it byte-stable, and avoid component-name clashes and 422s. A self-read body must still be documented. | G6 and REQ-060 (TASK-067, 073, 076). | Export twice and compare the two files.
+
+## Go agent
+14. Check the file type before opening any path the agent reads from configuration or the host (`ca_file`, `/etc/machine-id`, `/etc/os-release`, `/proc` files), and open non-blocking. | Opening a FIFO for reading blocks until a writer appears, so start-up or collection hangs (TASK-087 FAIL r1; same pattern noted in TASK-089 and TASK-098). | `os.Stat` → `IsRegular()`, then `O_RDONLY|O_NONBLOCK`, then `f.Stat()` again (see `config.readableFile`). Test: a FIFO at the path returns an error at once.

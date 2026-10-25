@@ -1,0 +1,3 @@
+# TASK-124 TEST: client regeneration (package routes) and the package search screen
+
+Verdict: **PASS**. Tests: web/src/screens/PackageSearch.test.tsx (20), from REQ-129 (1)-(5), REQ-136, TS §7.1, §7.3 L1223, #86 and the lead's drill-down ruling (2026-10-25; the agent_id carry is impl-web's addition, tested as built). Command (L): `npx vitest run src/screens/PackageSearch.test.tsx`: 20/20 passed, 0 failed, 0 skipped. G16: `npm run gen:api` gives a byte-identical schema.d.ts. AC: (1) only the filled parameters, CHK-M5-260 + plants 415, 416, 417; (2) nested by name, CHK-M5-261 + plant 421; (3) drill-down and host click, CHK-M5-263 + plants 418, 419, 420; (4) hostile text, CHK-M5-264; (5) paging, CHK-M5-265 + plant 422; REQ-136 types, CHK-M5-262. All plants red.

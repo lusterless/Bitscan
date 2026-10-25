@@ -8,7 +8,9 @@ Owner: tester. Per-task verdicts are in `work/reports/TASK-###-test.md`; per-che
 | M1 database and audit core | [m1/report.md](m1/report.md) | All 12 tasks TEST PASS and review APPROVED. WSL2 with Docker, clean copy, `CI=true`: **547 passed, 0 skipped**, services coverage 100 %, 0 leftover containers (CHK-M1-240-r2). Windows gate (CHK-M1-241): ruff, format and `mypy --strict` clean; 366 passed, 181 skipped (`not run: Docker unavailable` only), coverage 98.15 %. The coverage gate goes red on a planted untested function (CHK-M1-201). Known NOT RUN: CHK-M1-256 (live PRs; needs pushes). Per-PR-head runs (CHK-M1-242, 2026-10-21, WSL, fresh venv per head, `CI=true`): `m1-pr1` 308, `m1-pr2` 331, `m1-pr3` 341, `m1-pr4` 371, `m1-pr5` 547 passed, each 0 failed, 0 skipped, 0 leftover containers |
 | M2 auth core and API plumbing | [m2/report.md](m2/report.md) | All 25 tasks (TASK-023 to TASK-047) TEST PASS and review APPROVED; auth tasks have the second approval. Exit gate PASS (2026-10-22): WSL2 with Docker, clean copy, `CI=true`: **1520 passed, 0 skipped**, services coverage 99.32 %, 0 leftover containers (CHK-M2-305). Windows: ruff, format and `mypy --strict` clean; 1033 passed, 451 skipped (Docker and Linux-only only), coverage 97.13 % (CHK-M2-303, -306). G25 to G29 and the new security suite (CHK-M2-290 to -294) are red on their plants; the defined G5 plant no longer turns G5 red at 97 % (lead ruling 2026-10-22; a 120-statement plant does). Known NOT RUN: the `git diff` forms of G6 and G16, G8 on Linux, G17 and live CI (need commits and pushes) |
 | M3 agent API and scheduler (inventory only) | [m3/report.md](m3/report.md) | in progress (W1): TP-M3-01 fixtures; TASK-048 to TASK-058 TEST PASS (TASK-053 with revision 1); WSL W1 full run 2459 passed, 0 skipped, services 99 % |
-| M4 to M11 | not started | |
+| M4 Go agent and pre-release `.deb` | in the `Bitscan-m4` worktree: `tests/m4/report.md` | in progress |
+| M5 minimal host UI and package search | [m5/report.md](m5/report.md) | TASK-108 to 127 TEST PASS (121, 126, 127 after a revision); TASK-128 and the M5 gate pending |
+| M6 to M11 | not started | |
 
 ## M0 per task
 
