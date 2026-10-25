@@ -1,0 +1,221 @@
+#!/bin/sh
+# bitscan-agent postinst (TS 3.1, 3.7; #81). No input value is ever printed,
+# and the enrolment token is handled only by shell builtins and a pipe, so it
+# never appears in a process list. Messages go to stderr: debconf owns stdout.
+set -e
+
+. /usr/share/debconf/confmodule
+
+ENV_FILE=/etc/bitscan/install.env
+
+URL=
+TOKEN=
+CA=
+PIN=
+FROM_FILE=
+# Keys present in install.env, empty values included: " KEY1 KEY2 ".
+ENV_KEYS=" "
+
+fail() {
+    echo "bitscan-agent: $1" >&2
+    exit 1
+}
+
+missing() {
+    fail "$1 is missing; preseed bitscan/$2 or write $ENV_FILE"
+}
+
+add_user() {
+    if getent passwd "$1" >/dev/null; then
+        return 0
+    fi
+    if getent group "$1" >/dev/null; then
+        adduser --system --quiet --ingroup "$1" --no-create-home \
+            --home /nonexistent --shell /usr/sbin/nologin "$1" >&2
+    else
+        adduser --system --quiet --group --no-create-home \
+            --home /nonexistent --shell /usr/sbin/nologin "$1" >&2
+    fi
+}
+
+# An existing /etc/bitscan must be a real directory owned by root that no
+# group or other user can write: install.env and agent.yaml live there.
+check_conf_dir() {
+    if [ ! -e /etc/bitscan ] && [ ! -L /etc/bitscan ]; then
+        return 0
+    fi
+    msg="/etc/bitscan must be a directory owned by root and not writable by group or others"
+    if [ -L /etc/bitscan ] || [ ! -d /etc/bitscan ]; then fail "$msg"; fi
+    owner_mode=$(stat -c '%u %a' /etc/bitscan)
+    case "$owner_mode" in
+        "0 "*) ;;
+        *) fail "$msg" ;;
+    esac
+    # %a ends in the group digit then the other digit; 2, 3, 6, 7 hold w.
+    case "$owner_mode" in
+        *[2367] | *[2367][0-7]) fail "$msg" ;;
+    esac
+}
+
+# KEY=value lines, taken literally; the file is parsed, never sourced.
+read_env_file() {
+    if [ -L "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ] ||
+        [ "$(stat -c '%u:%g %a' "$ENV_FILE")" != "0:0 600" ]; then
+        fail "$ENV_FILE must be a regular file owned by root:root with mode 0600"
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            '' | '#'*) continue ;;
+            *=*) ;;
+            *) fail "$ENV_FILE: every line must be KEY=value" ;;
+        esac
+        key=${line%%=*}
+        case "$ENV_KEYS" in *" $key "*) fail "$ENV_FILE: a key is given twice" ;; esac
+        ENV_KEYS="$ENV_KEYS$key "
+        case "$key" in
+            MANAGER_URL) URL=${line#*=} ;;
+            ENROL_TOKEN) TOKEN=${line#*=} ;;
+            CA_FILE) CA=${line#*=} ;;
+            MANAGER_SPKI_SHA256) PIN=${line#*=} ;;
+            *) fail "$ENV_FILE: unknown key" ;;
+        esac
+    done <"$ENV_FILE"
+    FROM_FILE=1
+}
+
+read_debconf() {
+    db_get bitscan/manager_url
+    URL=$RET
+    db_get bitscan/enrol_token
+    TOKEN=$RET
+    db_get bitscan/ca_file
+    CA=$RET
+    db_get bitscan/manager_spki_sha256
+    PIN=$RET
+}
+
+# True if $1 holds a quote, a backslash, white space or a control character.
+unsafe() {
+    case "$1" in
+        *"'"* | *'"'* | *\\* | *[[:space:]]* | *[[:cntrl:]]*) return 0 ;;
+    esac
+    return 1
+}
+
+check_url() {
+    msg="the manager URL must be an https:// URL with a host"
+    if unsafe "$URL"; then fail "$msg"; fi
+    case "$URL" in
+        [Hh][Tt][Tt][Pp][Ss]://[!/?#@]*) ;;
+        *) fail "$msg" ;;
+    esac
+}
+
+check_token() {
+    msg="the enrolment token must be a bse_ enrolment token"
+    rest=${TOKEN#bse_}
+    if [ "$rest" = "$TOKEN" ] || [ ${#rest} -ne 43 ]; then fail "$msg"; fi
+    case "$rest" in *[!A-Za-z0-9_-]*) fail "$msg" ;; esac
+}
+
+check_ca() {
+    [ -n "$CA" ] || return 0
+    msg="the CA file must be an absolute path the bitscan user can read"
+    if unsafe "$CA"; then fail "$msg"; fi
+    case "$CA" in /*) ;; *) fail "$msg" ;; esac
+    # Children running as bitscan get no debconf pipe (fd 0 and fd 3).
+    if [ ! -f "$CA" ] ||
+        ! setpriv --reuid=bitscan --regid=bitscan --clear-groups test -r "$CA" </dev/null 3>&-; then
+        fail "$msg"
+    fi
+}
+
+check_pin() {
+    [ -n "$PIN" ] || return 0
+    msg="the manager key pin must be empty or 64 hexadecimal characters"
+    if [ ${#PIN} -ne 64 ]; then fail "$msg"; fi
+    case "$PIN" in *[!0-9A-Fa-f]*) fail "$msg" ;; esac
+}
+
+# agent.yaml (root:bitscan 0640, TS 3.7) through a temporary file; the
+# values were checked above and hold no quote. Never the token.
+write_conf() {
+    if [ ! -d /etc/bitscan ]; then
+        install -d -m 0755 /etc/bitscan
+    fi
+    rm -f /etc/bitscan/agent.yaml.tmp
+    (
+        umask 077
+        printf "manager_url: '%s'\nca_file: '%s'\nmanager_spki_sha256: '%s'\n" \
+            "$URL" "$CA" "$PIN" >/etc/bitscan/agent.yaml.tmp
+        printf '%s\n' "state_dir: /var/lib/bitscan-agent" "heartbeat_seconds: 300" \
+            "job_pull_seconds: 300" "max_parallel_plugins: 2" "spool_max_mb: 50" \
+            "log_level: info" >>/etc/bitscan/agent.yaml.tmp
+    )
+    chown root:bitscan /etc/bitscan/agent.yaml.tmp
+    chmod 0640 /etc/bitscan/agent.yaml.tmp
+    mv -f /etc/bitscan/agent.yaml.tmp /etc/bitscan/agent.yaml
+}
+
+# enroll.token (bitscan:bitscan 0600). Written as bitscan, never as root: the
+# directory belongs to bitscan, so a root write there could follow a planted
+# symlink.
+write_token() {
+    install -d -o bitscan -g bitscan -m 0700 /var/lib/bitscan-agent
+    printf '%s\n' "$TOKEN" |
+        setpriv --reuid=bitscan --regid=bitscan --clear-groups --reset-env sh -c \
+            'umask 077 && rm -f /var/lib/bitscan-agent/enroll.token.tmp && cat >/var/lib/bitscan-agent/enroll.token.tmp && mv -fT /var/lib/bitscan-agent/enroll.token.tmp /var/lib/bitscan-agent/enroll.token' 3>&-
+}
+
+case "$1" in
+    configure)
+        check_conf_dir
+        add_user bitscan
+        add_user bitscan-runner
+        if [ -e "$ENV_FILE" ] || [ -L "$ENV_FILE" ]; then
+            read_env_file
+        else
+            read_debconf
+        fi
+        if [ -e /etc/bitscan/agent.yaml ]; then
+            # Upgrade or reinstall: keep everything (TS 3.1). A new token is a
+            # re-enrolment (#81 (b)); the agent is restarted below.
+            # Any other key is refused, even with an empty value.
+            if [ -n "$FROM_FILE" ]; then
+                case "$ENV_KEYS" in
+                    " " | " ENROL_TOKEN ") ;;
+                    *) fail "$ENV_FILE may hold only ENROL_TOKEN once agent.yaml exists" ;;
+                esac
+            fi
+            if [ -n "$TOKEN" ]; then
+                check_token
+                write_token
+            fi
+        else
+            [ -n "$URL" ] || missing "the manager URL" manager_url
+            [ -n "$TOKEN" ] || missing "the enrolment token" enrol_token
+            check_url
+            check_token
+            check_ca
+            check_pin
+            # Token first: an existing agent.yaml then always means the token
+            # was written, so a retry after a failure here starts over.
+            write_token
+            write_conf
+        fi
+        db_set bitscan/enrol_token ""
+        if [ -n "$FROM_FILE" ]; then
+            rm -f /etc/bitscan/install.env
+        fi
+        ;;
+    abort-upgrade | abort-remove | abort-deconfigure) ;;
+    *)
+        fail "postinst called with an unknown argument"
+        ;;
+esac
+
+db_stop
+
+#DEBHELPER#
+
+exit 0

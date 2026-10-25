@@ -1,0 +1,21 @@
+Source: bitscan-agent
+Section: admin
+Priority: optional
+Maintainer: Bitdeer-Security <kaiquan.koh@bitdeer.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: bitscan-agent
+Architecture: amd64
+Depends: adduser, ${misc:Depends}
+Description: Bitscan inventory and compliance agent (pre-release)
+ Pull-only agent for the Bitscan manager. It enrols with an enrolment
+ token, sends a heartbeat, pulls the jobs addressed to its host over TLS
+ and uploads the mandatory host inventory: OS details and the full dpkg
+ package list. It has no listening port.
+ .
+ The package holds three static binaries: bitscan-agent, bitscan-runner,
+ which runs compliance checks in a sandbox as an unprivileged user, and
+ the optional bitscan-capread helper, which is installed disabled. In the
+ 0.x pre-releases the runner and the helper are idle.

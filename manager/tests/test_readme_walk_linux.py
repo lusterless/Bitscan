@@ -18,9 +18,12 @@ and planting hosts for the scheduler checks.
 import base64
 import gzip
 import hashlib
+import http.client
 import json
 import os
 import secrets
+import socket
+import ssl
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -42,6 +45,7 @@ from .fake_vault import fake_vault
 from .test_cli_users_pg import run as run_users
 from .test_serve_linux import (
     CANARY_VAULT,
+    client_context,
     env_for,
     free_port,
     https_get,
@@ -65,6 +69,66 @@ class Row:
     status: int
     answer: str
     ok: bool
+
+
+EARLY_WAIT = 10.0  # seconds a cap check on the header gets to answer
+
+
+def send_oversize(
+    port: int,
+    ca: Path,
+    method: str,
+    path: str,
+    headers: dict[str, str],
+    body: bytes,
+) -> tuple[int, dict[str, str], bytes, str]:
+    """Sends a request whose body is over a cap, without racing the answer.
+
+    The manager answers 413 from the Content-Length header and closes without
+    reading the body, which is valid HTTP. Sending header and body in one go
+    (https_get) races that close: the client gets the 413 or an EOF or reset
+    in sendall, depending on socket timing (ssl.SSLEOFError under WSL
+    mirrored networking, 2026-10-25). So the header goes first, announcing
+    the full length, and the answer is read if it comes within EARLY_WAIT.
+    If none comes, the body is sent and the answer read after it: a manager
+    that only counts the bytes it receives is still held to its 413, and one
+    with no cap answers something else and the row fails. A send error is
+    tolerated only there, and only when a response can still be read after
+    it; it never passes a row by itself.
+    """
+    lines = [f"{method} {path} HTTP/1.1", f"Host: localhost:{port}"]
+    lines += ["Accept-Encoding: identity"]
+    lines += [f"{k}: {v}" for k, v in headers.items()]
+    lines += [f"Content-Length: {len(body)}", "", ""]
+    with (
+        socket.create_connection(("localhost", port), timeout=10) as raw,
+        client_context(ca).wrap_socket(raw, server_hostname="localhost") as tls,
+    ):
+        tls.sendall("\r\n".join(lines).encode())
+        tls.settimeout(EARLY_WAIT)
+        resp = http.client.HTTPResponse(tls, method=method)
+        try:
+            resp.begin()
+            how = "answered on the header, body not sent"
+        except TimeoutError:
+            resp.close()
+            tls.settimeout(10)
+            how = "answered after the body"
+            try:
+                tls.sendall(body)
+            except (
+                BrokenPipeError,
+                ConnectionResetError,
+                ssl.SSLEOFError,
+                ssl.SSLZeroReturnError,
+            ):
+                how = "answered while the body was being sent"
+            resp = http.client.HTTPResponse(tls, method=method)
+            resp.begin()
+        out = resp.read()
+        hdrs = {k.lower(): v for k, v in resp.getheaders()}
+        resp.close()
+        return resp.status, hdrs, out, how
 
 
 @dataclass
@@ -95,6 +159,7 @@ class Walk:
         headers: dict[str, str] | None = None,
         want: int,
         want_type: str | None = None,
+        oversize: bool = False,
     ) -> tuple[int, dict[str, str], bytes]:
         h = dict(headers or {})
         data = raw
@@ -103,7 +168,14 @@ class Walk:
             h.setdefault("Content-Type", "application/json")
         if token is not None:
             h["Authorization"] = f"Bearer {token}"
-        status, hdrs, out = https_get(self.port, self.ca, path, h, data, method)
+        how = ""
+        if oversize:
+            assert data is not None
+            status, hdrs, out, how = send_oversize(
+                self.port, self.ca, method, path, h, data
+            )
+        else:
+            status, hdrs, out = https_get(self.port, self.ca, path, h, data, method)
         got_type = None
         answer = ""
         if hdrs.get("content-type", "").startswith("application/problem+json"):
@@ -118,6 +190,8 @@ class Walk:
             )
         if "retry-after" in hdrs:
             answer += f" Retry-After={hdrs['retry-after']}"
+        if how:
+            answer += f" ({how})"
         ok = status == want and (want_type is None or got_type == want_type)
         auth = "none" if token is None else self.hide(token)[:24]
         expected = f"{want}" + (f" {want_type}" if want_type else "")
@@ -931,6 +1005,7 @@ def test_every_documented_request_behaves_as_the_readme_says(  # noqa: PLR0915
         raw=b" " * (1024 * 1024 + 1),
         headers={"Content-Type": "application/json"},
         want=413,
+        oversize=True,
     )
     _, _, out = w.call(
         "PATCH job_pull_seconds 120",

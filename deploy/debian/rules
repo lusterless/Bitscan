@@ -1,0 +1,35 @@
+#!/usr/bin/make -f
+# Binary-only packaging of prebuilt static binaries (PD-26). The staging tree
+# made by build-deb.sh holds bin/ (the three binaries), debian/systemd/ (the
+# five agent units, verbatim TS 3.7) and debian/dbus/ (the D-Bus policy).
+
+UNITDIR := debian/bitscan-agent/lib/systemd/system
+
+%:
+	dh $@
+
+# The binaries are built before packaging, with reproducible Go flags.
+override_dh_auto_build:
+
+# Units are copied unchanged so they stay byte-identical to TS 3.7.
+execute_after_dh_install:
+	install -d $(UNITDIR)
+	install -m 0644 debian/systemd/bitscan-agent.service $(UNITDIR)/
+	install -m 0644 debian/systemd/bitscan-runner.socket $(UNITDIR)/
+	install -m 0644 debian/systemd/bitscan-runner.service $(UNITDIR)/
+	install -m 0644 debian/systemd/bitscan-capread.socket $(UNITDIR)/
+	install -m 0644 debian/systemd/bitscan-capread.service $(UNITDIR)/
+
+# TS 3.1: --no-enable for the runner service (its socket starts it) and
+# --no-enable --no-start for both capread units. The first call adds the
+# postinst snippet that enables and starts bitscan-agent.service and
+# bitscan-runner.socket (TS 3.1 postinst step 4).
+override_dh_installsystemd:
+	dh_installsystemd bitscan-agent.service bitscan-runner.socket
+	dh_installsystemd --no-enable bitscan-runner.service
+	dh_installsystemd --no-enable --no-start bitscan-capread.socket bitscan-capread.service
+
+# Static Go binaries are built with -s -w: nothing to strip or compress.
+override_dh_strip:
+
+override_dh_dwz:

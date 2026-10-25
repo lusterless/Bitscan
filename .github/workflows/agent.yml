@@ -25,6 +25,17 @@ jobs:
           go-version-file: agent/go.mod
           cache: false
 
+      # First, so an altered go.sum is the first red step. The cache starts
+      # empty (cache: false), so verify alone checks nothing; download checks
+      # every module against go.sum and the checksum database.
+      - name: go mod download
+        working-directory: agent
+        run: go mod download
+
+      - name: go mod verify
+        working-directory: agent
+        run: go mod verify
+
       - name: gofmt
         run: |
           out="$(gofmt -l agent)"
@@ -48,36 +59,33 @@ jobs:
             exit 1
           fi
 
-      - name: go mod verify
-        working-directory: agent
-        run: go mod verify
-
-      - name: Build static linux binaries (CGO_ENABLED=0)
+      # linux/amd64 only: v1 has no other architecture (decisions 2026-10-24).
+      - name: Build static linux/amd64 binaries (CGO_ENABLED=0)
         working-directory: agent
         run: |
-          for arch in amd64 arm64; do
-            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "bin/linux_$arch/" ./cmd/...
-            for name in bitscan-agent bitscan-runner bitscan-capread; do
-              bin="bin/linux_$arch/$name"
-              info="$(go version -m "$bin")"
-              for want in CGO_ENABLED=0 GOOS=linux "GOARCH=$arch"; do
-                if ! grep -qE "^[[:space:]]+build[[:space:]]+$want\$" <<<"$info"; then
-                  printf '%s: go version -m does not show %s\n%s\n' "$bin" "$want" "$info"
-                  exit 1
-                fi
-              done
-              kind="$(file -b "$bin")"
-              if [[ "$kind" != *"statically linked"* ]]; then
-                echo "$bin is not statically linked: $kind"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux_amd64/ ./cmd/...
+          for name in bitscan-agent bitscan-runner bitscan-capread; do
+            bin="bin/linux_amd64/$name"
+            info="$(go version -m "$bin")"
+            for want in CGO_ENABLED=0 GOOS=linux GOARCH=amd64; do
+              if ! grep -qE "^[[:space:]]+build[[:space:]]+$want\$" <<<"$info"; then
+                printf '%s: go version -m does not show %s\n%s\n' "$bin" "$want" "$info"
                 exit 1
               fi
             done
+            kind="$(file -b "$bin")"
+            if [[ "$kind" != *"statically linked"* ]]; then
+              echo "$bin is not statically linked: $kind"
+              exit 1
+            fi
           done
 
-      - name: Run linux/amd64 stubs
+      # bitscan-agent is no longer a stub in M4; the 0.x runner and capread
+      # stay the M0 stubs (#74).
+      - name: Run linux/amd64 runner and capread stubs
         working-directory: agent
         run: |
-          for name in bitscan-agent bitscan-runner bitscan-capread; do
+          for name in bitscan-runner bitscan-capread; do
             bin="bin/linux_amd64/$name"
             out="$RUNNER_TEMP/$name.stdout"
             err="$RUNNER_TEMP/$name.stderr"
@@ -104,14 +112,40 @@ jobs:
       - name: No cgo, assembly or object files (go list)
         working-directory: agent
         run: |
-          for arch in amd64 arm64; do
-            out="$(CGO_ENABLED=1 GOOS=linux GOARCH="$arch" go list -f '{{if or .CgoFiles .SFiles .SysoFiles}}{{.ImportPath}}: cgo={{.CgoFiles}} asm={{.SFiles}} syso={{.SysoFiles}}{{end}}' ./...)"
-            if [ -n "$out" ]; then
-              printf 'cgo, assembly or object files found for linux/%s (TS §8.2: no CGO; TS §2.2):\n%s\n' "$arch" "$out"
+          out="$(CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go list -f '{{if or .CgoFiles .SFiles .SysoFiles}}{{.ImportPath}}: cgo={{.CgoFiles}} asm={{.SFiles}} syso={{.SysoFiles}}{{end}}' ./...)"
+          if [ -n "$out" ]; then
+            printf 'cgo, assembly or object files found for linux/amd64 (TS §8.2: no CGO; TS §2.2):\n%s\n' "$out"
+            exit 1
+          fi
+
+  # go test on the supported hosts, linux/amd64: Ubuntu 22.04 and 24.04
+  # (decisions 2026-10-24: no other architecture, Debian 12 dropped).
+  go-test-ubuntu:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+
+      # The Go contract test (internal/agent/wire) reads these in place (TS §8.3).
+      - name: Shared contract fixtures present
+        run: |
+          for f in manager/tests/contract/fixtures/manifest.json manager/openapi.json; do
+            if [ ! -f "$f" ]; then
+              echo "$f missing; the Go contract test needs the manager tree"
               exit 1
             fi
           done
 
-      - name: go test
+      - name: go test (linux/amd64)
         working-directory: agent
-        run: go test ./...
+        run: GOOS=linux GOARCH=amd64 go test ./...
