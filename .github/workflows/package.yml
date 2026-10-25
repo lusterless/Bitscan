@@ -249,14 +249,40 @@ jobs:
             printf '%s\n' "${units[@]}"
             exit 1
           fi
-          if ! out="$(systemd-analyze verify "${units[@]}" 2>&1)"; then
-            printf 'systemd-analyze verify failed:\n%s\n' "$out"
+          # Gate: our units verify with no errors and no warnings. systemd 249
+          # (22.04) has no --recursive-errors=no and also reports on the
+          # runner's own units (snapd, netplan). A line that names only a unit
+          # outside the .deb is printed and ignored; any line naming one of
+          # our 5 units or a path under $x, or naming no unit, still fails.
+          rc=0
+          out="$(sudo systemd-analyze verify "${units[@]}" 2>&1)" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            printf 'systemd-analyze verify failed (rc %s):\n%s\n' "$rc" "$out"
             exit 1
           fi
-          if [ -n "$out" ]; then
-            printf 'systemd-analyze verify printed output:\n%s\n' "$out"
+          names=()
+          for u in "${units[@]}"; do names+=("$(basename "$u")"); done
+          unit_re='[-[:alnum:]@_.:\\]+\.(service|socket|timer|path|mount|automount|swap|target|slice|scope|device)'
+          bad=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            ours=0
+            case "$line" in *"$x"*) ours=1 ;; esac
+            for n in "${names[@]}"; do
+              case "$line" in *"$n"*) ours=1 ;; esac
+            done
+            if [ "$ours" -eq 0 ] && grep -Eq -- "$unit_re" <<< "$line"; then
+              printf 'ignored host-unit line: %s\n' "$line"
+            else
+              printf 'systemd-analyze verify output: %s\n' "$line"
+              bad=1
+            fi
+          done <<< "$out"
+          if [ "$bad" -ne 0 ]; then
+            echo 'systemd-analyze verify printed output about the packaged units'
             exit 1
           fi
+          printf 'verified %s packaged units: %s\n' "${#names[@]}" "${names[*]}"
 
   # Install, reinstall, upgrade and purge, each twice (TS 3.1; G38), on a
   # throwaway runner VM with systemd as PID 1.
