@@ -45,9 +45,18 @@ linters:
         - pattern: ^unix\.(Listen|Socket|Bind)$
           pkg: ^golang\.org/x/sys/unix$
           msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
-        # M6 adds narrow exceptions for runner and capread socket activation (TS §3.7).
+        # M10 adds narrow exceptions for runner and capread socket activation (TS §3.7).
         - pattern: ^net\.FileListener$
           pkg: ^net$
+          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+        # An inherited or adopted descriptor (stdin, systemd, os.NewFile) can be a
+        # bound or listening socket, so adopting one is forbidden too (REQ-144).
+        - pattern: ^net\.(FileConn|FilePacketConn)$
+          pkg: ^net$
+          msg: the agent opens or adopts no listening socket; it pulls, never listens (TS §2.2).
+        # fcgi.Serve(nil, h) accepts connections on the socket passed as stdin.
+        - pattern: ^fcgi\.Serve$
+          pkg: ^net/http/fcgi$
           msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
         - pattern: ^tls\.Config\.InsecureSkipVerify$
           pkg: ^crypto/tls$

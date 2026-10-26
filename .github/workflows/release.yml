@@ -1,0 +1,512 @@
+name: release
+
+# Release files and a draft GitHub release (TS 3.1, 8.1; REQ-141; #90, #91).
+# A v<version> tag push builds, sums and creates a draft; a manual run builds
+# and sums only. Publishing the draft is a human step: the release page
+# (github.com) carries SHA256SUMS in its notes, a different origin from the
+# release-asset download host.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the v (for example 0.1.0); artifacts only, no release"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  # Tag, manager/pyproject.toml and deploy/debian/changelog must agree, and the
+  # changelog must hold a release, not a pre-release (#90).
+  versions:
+    name: Version agreement
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      deb_version: ${{ steps.check.outputs.deb_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dpkg-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev
+
+      - name: Tag, pyproject and changelog versions agree
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT" = push ]; then tag="$REF_NAME"; else tag="v$INPUT_VERSION"; fi
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag $tag is not v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          want="${tag#v}"
+          py="$(python -I -c 'import tomllib; print(tomllib.load(open("manager/pyproject.toml", "rb"))["project"]["version"])')"
+          deb="$(dpkg-parsechangelog -l deploy/debian/changelog -S Version)"
+          if [ "$py" != "$want" ]; then
+            echo "tag $tag and manager/pyproject.toml version $py disagree"
+            exit 1
+          fi
+          case "$deb" in
+            *"~"*) echo "deploy/debian/changelog version $deb is a pre-release"; exit 1 ;;
+          esac
+          if [ "${deb%-*}" != "$want" ]; then
+            echo "tag $tag and deploy/debian/changelog version $deb disagree"
+            exit 1
+          fi
+          echo "release $want: manager $py, agent package $deb"
+          echo "version=$want" >>"$GITHUB_OUTPUT"
+          echo "deb_version=$deb" >>"$GITHUB_OUTPUT"
+
+  # Reproducibility (TS 3.1): two builds from clones at different paths, as
+  # package.yml does.
+  agent:
+    name: Agent .deb (${{ matrix.artifact }})
+    needs: versions
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - src: src
+            artifact: release-agent-a
+          - src: rebuild/copy/src
+            artifact: release-agent-b
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SRC: ${{ matrix.src }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: ${{ matrix.src }}
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ matrix.src }}/agent/go.mod
+          cache: false
+
+      - name: Install build-essential, dpkg-dev and debhelper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential dpkg-dev debhelper
+
+      - name: Record the toolchain
+        run: |
+          echo "runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          go version
+          dpkg-query -W dpkg dpkg-dev debhelper
+
+      - name: Build the .deb and its SBOMs
+        run: bash "$SRC/deploy/debian/build-deb.sh" "$RUNNER_TEMP/out"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+
+  agent-compare:
+    name: Agent builds are byte-identical
+    needs: [versions, agent]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-agent-a
+          path: ${{ runner.temp }}/a
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-agent-b
+          path: ${{ runner.temp }}/b
+
+      - name: Same files and bytes, the .deb and its three binaries included
+        env:
+          DEB_VERSION: ${{ needs.versions.outputs.deb_version }}
+        run: |
+          base="bitscan-agent_${DEB_VERSION}_amd64"
+          expect="$(printf '%s\n' "$base.deb" "$base.deb.sha256" "$base.bitscan-agent.cdx.json" \
+            "$base.bitscan-runner.cdx.json" "$base.bitscan-capread.cdx.json" | sort)"
+          cd "$RUNNER_TEMP"
+          for d in a b; do
+            got="$(cd "$d" && find . -mindepth 1 -printf '%P\n' | sort)"
+            if [ "$got" != "$expect" ]; then
+              printf 'build %s holds:\n%s\nwant exactly:\n%s\n' "$d" "$got" "$expect"
+              exit 1
+            fi
+            dpkg-deb -x "$d/$base.deb" "x-$d"
+          done
+          while IFS= read -r f; do
+            cmp -- "a/$f" "b/$f"
+          done <<<"$expect"
+          for bin in bitscan-agent bitscan-runner bitscan-capread; do
+            cmp -- "x-a/usr/sbin/$bin" "x-b/usr/sbin/$bin"
+          done
+          mkdir release
+          cp -- "a/$base.deb" "a/$base.bitscan-agent.cdx.json" "a/$base.bitscan-runner.cdx.json" \
+            "a/$base.bitscan-capread.cdx.json" release/
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-agent
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+
+  manager:
+    name: Manager wheel, runtime lock and units
+    needs: versions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci --ignore-scripts
+
+      # PD-28: Vite writes the UI into manager/bitscan_manager/webui/, which the
+      # wheel carries as build artifacts.
+      - name: npm run build
+        working-directory: web
+        run: npm run build
+
+      - name: Build the wheel from the hashed dev lock
+        run: |
+          python -m venv "$RUNNER_TEMP/build"
+          "$RUNNER_TEMP/build/bin/python" -m pip install --require-hashes -r manager/requirements-dev.txt
+          "$RUNNER_TEMP/build/bin/python" -m pip wheel --no-deps --no-build-isolation --no-index -w "$RUNNER_TEMP/dist" ./manager
+
+      - name: The wheel carries the built UI
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          whl="bitscan_manager-${VERSION}-py3-none-any.whl"
+          got="$(cd "$RUNNER_TEMP/dist" && find . -mindepth 1 -printf '%P\n')"
+          if [ "$got" != "$whl" ]; then
+            printf 'want exactly %s, the build wrote:\n%s\n' "$whl" "$got"
+            exit 1
+          fi
+          python -I - "$RUNNER_TEMP/dist/$whl" <<'EOF'
+          import sys
+          import zipfile
+
+          names = zipfile.ZipFile(sys.argv[1]).namelist()
+          problems = []
+          if "bitscan_manager/webui/index.html" not in names:
+              problems.append("no bitscan_manager/webui/index.html")
+          if not any(n.startswith("bitscan_manager/webui/assets/") and not n.endswith("/") for n in names):
+              problems.append("no file under bitscan_manager/webui/assets/")
+          for p in problems:
+              print(f"wheel without the UI: {p}")
+          sys.exit(1 if problems else 0)
+          EOF
+
+      - name: Manager units match TS 8.7 verbatim
+        run: python deploy/tests/check_units_verbatim.py manager
+
+      - name: Collect the manager release files
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          out="$RUNNER_TEMP/release"
+          mkdir "$out"
+          cp -- "$RUNNER_TEMP/dist/bitscan_manager-${VERSION}-py3-none-any.whl" "$out/"
+          cp -- manager/requirements.txt "$out/bitscan-manager-${VERSION}-requirements.txt"
+          cp -- deploy/systemd/bitscan-manager.service deploy/systemd/bitscan-manager-migrate.service \
+            deploy/systemd/bitscan-manager-maintain.service deploy/systemd/bitscan-manager-maintain.timer "$out/"
+
+      # Manager SBOMs (#92; TS 3.1 L177, 8.1 L1258). Python: CycloneDX 1.5
+      # from the released hashed lock, standard library only, the same bytes
+      # on every run (sorted; serial number derived from the lock's SHA-256).
+      - name: Python SBOM from the hashed runtime lock
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          out="$RUNNER_TEMP/release"
+          python -I - "$out/bitscan-manager-${VERSION}-requirements.txt" "$VERSION" \
+            "$out/bitscan-manager-${VERSION}.python.cdx.json" <<'EOF'
+          import hashlib
+          import json
+          import re
+          import sys
+          import uuid
+          from pathlib import Path
+
+          lock, version, target = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+          raw = lock.read_bytes()
+          text = raw.decode("utf-8").replace("\\\n", " ")
+          components = []
+          for line in text.splitlines():
+              line = line.split("#", 1)[0].strip()
+              if not line or line.startswith("-"):
+                  continue
+              spec = line.split(";", 1)[0].split()[0]
+              name, sep, ver = spec.partition("==")
+              hashes = sorted(re.findall(r"--hash=sha256:([0-9a-f]{64})", line))
+              if not sep or not ver or not hashes:
+                  sys.exit(f"python sbom: unexpected lock line for {name or line!r}")
+              purl = f"pkg:pypi/{re.sub(r'[-_.]+', '-', name).lower()}@{ver}"
+              components.append({
+                  "type": "library",
+                  "bom-ref": purl,
+                  "name": name,
+                  "version": ver,
+                  "purl": purl,
+                  "hashes": [{"alg": "SHA-256", "content": h} for h in hashes],
+              })
+          components.sort(key=lambda c: (c["name"].lower(), c["version"]))
+          root = f"pkg:pypi/bitscan-manager@{version}"
+          serial = uuid.uuid5(uuid.NAMESPACE_URL, "sha256:" + hashlib.sha256(raw).hexdigest())
+          bom = {
+              "bomFormat": "CycloneDX",
+              "specVersion": "1.5",
+              "serialNumber": f"urn:uuid:{serial}",
+              "version": 1,
+              "metadata": {
+                  "component": {
+                      "type": "application",
+                      "bom-ref": root,
+                      "name": "bitscan-manager",
+                      "version": version,
+                      "purl": root,
+                  }
+              },
+              "components": components,
+          }
+          target.write_text(json.dumps(bom, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(f"python sbom: {len(components)} components")
+          EOF
+
+      # Web: every package of the UI lock file, from the npm of the pinned Node
+      # (no new tool). The runtime packages bundled in the UI have scope
+      # "required", the build and test tools "optional". Not --omit dev: npm
+      # 11 then also drops react, react-dom and scheduler, which dev packages
+      # list as peers, although the lock does not mark them dev.
+      - name: Web SBOM of the UI packages
+        working-directory: web
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          npm sbom --sbom-format cyclonedx --package-lock-only \
+            >"$RUNNER_TEMP/release/bitscan-manager-${VERSION}.web.cdx.json"
+
+      # Completeness, parsed independently of the generators: every lock
+      # package with its version and hashes, and every runtime package npm
+      # installed (with its version, scope "required"), must be a component.
+      - name: Both SBOMs are complete
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          (cd web && npm ls --omit=dev --all --json) >"$RUNNER_TEMP/npm-ls.json"
+          out="$RUNNER_TEMP/release"
+          python -I - "$out/bitscan-manager-${VERSION}-requirements.txt" \
+            "$out/bitscan-manager-${VERSION}.python.cdx.json" "$RUNNER_TEMP/npm-ls.json" \
+            "$out/bitscan-manager-${VERSION}.web.cdx.json" <<'EOF'
+          import json
+          import re
+          import sys
+
+          lock_path, py_path, ls_path, web_path = sys.argv[1:5]
+          missing = []
+
+          want, current = {}, None
+          for line in open(lock_path, encoding="utf-8"):
+              m = re.match(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)", line)
+              if m:
+                  current = m.groups()
+                  want[current] = set()
+              for h in re.findall(r"--hash=sha256:([0-9a-f]{64})", line):
+                  want[current].add(h)
+          have = {}
+          for c in json.load(open(py_path, encoding="utf-8")).get("components", []):
+              have[(c.get("name"), c.get("version"))] = {
+                  h.get("content") for h in c.get("hashes", []) if h.get("alg") == "SHA-256"
+              }
+          for key, hashes in sorted(want.items()):
+              if key not in have:
+                  missing.append(f"python sbom lacks {key[0]}=={key[1]}")
+              elif have[key] != hashes:
+                  missing.append(f"python sbom hashes differ for {key[0]}=={key[1]}")
+
+
+          def walk(deps, acc):
+              for name, node in (deps or {}).items():
+                  acc.add((name, node.get("version")))
+                  walk(node.get("dependencies"), acc)
+              return acc
+
+
+          def flatten(comps, acc):
+              for c in comps or []:
+                  if c.get("scope", "required") == "required":
+                      name = f"{c['group']}/{c['name']}" if c.get("group") else c.get("name")
+                      acc.add((name, c.get("version")))
+                  flatten(c.get("components"), acc)
+              return acc
+
+
+          installed = walk(json.load(open(ls_path, encoding="utf-8")).get("dependencies"), set())
+          web = flatten(json.load(open(web_path, encoding="utf-8")).get("components"), set())
+          web_names = {n for n, _ in web}
+          for name, ver in sorted(installed, key=str):
+              if (name, ver) not in web and not (ver is None and name in web_names):
+                  missing.append(f"web sbom lacks {name}@{ver} as a required component")
+          for m in missing:
+              print(m)
+          print(f"python: {len(want)} lock packages; web: {len(installed)} runtime packages")
+          sys.exit(1 if missing or not want or not installed else 0)
+          EOF
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-manager
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+
+  # SHA256SUMS over every released file, written last and checked for
+  # completeness (TS 3.1 L165, L177).
+  sums:
+    name: SHA256SUMS and release notes
+    needs: [versions, agent-compare, manager]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-agent
+          path: ${{ runner.temp }}/release
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-manager
+          path: ${{ runner.temp }}/release
+
+      - name: Write and check SHA256SUMS
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+          DEB_VERSION: ${{ needs.versions.outputs.deb_version }}
+        run: |
+          base="bitscan-agent_${DEB_VERSION}_amd64"
+          expect="$(printf '%s\n' "$base.deb" "$base.bitscan-agent.cdx.json" \
+            "$base.bitscan-runner.cdx.json" "$base.bitscan-capread.cdx.json" \
+            "bitscan_manager-${VERSION}-py3-none-any.whl" "bitscan-manager-${VERSION}-requirements.txt" \
+            "bitscan-manager-${VERSION}.python.cdx.json" "bitscan-manager-${VERSION}.web.cdx.json" \
+            bitscan-manager.service bitscan-manager-migrate.service \
+            bitscan-manager-maintain.service bitscan-manager-maintain.timer | sort)"
+          cd "$RUNNER_TEMP/release"
+          got="$(find . -mindepth 1 -printf '%P\n' | sort)"
+          if [ "$got" != "$expect" ]; then
+            printf 'the release folder holds:\n%s\nwant exactly:\n%s\n' "$got" "$expect"
+            exit 1
+          fi
+          mapfile -t files <<<"$expect"
+          sha256sum -- "${files[@]}" >SHA256SUMS
+          # Every file but SHA256SUMS listed exactly once, nothing else listed.
+          listed="$(awk '{print $2}' SHA256SUMS | sort)"
+          present="$(find . -mindepth 1 ! -name SHA256SUMS -printf '%P\n' | sort)"
+          if [ "$listed" != "$present" ] || [ -n "$(uniq -d <<<"$listed")" ]; then
+            printf 'SHA256SUMS lists:\n%s\nthe folder holds:\n%s\n' "$listed" "$present"
+            exit 1
+          fi
+          sha256sum -c SHA256SUMS
+          {
+            echo "Bitscan $VERSION: manager $VERSION and agent package $DEB_VERSION."
+            echo
+            echo "Copy the SHA256SUMS text below from this page, not from the download host, into a file named SHA256SUMS next to the files you download, then run \`sha256sum -c --ignore-missing SHA256SUMS\`. Install with deploy/runbooks/manager-install.md and deploy/runbooks/agent-install.md."
+            echo
+            echo '```text'
+            cat SHA256SUMS
+            echo '```'
+          } >"$RUNNER_TEMP/notes.md"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes.md
+          if-no-files-found: error
+
+  # The only job that can write; tag pushes only. The release is a draft that a
+  # person checks and publishes (#91).
+  publish:
+    name: Draft GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [versions, sums]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: ${{ runner.temp }}/release
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          cd "$RUNNER_TEMP/release"
+          # Nothing changed between the sums job and this upload.
+          listed="$(awk '{print $2}' SHA256SUMS | sort)"
+          present="$(find . -mindepth 1 ! -name SHA256SUMS -printf '%P\n' | sort)"
+          if [ "$listed" != "$present" ]; then
+            printf 'SHA256SUMS lists:\n%s\nthe folder holds:\n%s\n' "$listed" "$present"
+            exit 1
+          fi
+          sha256sum -c SHA256SUMS
+          mapfile -t files < <(find . -mindepth 1 -printf '%P\n' | sort)
+          gh release create "$TAG" --draft --verify-tag --title "Bitscan $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes/notes.md" "${files[@]}"

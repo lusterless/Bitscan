@@ -16,6 +16,8 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
+from bitscan_manager.repositories.packages import AnchorGone
+
 BATCH = 1000
 
 PackageKey = tuple[str, str, str]  # (name, version, architecture)
@@ -233,13 +235,27 @@ class InventoryRepo:
         return None if row is None else SnapshotRow(*row)
 
     def package_page(
-        self, agent_id: UUID, limit: int | None, after: tuple[str, str, str] | None
+        self, agent_id: UUID, limit: int | None, after_package_id: int | None
     ) -> list[AgentPackageRow]:
         """One agent's packages ordered by name, architecture, version (#68),
         the version in Debian order (version::debversion, TS §7.2), then as
-        text so the key stays total; after is the (name, architecture,
-        version) of the previous page's last row. limit None reads them all."""
-        name, arch, version = after if after is not None else (None, None, None)
+        text so the key stays total; limit None reads them all.
+
+        after_package_id is the previous page's last row. The cursor holds
+        only that id (#89); its sort values are read here from package, in the
+        caller's transaction, so paging continues even if the agent no longer
+        has that package. AnchorGone if the package row is gone."""
+        name: str | None = None
+        arch: str | None = None
+        version: str | None = None
+        if after_package_id is not None:
+            anchor = self._conn.execute(
+                "SELECT name, architecture, version FROM package WHERE package_id = %s",
+                (after_package_id,),
+            ).fetchone()
+            if anchor is None:
+                raise AnchorGone
+            name, arch, version = anchor
         rows = self._conn.execute(
             "SELECT p.package_id, p.name, p.version, p.architecture, ap.status,"
             " p.source_name, ap.installed_size_kb, ap.first_seen_at, ap.last_seen_at"
