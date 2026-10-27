@@ -836,6 +836,1428 @@
    "cmd": "cat <<-EOF\n\t$(rm x)\n\tEOF",
    "token": "rm",
    "rule": "<<- here-document"
+  },
+  {
+   "cmd": "cat <<'E' $(\nrm -rf /x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<E $(\nrm -rf /x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' \"$(\nrm -rf /x\nE\n)\"",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E'; echo $(\nrm -rf /x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' ${x:-$(\nrm -rf /x\nE\n)}",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' $(($(\nrm -rf /x\nE\n)))",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' `\nrm -rf /x\nE\n`",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' <(\nrm -rf /x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' >(\nrm -rf /x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "x=$(cat <<'E' $(\nrm -rf /x\nE\n)\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' $(\nrm x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<E $(\nrm x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' \"$(\nrm x\nE\n)\"",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E'; echo $(\nrm x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' ${x:-$(\nrm x\nE\n)}",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' $(($(\nrm x\nE\n)))",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' `\nrm x\nE\n`",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' <(\nrm x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' >(\nrm x\nE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "x=$(cat <<'E' $(\nrm x\nE\n)\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc pending across a substitution newline",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' $(echo $(\nrm x\nE\n))",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc, two levels",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' $(echo `\nrm x\nE\n`)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc, backtick in $( )",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'A' <<B $(\nrm x\nA\nB\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 two heredocs",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<-'E' $(\n\trm x\n\tE\n)",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 <<- form",
+   "contexts": false
+  },
+  {
+   "cmd": "flock /tmp/l -c 'cat <<E $(\nrm x\nE\n)'",
+   "token": "newline in a substitution before a here-document",
+   "rule": "145r1 heredoc in a flock -c script",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<'E' $(rm x)\nbody\nE",
+   "token": "\"rm\"",
+   "rule": "145r1 substitution on the heredoc line, no newline inside",
+   "contexts": false
+  },
+  {
+   "cmd": "coproc rm x",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc (dash: not a keyword; bash runs it)",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc rm x'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc NAME { rm x; }'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc NAME ( rm x )'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc { rm x; }'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc a=1 rm x'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc NAME while rm x; do :; done'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc time rm x'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc NAME if rm x; then :; fi'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'coproc NAME for i in 1; do rm x; done'",
+   "token": "\"rm\"",
+   "rule": "145r1 coproc",
+   "contexts": false
+  },
+  {
+   "cmd": ">/etc/x f() { :; }",
+   "token": "cannot be checked",
+   "rule": "145r1 nit: redirection before NAME ( )",
+   "contexts": false
+  },
+  {
+   "cmd": "f() { :; } >/etc/x; f",
+   "token": "\"/etc/x\"",
+   "rule": "145r1 redirection on a function body",
+   "contexts": false
+  },
+  {
+   "cmd": "/usr/bin/time -f %e rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "time -o /tmp/t rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "time -p -o /tmp/t rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "time -- rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "\\time -o /tmp/y rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "command time rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo time -v rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -t 1 -m rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -m/proc/1/ns/mnt rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -a -t 1 -- rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "unshare -mU rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "unshare -fr --propagation private rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "unshare --kill-child=KILL -f rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "flock -n /tmp/l -c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "flock -w 5 /tmp/l rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "flock /tmp/l --command 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "flock -c 'rm x' /tmp/l",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "flock -E 3 -xn /tmp/l rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "flock 9 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "setpriv --reuid 0 --init-groups rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "setpriv --reuid=0 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "taskset -c 0-3 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "taskset -ac 1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "taskset 1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "chrt -f 10 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "chrt -T 1 -P 2 -D 3 -d 0 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "su - root -c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "su -lc 'rm x' root",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "su --command='rm x' root",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "su -c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "su root -c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "su --session-command 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "su -s /bin/bash -c 'rm x' root",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "su -c'rm x' root",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "runuser -u nobody -- rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "runuser -l nobody -c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "runuser -u nobody rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo nsenter -t 1 -m su -c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "nice time nsenter -t 1 -m chrt -f 1 taskset 1 setpriv --nnp unshare -m flock /tmp/l rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 wrapper",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter --targ 1 rm x",
+   "token": "option \"--targ\"",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -X rm x",
+   "token": "option \"-X\"",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "setpriv --reu 0 rm x",
+   "token": "option \"--reu\"",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "chrt -o rm x",
+   "token": "after \"chrt\"",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "chrt -f \"$p\" ls",
+   "token": "after \"chrt\"",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "su root",
+   "token": "shell without -c",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "su - root",
+   "token": "shell without -c",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "echo 'rm x' | su root",
+   "token": "shell without -c",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "su root /tmp/script",
+   "token": "shell without -c",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "su root -- -c 'rm x'",
+   "token": "shell without -c",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "runuser nobody",
+   "token": "shell without -c",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "runuser -u nobody",
+   "token": "shell without -c",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "su -c id root x",
+   "token": "after \"su\"",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter --target=1 --all=x rm x",
+   "token": "option \"--all=x\"",
+   "rule": "146r2 wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '{rm,-rf,/x}'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'r{m,}  -rf /'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '{,}rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '{,} rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'r{m..m} x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'ls; {ls,x} | {r,}m x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'sudo {rm,ls} x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '{rm,\"$x\"} y'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "su -c '{rm,x} y'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "su -c \"bash -c '{rm,-rf,/x}'\"",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'echo $({rm,x} y)'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '\"r\"{m,} x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'r{m,\"m\"} x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '{r..r}m x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c \"{sh,-c,'rm x'}\"",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'bash -{c,} \"rm x\"'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '{sudo,rm} x'",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "sh -c \"bash -c '{rm,x}'\"",
+   "token": "\"rm\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'sed -{i,n} s/a/b/ f'",
+   "token": "\"-i\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'systemctl {stop,status} ssh'",
+   "token": "\"stop\"",
+   "rule": "146r2 brace expansion",
+   "contexts": false
+  },
+  {
+   "cmd": "trap 'bash -c \"{rm,x} y\"' EXIT",
+   "token": "other code",
+   "rule": "146r2 brace in a trap action (trap refused)",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '{{rm,x}'",
+   "token": "unmatched brace",
+   "rule": "146r2 brace fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c '{a{rm,x}b} y'",
+   "token": "nested braces",
+   "rule": "146r2 brace fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'x{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}'",
+   "token": "too many words",
+   "rule": "146r2 brace fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'echo {a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,{a,b}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}'",
+   "token": "too many braces",
+   "rule": "146r2 brace fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "trap 'rm x' EXIT",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "trap 'echo done' EXIT",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "trap -- 'echo done' EXIT",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "trap '' INT",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "trap \"$a\" EXIT",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "trap 0 'ls' EXIT",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "command trap 'ls' INT",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c \"trap 'ls' EXIT\"",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "alias r=rm",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "alias r=rm\nr -rf /x",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "alias -p r=rm",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "alias \"$x\"",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "builtin alias r=rm",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'hash -p /bin/rm ls; ls -rf /x'",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "hash -rp /bin/rm ls",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "hash -p /bin/rm ls",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "let 'a[$(rm x)]=1'",
+   "token": "\"let\"",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'let x=1'",
+   "token": "other code",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "let x=1",
+   "token": "\"let\"",
+   "rule": "146r2 ruling: trap/alias/hash/let",
+   "contexts": false
+  },
+  {
+   "cmd": "x='$(rm x)'; : ${x@P}",
+   "token": "runs text as code",
+   "rule": "146r2 ruling: @P/@E",
+   "contexts": false
+  },
+  {
+   "cmd": "echo \"${x@P}\"",
+   "token": "runs text as code",
+   "rule": "146r2 ruling: @P/@E",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c ': ${x@E}'",
+   "token": "runs text as code",
+   "rule": "146r2 ruling: @P/@E",
+   "contexts": false
+  },
+  {
+   "cmd": "echo ${y:-${x@P}}",
+   "token": "runs text as code",
+   "rule": "146r2 ruling: @P/@E",
+   "contexts": false
+  },
+  {
+   "cmd": "echo $(( ${x@P} ))",
+   "token": "runs text as code",
+   "rule": "146r2 ruling: @P/@E",
+   "contexts": false
+  },
+  {
+   "cmd": "cat <<E\n${x@P}\nE",
+   "token": "runs text as code",
+   "rule": "146r2 ruling: @P/@E",
+   "contexts": false
+  },
+  {
+   "cmd": "echo ${arr[@]@P}",
+   "token": "runs text as code",
+   "rule": "146r2 ruling: @P/@E",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -co pipefail 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -oc pipefail 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -Oc extglob 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "sh -co errexit 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "sh -c - 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c - 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "dash -c -- 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -oO pipefail extglob -c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash +oc errexit 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c -o errexit 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash --rcfile /dev/null -c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash +c 'rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 shell options",
+   "contexts": false
+  },
+  {
+   "cmd": "bash --rcf /dev/null -c 'rm x'",
+   "token": "option \"--rcf\"",
+   "rule": "146r2 shell options fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "bash --foo -c 'ls'",
+   "token": "option \"--foo\"",
+   "rule": "146r2 shell options fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "sh -q -c 'rm x'",
+   "token": "option \"-q\"",
+   "rule": "146r2 shell options fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "sh --norc=x -c 'ls'",
+   "token": "option \"--norc=x\"",
+   "rule": "146r2 shell options fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "sh - -c 'rm x'",
+   "token": "shell without -c",
+   "rule": "146r2 shell options fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -- -c 'rm x'",
+   "token": "shell without -c",
+   "rule": "146r2 shell options fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "env --un HOME rm x",
+   "token": "option \"--un\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "env --ch / rm x",
+   "token": "option \"--ch\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "env --sp 'rm x'",
+   "token": "option \"--sp\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nice --adj 5 rm x",
+   "token": "option \"--adj\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "timeout --sig KILL 5 rm x",
+   "token": "option \"--sig\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "stdbuf --out L rm x",
+   "token": "option \"--out\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo --us root rm x",
+   "token": "option \"--us\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo --gr root rm x",
+   "token": "option \"--gr\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "chroot --sk / rm x",
+   "token": "option \"--sk\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "timeout --pres 5 rm x",
+   "token": "option \"--pres\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "env --bl INT rm x",
+   "token": "option \"--bl\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -X rm x",
+   "token": "option \"-X\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "env -X rm x",
+   "token": "option \"-X\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "ionice --cl 3 rm x",
+   "token": "option \"--cl\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "setsid --fo rm x",
+   "token": "option \"--fo\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "doas -X rm x",
+   "token": "option \"-X\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "command -X rm x",
+   "token": "option \"-X\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "builtin -x eval y",
+   "token": "option \"-x\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nohup --he rm x",
+   "token": "option \"--he\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "env --ignore-environment=1 rm x",
+   "token": "option \"--ignore-environment=1\"",
+   "rule": "146r2 old-wrapper fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nice -5 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "nice --5 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "nice -+5 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo FOO=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -u root FOO=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "env --block-signal=INT rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo --preserve-env=HOME rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -h host rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -u root FOO=1 BAR=2 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "env -C/ rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 old wrapper still names rm",
+   "contexts": false
+  },
+  {
+   "cmd": "env -- FOO=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 env after -- (tester-m7d finding)",
+   "contexts": false
+  },
+  {
+   "cmd": "env -- - rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 env after -- (tester-m7d finding)",
+   "contexts": false
+  },
+  {
+   "cmd": "env -i -- FOO=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 env after -- (tester-m7d finding)",
+   "contexts": false
+  },
+  {
+   "cmd": "env -u HOME -- FOO=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 env after -- (tester-m7d finding)",
+   "contexts": false
+  },
+  {
+   "cmd": "sed -es/a/b/ -i f",
+   "token": "\"-i\"",
+   "rule": "146 review finding 3: attached -e/-f/-l value",
+   "contexts": false
+  },
+  {
+   "cmd": "sed -l5 -i f",
+   "token": "\"-i\"",
+   "rule": "146 review finding 3: attached -e/-f/-l value",
+   "contexts": false
+  },
+  {
+   "cmd": "sed -nfx -i f",
+   "token": "\"-i\"",
+   "rule": "146 review finding 3: attached -e/-f/-l value",
+   "contexts": false
+  },
+  {
+   "cmd": "sed -l5 -i p f",
+   "token": "\"-i\"",
+   "rule": "146 review finding 3: attached -e/-f/-l value",
+   "contexts": false
+  },
+  {
+   "cmd": "sed -fx -i f",
+   "token": "\"-i\"",
+   "rule": "146 review finding 3: attached -e/-f/-l value",
+   "contexts": false
+  },
+  {
+   "cmd": "sed --line-length=5 -i p f",
+   "token": "\"-i\"",
+   "rule": "146 review finding 3: attached -e/-f/-l value",
+   "contexts": false
+  },
+  {
+   "cmd": "sed --expression=p -i f",
+   "token": "\"-i\"",
+   "rule": "146 review finding 3: attached -e/-f/-l value",
+   "contexts": false
+  },
+  {
+   "cmd": "env a-b=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) env/sudo operand with =",
+   "contexts": false
+  },
+  {
+   "cmd": "env 1=2 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) env/sudo operand with =",
+   "contexts": false
+  },
+  {
+   "cmd": "env \"$x\"=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) env/sudo operand with =",
+   "contexts": false
+  },
+  {
+   "cmd": "env -- - FOO=1 a-b=2 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) env/sudo operand with =",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo a-b=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) env/sudo operand with =",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -S +0 rm x",
+   "token": "option \"-S\"",
+   "rule": "146r2 (6) nsenter -S/-G value not decimal: fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -S ' 0' rm x",
+   "token": "option \"-S\"",
+   "rule": "146r2 (6) nsenter -S/-G value not decimal: fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter --setuid +0 rm x",
+   "token": "option \"--setuid\"",
+   "rule": "146r2 (6) nsenter -S/-G value not decimal: fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -G +0 rm x",
+   "token": "option \"-G\"",
+   "rule": "146r2 (6) nsenter -S/-G value not decimal: fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -S rm x",
+   "token": "option \"-S\"",
+   "rule": "146r2 (6) nsenter -S/-G value not decimal: fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter --setuid rm x",
+   "token": "option \"--setuid\"",
+   "rule": "146r2 (6) nsenter -S/-G value not decimal: fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter --setgid +0 rm x",
+   "token": "option \"--setgid\"",
+   "rule": "146r2 (6) nsenter -S/-G value not decimal: fail closed",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -S 0 -t 1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) nsenter -S/-G decimal value",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter -S0 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) nsenter -S/-G decimal value",
+   "contexts": false
+  },
+  {
+   "cmd": "nsenter --setuid=0 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) nsenter -S/-G decimal value",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -s",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -i",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo --shell",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo --login",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -u root -s",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -iu root",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "echo 'rm x' | sudo -s",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "echo 'rm x' | sudo -i",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "doas -s",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -s --",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -n -s",
+   "token": "shell without -c",
+   "rule": "146r2 (6) sudo/doas shell without a command (lead ruling)",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -s rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -i rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -s 'ls; rm x'",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo --login rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "doas -s rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -s FOO=1 rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -s bash -c '{rm,x}'",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -s -- rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo --shell rm x",
+   "token": "\"rm\"",
+   "rule": "146r2 (6) sudo/doas shell with a command: checked as a script",
+   "contexts": false
+  },
+  {
+   "cmd": "sudo -s \"$c\"",
+   "token": "cannot be checked",
+   "rule": "146r2 (6) sudo -s non-literal",
+   "contexts": false
   }
  ]
 }

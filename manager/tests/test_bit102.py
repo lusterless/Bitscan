@@ -79,8 +79,8 @@ SAMPLE_EXECUTES = sample_executes()
 
 def test_corpora_sizes() -> None:
     # Guards on the oracle (tester-m7's corpora): CHK-M7-004 sizes.
-    assert len(REJECT) >= 350  # 149 at r1; +201 for TASK-145 r1 / TASK-146 r2
-    assert len(PASS) >= 177  # 96 at r1; +81
+    assert len(REJECT) >= 386  # 149 at r1; +237 for TASK-145 r1 / TASK-146 r2
+    assert len(PASS) >= 191  # 96 at r1; +95
     assert len(SAMPLE_EXECUTES) >= 30
 
 
