@@ -289,3 +289,1076 @@ W = WSL2 Ubuntu 24.04, copy `/root/bstest-m7-w1`, venv `/root/venv-m7` (`--requi
 | CHK-M7-150-ovr | APP | W | plant: set_status without override | PASS (red) | 4 failed incl. the D3 race | 2026-10-27 |
 | CHK-M7-150-int | APP | W | plants: bad_plugins without owner check; rejected_files without outcome | PASS (red) | 1 failed each | 2026-10-27 |
 
+## W2 and W3 (folded 2026-10-27, cloud session)
+
+Folded by the lead, unchanged except that headings are demoted two levels. Every task below also has REVIEW APPROVED and the user's second approval (decisions 2026-10-27).
+
+| Task | Verdict | Source |
+| --- | --- | --- |
+| TASK-141 | PASS (revision 1) | `work/reports/TASK-141-test.md` |
+| TASK-142 | PASS | `work/reports/TASK-142-test.md` |
+| TASK-143 | PASS | `work/reports/TASK-143-test.md` |
+| TASK-144 | PASS | `work/reports/TASK-144-test.md` |
+| TASK-145 | PASS (r0; r1 + r1b in the revision sections) | `work/reports/TASK-145-test.md` |
+| TASK-146 | PASS (r1; r2 final in the revision section) | `work/reports/TASK-146-test.md` |
+| TASK-151 | PASS | `work/reports/TASK-151-test.md` |
+| TASK-152 | PASS (round 2, on TASK-147 revision 2) | `work/reports/TASK-152-test.md` |
+| TASK-153 | PASS | `work/reports/TASK-153-test.md` |
+| TASK-161 | PASS | `work/reports/TASK-161-test.md` |
+| TASK-147 (revision only) | PASS | `work/reports/TASK-147-test.md` (revision section) |
+| TASK-148 (revision only) | PASS | `work/reports/TASK-148-test.md` (revision section) |
+
+### TASK-141
+
+Tester: tester-m7b, 2026-10-27. REQ-150, REQ-176, REQ-180. Spec: TS §4.1 L516–L517, §8.1 L1251; SR §4, §4.1 BIT001; answers #57, #105 (a), (b), (c), (f), (g). Checks CHK-M7-020 to -028 and plants CHK-M7-320, -321, -322, -323, -347 (tests/m7/test-plan.md). Test files: `manager/tests/test_bit_parse.py`, `manager/tests/test_bit_fuzz.py` and the helper `manager/tests/bit_unit.py`. Implementation: `manager/bitscan_manager/services/importer/parse.py` (impl report `work/reports/TASK-141-impl.md`, including "Revision 1").
+
+#### Rounds
+
+| Round | Verdict | What |
+| --- | --- | --- |
+| 1 | FAIL | `test_bit_parse.py::test_utf16_without_bom_is_bit001` (6 params). Expected exactly one BIT001 (REQ-150, D1, #105 (f): UTF-8 only). Actual: no finding and a full tree. Repro: `parse_bit(sr_example().decode().encode("utf-16-le"))`. Cause: UTF-16 bytes without a BOM are valid UTF-8 (NUL is valid UTF-8), so the strict decode passed, and expat's `initScan` detects UTF-16 from `3C 00` / `00 3C` even when given `encoding="utf-8"`. The declared-encoding pre-check never ran, because the buffer does not start with the bytes `<?xml`. 270/276 passed. |
+| 2 (rev 1) | PASS | Any 0x00 byte is now BIT001 before the decode. 276/276. |
+
+#### Runs
+
+| Run | Where | Command | Count |
+| --- | --- | --- | --- |
+| round 1 | L | `pytest -q tests/test_bit_parse.py` | 270/276 passed, 6 failed, 0 errors, 0 skipped |
+| re-run of the failing test | L | `pytest -q "tests/test_bit_parse.py::test_utf16_without_bom_is_bit001"` | 6/6 passed |
+| clean, rev 1 | L | `pytest -q tests/test_bit_parse.py` | 276/276 passed, 0 failed, 0 errors, 0 skipped |
+| clean, rev 1 | W | `CI=true pytest -q tests/test_bit_parse.py` | 276/276 passed, 0 skipped |
+| fuzz | W | `CI=true pytest -q tests/test_bit_fuzz.py` | 4/4 passed (10,500 generated inputs) |
+| fuzz | L | `pytest -q tests/test_bit_fuzz.py` | 4/4 passed |
+| dependents | W | `pytest -q tests/test_bit_fixtures.py tests/test_bit_model.py tests/test_bit_structure.py` | 227/227, 71/71, 253/253 passed |
+| static | L | `ruff check manager`; `ruff format --check manager`; `mypy --strict --config-file manager/pyproject.toml manager` | clean; mypy: no issues in 272 files |
+
+L = Windows 11, `manager/.venv` (CPython 3.12.10). W = WSL2 Ubuntu 24.04.5, kernel 6.18 WSL2, CPython 3.12.3. Copy `/root/bstest-m7b-base` (rsync without `.venv`, `__pycache__`, `.git`), venv `/root/venv-m7b` (`pip install --require-hashes -r manager/requirements-dev.txt` + `--no-deps -e manager`), `CI=true`, no containers (pure unit).
+
+#### Acceptance criteria (tasks.md TASK-141)
+
+| Criterion | Check | Result |
+| --- | --- | --- |
+| Every BIT001 fixture gives exactly one BIT001: external entity by file and URL, parameter entity, billion laughs, quadratic blow-up, DTD only, UTF-16, ISO-8859-1, invalid UTF-8, not well-formed, empty, 5 MiB + 1 | CHK-M7-020, -023, -025 | PASS: all 35 `bits/tests/bit001` fixtures; DOCTYPE fixtures at the DOCTYPE line with a DTD message; manifest lines (invalid UTF-8 line 5, mismatched tags line 4); messages hold no input text. Also UTF-16 LE/BE without a BOM (3 declarations each), NUL anywhere, 7 non-UTF-8 declarations (ASCII bodies, so only D1 catches them), XML 1.1/2.0, 4 BOMs at line 1, and 6 bad-UTF-8 forms × 4 places at line 7 |
+| No file or network access | CHK-M7-021 | PASS: audit hook (`open`, `socket.*`, `urllib.*`, `subprocess.*`, `os.*` exec/spawn/listdir, `ctypes.*`) records nothing; canary content never in the result; a local listener sees no connection (xxe-file, external-dtd-file, xinclude, xxe-url, parameter-entity, external-dtd-url). Guard test: the hook does see a real `open` |
+| Defence in depth (all three defusedxml layers) | CHK-M7-320, -322 | PASS: parser built with `forbid_dtd`, `forbid_entities`, `forbid_external` all True (spy). With the DTD layer neutralised, all 6 entity fixtures still get "Entity declarations ..." with no side effects and < 64 MiB. With DTD and entity layers neutralised, xxe-file and xxe-url get "External references ...", with no canary and no connection |
+| Under 64 MiB peak memory | CHK-M7-022 | PASS: billion laughs, quadratic blow-up, valid 5 MiB file, 5 MiB of text in one element, 35,015-element cap case: `tracemalloc` peak < 64 MiB, < 2 s each |
+| A valid 5 MiB file parses | CHK-M7-023 | PASS: exactly 5,242,880 bytes, no finding; 5,242,881 gives BIT001 with `line` null and the parser never constructed (spy); oversize garbage gets the size rule, not the encoding rule |
+| SR §1.1 example tree, lines match the file | CHK-M7-024 | PASS: start-tag lines computed from the text by a separate scanner equal the tree's, in pre-order, for the SR example, all 15 `valid/` fixtures and both samples. `Execute` text is the untrimmed CDATA, `attributes == (("timeout", "30"),)`. CDATA, text and comments joined (comments dropped); predefined entities and char refs decoded; CRLF and a lone CR normalised and counted; attribute order kept; multi-line start tag at the `<` line |
+| #105 (a) caps | CHK-M7-026 | PASS: depth 16 ok, 17 BIT002 at the 17th element's line; 35,014 elements ok, 35,015 BIT002 at its line; 5,000 `Plugin` (bare and canonical) ok, 5,001 BIT017 at the 5,001st; 8 attributes ok, 9 BIT002 |
+| Namespaces one BIT002 (impl change 1) | CHK-M7-053 (parser half) | PASS: default, prefixed, `xmlns=""`, unbound element and attribute prefix, and the 3 fixtures each give one BIT002 at the declaring line, never BIT001 |
+| PIs recorded for TASK-143 | CHK-M7-024 | PASS: `pi_lines` = (3, 5) for an inner and a trailing PI; the declaration not counted; fixtures (7,) and (3,) |
+| 10,000 random inputs raise nothing | CHK-M7-027 | PASS: 4,000 random byte strings, 4,000 mutations of the SR example and both samples, 2,500 XML token soups; each returns a `ParseResult` with ≤ 1 finding of BIT001/BIT002/BIT017, `root` None iff there is a finding, a line within the input, < 2 s |
+| No `xml`/`lxml` import | CHK-M7-028, -347 | PASS: AST scan of `parse.py` (also no `re`, `subprocess`, `socket`, `urllib`, `http`, `logging`, `time`, `os`, `io`, `pathlib`, … and no `open`/`eval`/`exec` calls) and of every module under `services/importer/` (no `xml`, `lxml`, `re`). No log record and no stdout/stderr for every bit001, bit002 and valid fixture |
+
+#### Plants (throwaway copies `%TEMP%\m7b-mut\<id>`, copy imported first through `PYTHONPATH`, asserted)
+
+Control copy (no change): ruff clean, `pytest tests/test_bit_parse.py -k "not utf16_without_bom"` green. Plants were run on rev 0, with the known round-1 failure excluded so that each plant's own red test is visible.
+
+| Plant | Change | Red tests |
+| --- | --- | --- |
+| CHK-M7-320 | `forbid_external=False` | `test_parser_built_with_all_three_forbids`, `test_external_layer_holds_…` (2) |
+| CHK-M7-321 | `forbid_dtd=False` | `test_bit001_fixture_gives_exactly_one_bit001` (dtd-only, dtd-element-decl, external-dtd-file, …), `test_dtd_refused_at_the_doctype_line` |
+| CHK-M7-322 | `forbid_entities=False` | spy test, `test_entity_layer_holds_…` (6) |
+| CHK-M7-323 | size cap 50 MiB | `test_one_byte_over_is_bit001_and_never_parsed`, `test_oversize_garbage_…` |
+| CHK-M7-347 | `import xml.etree.ElementTree` in parse.py | ruff rc 1 (TID251); `test_parser_imports_only_safe_modules`, `test_no_importer_module_imports_xml_or_lxml` |
+| extra | declared-encoding check removed | iso-8859-1-ascii, us-ascii fixtures; 7 declaration tests |
+| extra | XML version check removed | xml-1.1 fixture; 2 version tests |
+| extra | depth `>=` → `>` | depth-17 tests (2) |
+| extra | element cap `>` → `>=` | 35,014 / 35,015 tests |
+| extra | attribute cap + 1 | `test_8_attributes_accepted_9_refused` |
+| extra | plugin cap + 1 | 5,001-plugin tests (2) |
+| extra | collector gets a `comment` method | `test_cdata_text_and_comments_joined_in_order` |
+| extra | `start_ns` no longer stops | namespace tests, xinclude canary test |
+| equivalent | BOM check removed | survives: FF FE / FE FF / 00 00 FE FF are already invalid UTF-8, so the strict decode gives the same BIT001 at line 1 |
+| equivalent | UTF-8 error line from `exc.end` | survives: `start` and `end` of a UTF-8 error never span a newline |
+| equivalent | expat message quoted whole | survives: without a DTD, expat reports an undefined entity itself, with no name in its text. The code-11 special case is defensive only |
+
+#### Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-020 | CODE | L, W | `pytest -q tests/test_bit_parse.py` (bit001 params) | PASS | 35/35 fixtures, one BIT001 each; rev 0 FAIL on UTF-16 without BOM (6), fixed in rev 1, re-run 6/6 | 2026-10-27 |
+| CHK-M7-021 | CODE | L, W | `pytest -q tests/test_bit_parse.py -k "never_opened or never_fetched or layer or forbids"` | PASS | audit hook empty, listener silent, canary absent; three defusedxml layers each proven alone | 2026-10-27 |
+| CHK-M7-022 | CODE | L, W | `pytest -q tests/test_bit_parse.py -k "bombs or 5_mib"` | PASS | peak < 64 MiB, < 2 s | 2026-10-27 |
+| CHK-M7-023 | CODE | L, W | `pytest -q tests/test_bit_parse.py -k "5_mib or one_byte_over or oversize or empty"` | PASS | 5,242,880 passes; 5,242,881 BIT001, parser not built | 2026-10-27 |
+| CHK-M7-024 | CODE | L, W | `pytest -q tests/test_bit_parse.py -k "tree or lines or cdata or entities or crlf or pi"` | PASS | lines from the text = tree lines (SR example, 15 valid fixtures, 2 samples) | 2026-10-27 |
+| CHK-M7-025 | CODE | L, W | `pytest -q tests/test_bit_parse.py -k "utf or declar or bom or xml_other"` | PASS | 8 accepted declarations; non-UTF-8, BOMs, invalid UTF-8 (line 7), UTF-16 no BOM → BIT001 | 2026-10-27 |
+| CHK-M7-026 | CODE | L, W | `pytest -q tests/test_bit_parse.py -k "depth or elements or plugins or attributes or namespace"` | PASS | 16/17, 35,014/35,015, 5,000/5,001, 8/9 boundaries; namespaces one BIT002 | 2026-10-27 |
+| CHK-M7-027 | CODE | L, W | `pytest -q tests/test_bit_fuzz.py` | PASS | 4/4 (10,500 inputs); W 7.9 s | 2026-10-27 |
+| CHK-M7-028 | CODE | L | `pytest -q tests/test_bit_parse.py -k imports` + `ruff check manager` | PASS | AST scan clean; ruff clean | 2026-10-27 |
+| CHK-M7-320 | CODE | L | plant `forbid_external=False` | PASS (red) | 3 failed | 2026-10-27 |
+| CHK-M7-321 | CODE | L | plant `forbid_dtd=False` | PASS (red) | ≥ 3 failed | 2026-10-27 |
+| CHK-M7-322 | CODE | L | plant `forbid_entities=False` | PASS (red) | 7 failed | 2026-10-27 |
+| CHK-M7-323 | CODE | L | plant cap 50 MiB | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-347 | CODE | L | plant `import xml.etree.ElementTree` | PASS (red) | ruff rc 1; 2 failed | 2026-10-27 |
+
+#### Notes for main and the reviewer
+
+- Impl change 3 (BIT017 at the 5,001st `Plugin` in the parser) is tested as built. Main accepted it on 2026-10-27 as an amendment to #105 (a), because TS L517 puts the 5,000-plugin limit on the parse step. A 5,001-plugin file therefore reports only BIT017.
+- Impl change 4 (8-attribute cap) is in the approved #105 (a).
+- The first Windows fuzz run stalled for more than 10 minutes while parse.py was being revised under it. The same suite takes 8 s on W and passes on L, and I found no product cause. I could not stop the stalled process from my session; it has since exited.
+
+### TASK-142
+
+Tester: tester-m7b, 2026-10-27. REQ-152, REQ-153, REQ-154. Spec: SR §2.3 (`PluginId`, `ExpectedResult`), §2.4 (numbers; regex "multiline"; case-sensitive), §3.3 (`control_ref`, 32); TS §4.5 (RE2); security invariants (RE2 for untrusted patterns); answers #13, #17, #109. Checks CHK-M7-040 to -045, plant CHK-M7-325 (tests/m7/test-plan.md). Test file: `manager/tests/test_bit_values.py`. Implementation: `manager/bitscan_manager/services/importer/values.py` (impl report `work/reports/TASK-142-impl.md`).
+
+Contract tested as written (impl report, consistent with #17 and SR §2.4): the checks take already-trimmed text, and the importer calls them on `trim_xml(value)`. So `is_number(" 14")` is False and `is_number(trim_xml(" 14 "))` is True.
+
+#### Runs
+
+| Run | Where | Command | Count |
+| --- | --- | --- | --- |
+| clean | L | `pytest -q tests/test_bit_values.py` | 144/144 passed, 0 failed, 0 errors, 0 skipped |
+| clean | W | `CI=true pytest -q tests/test_bit_values.py` | 144/144 passed, 0 skipped |
+| static | L | `ruff check manager`; `ruff format --check manager`; `mypy --strict --config-file manager/pyproject.toml manager` | clean; mypy: no issues in 272 files |
+
+L and W are as in `work/reports/TASK-141-test.md`. W is WSL2 Ubuntu 24.04.5 with CPython 3.12.3, venv `/root/venv-m7b` from the hashed dev lock (google-re2 1.1.20251105).
+
+#### Acceptance criteria (tasks.md TASK-142)
+
+| Criterion | Check | Result |
+| --- | --- | --- |
+| #13 accept and reject lists | CHK-M7-040 | PASS: 10 accepted (incl. `007`, `-0`, a 51-digit decimal); 45 refused (`1e3`, `nan`, `inf`, `1_000`, `0x10`, `.5`, `5.`, `+`, `--1`, `+-1`, Arabic-Indic, fullwidth, superscript, inner space, `1,5`, padded forms, U+00A0, …); `parse_number` gives the exact `Decimal` (2^53 + 1 > 2^53, 0.1 == 0.10, 1e-22 > 0). Property: 2,000 strings agree with an independent RE2 oracle of the #13 grammar |
+| `(?=x)` and `(a)\1` refused while `^MaxAuthTries\s+[1-4]$` compiles | CHK-M7-041 | PASS: 9 RE2 patterns compile (incl. `(a+)+$`, POSIX class, named group, UTF-8). 15 refused: lookahead, negative lookahead, lookbehind, negative lookbehind, backreference, `[`, `(`, `)`, `a{2,1}`, `*`, `\8`, `(?P=n)`, `a++`, `\Z(`, a lone surrogate. Each raises `PatternError("not a valid RE2 pattern")` with no cause or context chained. Guard: Python `re` does accept `(?=x)`, `(a)\1` and `(?<!a)b`, so the CHK-M7-325 plant is detectable |
+| The evaluator's form | CHK-M7-041 | PASS: compiled patterns are multiline (`^`/`$` per line, SR §2.4), `.` does not match a newline, case-sensitive, UTF-8 |
+| A 4,000-character pattern within 1 s | CHK-M7-041 | PASS: 4 distinct 4,000-char patterns (no LRU hit), and the nested-repeat and 1,000-deep-group cases, each < 1 s |
+| Nothing on stderr | CHK-M7-041 | PASS: `capfd` (fd level) and `caplog` empty across all refused patterns. A fresh subprocess (RE2's first compile) writes 0 bytes to fd 2 and fd 1. Guard: stock `re2.compile('(?=x)')` does write to fd 2 in a fresh process |
+| #109 forms | CHK-M7-042 | PASS: the SR §1.1 id, nil, all-f, version/variant 0 and f accepted. Refused: uppercase, mixed case, braces, `urn:uuid:`, 32-hex, 35/37 chars, misplaced hyphens, non-hex `g`, Arabic-Indic and fullwidth digits, underscores, padded, all hyphens, empty. Property: 2,000 inputs (uuids, upper-cased uuids, near-miss text) agree with an RE2 oracle |
+| Trimming removes only space, tab, CR, LF (U+00A0 stays) | CHK-M7-043 | PASS: U+00A0, U+2003, U+FEFF, VT, FF, NEL and U+2028 all kept; inner whitespace kept |
+| `control_ref` for every REQ-154 (1) case | CHK-M7-044 | PASS: `1.3.1.1 - Ensure…` → `1.3.1.1`; `Ensure` → BIT101; `1.3.` → `1.3`; `1..2` → `1`; `1.3.1.1Ensure` → `1.3.1.1`; leading `.`, `-`, Arabic-Indic, fullwidth and superscript → BIT101; 32 characters kept, 33 → BIT103 (dotted and plain forms); a warning never carries a value; frozen. Property: 3,000 names agree with an RE2 oracle of `[0-9]+(\.[0-9]+)*` |
+| No `import re`; the module M8 imports | CHK-M7-045 | PASS: AST imports include `re2`; none of `re`, `regex`, `logging`, `os`, `io`, `subprocess`, `socket`, `pathlib`, `time`, `datetime`, `sys`, `xml`, `lxml`. The 8 helpers are exported |
+
+#### Plants (throwaway copies `%TEMP%\m7b-mut\<id>`, copy imported first through `PYTHONPATH`, asserted)
+
+Control copy (no change): `pytest tests/test_bit_values.py` green. The control's ruff run showed 7 findings in another builder's in-progress file at copy time; `ruff check manager` on the tree is clean now.
+
+| Plant | Change | Red tests |
+| --- | --- | --- |
+| CHK-M7-325 | BIT013 helper compiles with Python `re` (`noqa: TID251`) | `test_non_re2_patterns_refused` ((?=x), (?!x), (?<=a)b, (a)\1, …) |
+| extra | `log_errors = True` | both stderr tests |
+| extra | `(?m)` dropped | `test_compiled_pattern_is_multiline` |
+| extra | RE2 error chained (no `from None`) | `test_non_re2_patterns_refused` (cause/context check) |
+| extra | `str.strip()` (all Unicode space) | U+00A0 / U+2003 / U+FEFF trim rows, padded-number test |
+| extra | `isdigit` without `isascii` | Arabic-Indic / fullwidth number rows |
+| extra | `float()` grammar | `1e3`, `nan`, `inf`, `1_000`, … rows |
+| extra | trailing `.` accepted | `5.`, `0.` rows, number oracle |
+| extra | uppercase hex accepted | uppercase / mixed-case rows, UUID oracle |
+| extra | hyphen anywhere | misplaced-hyphen rows |
+| extra | `control_ref` cap `>=` 32 | 32 kept / 33 BIT103 test |
+| extra | Unicode `isdigit` in `control_ref` | Arabic-Indic / fullwidth / superscript rows, oracle |
+| extra | trailing `.` kept in the reference | `1.3.`, `1..2` rows, 32/33 test |
+
+All 13 plants are red; none survived.
+
+#### Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-040 | CODE | L, W | `pytest -q tests/test_bit_values.py -k number` | PASS | 10 accept / 45 reject rows; exact Decimal; 2,000-case oracle | 2026-10-27 |
+| CHK-M7-041 | CODE | L, W | `pytest -q tests/test_bit_values.py -k "pattern or re2 or stderr"` | PASS | 9 compile / 15 refused; multiline; < 1 s; fd 2 empty (in process and fresh process); guards prove `re` and stock RE2 differ | 2026-10-27 |
+| CHK-M7-042 | CODE | L, W | `pytest -q tests/test_bit_values.py -k uuid` | PASS | 5 accept / 17 reject; 2,000-case oracle | 2026-10-27 |
+| CHK-M7-043 | CODE | L, W | `pytest -q tests/test_bit_values.py -k trim` | PASS | 11 rows; only space, tab, CR, LF removed | 2026-10-27 |
+| CHK-M7-044 | CODE | L, W | `pytest -q tests/test_bit_values.py -k control_ref` | PASS | 15 rows + 32/33 + oracle 3,000 | 2026-10-27 |
+| CHK-M7-045 | CODE | L | `pytest -q tests/test_bit_values.py -k "imports or exports"` + `ruff check manager` | PASS | no `re`; re2 used; helpers exported | 2026-10-27 |
+| CHK-M7-325 | CODE | L | plant: Python `re` in `compile_pattern` | PASS (red) | lookaround/backreference rows failed | 2026-10-27 |
+
+### TASK-143
+
+Tester: tester-m7b, 2026-10-27. REQ-151, REQ-176. Spec: SR §2, §2.1–§2.3 (names, order, occurrence), §4 (BIT001/BIT002 first; otherwise every failing rule), §4.1 BIT002 and BIT016; TS §1.4; answers #2, #10, #16, #105 (c), (d), (g). Checks CHK-M7-050 to -057 and plant CHK-M7-334 (tests/m7/test-plan.md). Test file: `manager/tests/test_bit_structure.py`. It runs `parse_bit` and then `check` only on a tree, the SR §4 order. Implementation: `manager/bitscan_manager/services/importer/structure.py` (impl report `work/reports/TASK-143-impl.md`).
+
+#### Runs
+
+| Run | Where | Command | Count |
+| --- | --- | --- | --- |
+| clean | L | `pytest -q tests/test_bit_structure.py` | 253/253 passed, 0 failed, 0 errors, 0 skipped |
+| clean | W | `CI=true pytest -q tests/test_bit_structure.py` | 253/253 passed, 0 skipped |
+| dependents | L, W | `pytest -q tests/test_bit_parse.py tests/test_bit_fixtures.py` | 276/276, 227/227 passed |
+| static | L | `ruff check manager`; `ruff format --check manager`; `mypy --strict --config-file manager/pyproject.toml manager` | clean; mypy: no issues in 272 files |
+
+L and W are as in `work/reports/TASK-141-test.md`.
+
+Fixture note: `bit002/miscased-policyName.bit` and `miscased-plugin.bit` had manifest lines [2], which is the header comment line. The builder flagged it; I confirmed it and reported it to tester-m7, who fixed the generator. The rows are now [3, 4] and [10, 11]. The test asserts both findings of each file (missing at the container line, then unknown at the element's line) and that the manifest now agrees.
+
+#### Acceptance criteria (tasks.md TASK-143)
+
+| Criterion | Check | Result |
+| --- | --- | --- |
+| SR §1.1 tree gives a `ParsedPolicy` with the raw values and their lines | CHK-M7-050 | PASS: every field's text, start-tag line (from the text) and #105 (g) path; `@formatVersion` and `Execute/@timeout` at their element's line. Values are raw (`"  ENABLED\n"`, `" EQUALS "` untrimmed); all 15 valid and 75 content fixtures pass the structure; plugins in document order with a 1-based index; frozen |
+| Each REQ-151 (2) fixture tree gets BIT002 at the right line and path, and no `ParsedPolicy` | CHK-M7-051 to -053 | PASS: all 50 `bit002/` fixtures give only BIT002, `parsed` None, the first finding on a manifest line, findings sorted by line. Built from the SR example: each of the 8 required leaves missing (one BIT002 at the parent's line, path of the missing element); `Family` and `PluginsGroups` missing; each of 10 elements duplicated (BIT002 at the second); a second `Family` (#10); each of 9 adjacent pairs swapped; 5 mis-cased names and 3 mis-cased roots (no attributes); wrong root (one finding); empty, self-closing and comment-only `PluginsGroups` (#16); unknown elements in 4 containers at their lines; 11 unknown attributes (incl. `Timeout`, `FormatVersion`, `xml:lang`); non-whitespace text in 4 containers incl. CDATA `x` and `&#160;` (#105 (d)); a child in each of 9 leaves; 4 PI places, with lines; `xml:`-prefixed element |
+| Whitespace and comments between elements ignored | CHK-M7-053, -057 | PASS: CR LF, tab, comment and whitespace-only CDATA in a container give no finding |
+| Namespaced documents: one BIT002, no second report (main's ask on TASK-141 change 1) | CHK-M7-053 | PASS: `xmlns` on the root, `xmlns:b` on a leaf and `xmlns=""` each give exactly one BIT002 from the parser; `check` never runs on them |
+| `formatVersion` `1.1` gets BIT016 | CHK-M7-055 | PASS: `1.1`, `1.00`, empty, `2.0`, ` 1.0`, `1.0 `, `1` each give one BIT016 at line 2, `Policy/@formatVersion`, **with** a `ParsedPolicy` (SR §4: only BIT001/BIT002 stop the content rules). Absent gives `format_version` None; `1.0` passes. The 4 `content/bit016-*` fixtures match their manifest line and element |
+| A missing `Operator` gives a `ParsedPolicy` with that field marked missing and no BIT002 (#2) | CHK-M7-054 | PASS: plugin 2 of 3 missing `Operator`, or `ExpectedResult`, or both; only that field is None. `bit010-missing` and `bit011-missing` give no finding. An `ExpectedResult` placed before `Operator` is still BIT002 |
+| BIT002 masks BIT003, BIT016, BIT102; BIT001 stops before the structure check | CHK-M7-056 | PASS: `plus-bit003`, `plus-bit016`, `plus-bit102` give only BIT002; a BIT002 fault with `formatVersion="9"` gives only BIT002; a not-well-formed file gives only BIT001 |
+| Comments never part of a value | CHK-M7-057 | PASS: comments inside `PolicyName` and between CDATA parts of `Execute` are absent from every value; `valid/comments.bit` |
+| Messages (#105 (g)) | — | PASS: a 300-character unknown name is quoted cut to 64 characters, the message stays under 160, and the element is the container path. A bad attribute on plugin 3's `Execute` gives `Policy/PluginsGroups/Plugin[3]/Execute…` at that line |
+
+#### Plants (throwaway copies `%TEMP%\m7b-mut\<id>`, copy imported first through `PYTHONPATH`, asserted)
+
+Control copy: ruff clean; `pytest tests/test_bit_structure.py` green.
+
+| Plant | Change | Red tests |
+| --- | --- | --- |
+| CHK-M7-334 | a BIT002 other than "missing" still returns a `ParsedPolicy` (content rules would run) | `test_bit002_fixture_…` (attr-on-leaf, child-in-leaf, …) and every `parsed is None` row for those faults |
+| extra | order check removed | `order-*` fixtures, swap rows |
+| extra | duplicates allowed | `duplicate-*` fixtures, duplicate rows |
+| extra | `PluginDescription` optional | missing-PluginDescription fixture and row |
+| extra | `Operator` no longer optional | `bit010-missing`, missing-operator-plus-faults, #2 rows |
+| extra | empty `PluginsGroups` allowed | empty / self-closing fixtures and rows, miscased-plugin |
+| extra | container text check uses `str.strip()` (Unicode) | the `&#160;` row |
+| extra | unknown attributes on `Plugin` allowed | unknown-attr-plugin fixture and row |
+| extra | children in leaves allowed | child-in-leaf fixture and 9 rows |
+| extra | first PI ignored | PI fixtures and rows |
+| extra | root name compared case-insensitively | survived at first: the root's `formatVersion` attribute then failed as unknown, masking it. I added `test_miscased_root_without_attributes_is_bit002` (3 params), and the plant is now red |
+| extra | BIT016 on a stripped value | ` 1.0`, `1.0 ` rows |
+| extra | BIT016 returns no `ParsedPolicy` | the 4 bit016 fixtures through the content-fixture test, `test_bit016_fixtures` |
+| extra | unknown children of `PluginsGroups` ignored | miscased-plugin, `<Group/>` row |
+
+All 15 plants are red (one after the added test).
+
+#### Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-050 | CODE | L, W | `pytest -q tests/test_bit_structure.py -k "sr_example or raw or valid_and_content or frozen or document_order"` | PASS | raw values, lines and paths; 90 fixtures pass | 2026-10-27 |
+| CHK-M7-051 | CODE | L, W | `pytest -q tests/test_bit_structure.py -k "missing_required or missing_container"` | PASS | 10 rows, BIT002 at the parent's line with the path | 2026-10-27 |
+| CHK-M7-052 | CODE | L, W | `pytest -q tests/test_bit_structure.py -k "duplicate or swap or second_family"` | PASS | 10 + 9 + 1 rows | 2026-10-27 |
+| CHK-M7-053 | CODE | L, W | `pytest -q tests/test_bit_structure.py -k "bit002_fixture or case or root or empty_plugins or unknown or text or leaf or processing or namespace or xml_prefixed"` | PASS | all 50 bit002 fixtures; namespaces one BIT002 | 2026-10-27 |
+| CHK-M7-054 | CODE | L, W | `pytest -q tests/test_bit_structure.py -k "missing_operator or missing_both or missing_fixtures or expected_before"` | PASS | field None, no BIT002 | 2026-10-27 |
+| CHK-M7-055 | CODE | L, W | `pytest -q tests/test_bit_structure.py -k "format_version or bit016"` | PASS | 7 values BIT016 with ParsedPolicy; absent / 1.0 pass | 2026-10-27 |
+| CHK-M7-056 | CODE | L, W | `pytest -q tests/test_bit_structure.py -k "masks or only_bit002 or bit001_stops"` | PASS | only BIT002 / only BIT001 | 2026-10-27 |
+| CHK-M7-057 | CODE | L, W | `pytest -q tests/test_bit_structure.py -k comments` | PASS | comments never in a value | 2026-10-27 |
+| CHK-M7-334 | CODE | L | plant: ParsedPolicy kept with non-"missing" BIT002 | PASS (red) | bit002 fixture rows failed | 2026-10-27 |
+
+### TASK-144
+
+Tester: tester-m7c, 2026-10-27 (re-run in the cloud container; the first tester's report and plants were lost with the user's machine). REQ-152, REQ-153, REQ-154, REQ-155, REQ-180. Spec: SR §2.1–§2.4, §3.3, §3.5, §4, §4.1; answers #2, #13, #16, #17, #105 (e), (g), #109, #110. Checks CHK-M7-065 to -077 and mutation rows CHK-M7-326, -348 (tests/m7/test-plan.md). Test file: `manager/tests/test_bit_validate.py`. Implementation: `manager/bitscan_manager/services/importer/validate.py` (impl report `work/reports/TASK-144-impl.md`).
+
+C = Linux cloud container, Ubuntu 24.04.5, 4 cores, CPython 3.12.3, venv `manager/.venv` (pytest 9.1.1, xdist 3.8.0, hypothesis 6.170.2, google-re2 1.1.20251105, defusedxml 0.7.1), `CI=true`. PostgreSQL is not needed for this task: it is unit-only, and no check here uses it. Plants in the scratch copy `/tmp/claude-0/-home-user-Bitscan/b599402a-f9ea-53d5-b7c7-db1b3aca2d92/scratchpad/mut` (manager, bits, docs), imported first through `PYTHONPATH`, with a 2251/2251 control run; product files in the main checkout never edited.
+
+#### Runs
+
+| Run | Where | Command | Count |
+| --- | --- | --- | --- |
+| r0 (as found) | C | `pytest -q -p no:cacheprovider tests/test_bit_validate.py` | 687/687 passed, 0 failed, 0 errors, 0 skipped (matches the lost run) |
+| r1 (final, with the added test) | C | same | 689/689 passed, 0 failed, 0 errors, 0 skipped |
+| dependents | C | `pytest -q tests/test_bit_fixtures.py tests/test_bit_fuzz.py` | 231/231 passed, 0 skipped |
+| importer unit neighbours | C | `pytest -q tests/test_bit_parse.py tests/test_bit_structure.py tests/test_bit_values.py tests/test_bit_model.py` | 744/744 passed, 0 skipped |
+| load | C | full manager suite, `pytest -n 8` on 4 cores, 3 times (PostgreSQL tests not run: no Docker image, see TASK-145 report) | 8143/8143, 8145/8145, 8147/8147 passed, 0 failed |
+| static | C | `ruff check manager`; `ruff format --check manager`; `mypy --strict --config-file manager/pyproject.toml manager` (repo root) | clean; 276 files formatted; mypy: no issues in 276 source files |
+
+#### Test added (tester-owned; does not weaken anything)
+
+`test_missing_element_at_the_plugin_line_sorts_before_later_lines[Operator-BIT010, ExpectedResult-BIT011]` (REQ-155 (5)). Plant `V-unsorted` (findings not sorted by line) **survived** the 687 tests as found. Sorting only matters when a missing `Operator`/`ExpectedResult` (reported at the `<Plugin>` line, #2) follows a finding at a later line of the same plugin. No fixture or test built that case. The new test expects exactly `[(BIT010|BIT011, Plugin line), (BIT101, PluginName line), (BIT004, PluginId line)]`, and the plant is now red (2 failed).
+
+#### Acceptance criteria (tasks.md TASK-144)
+
+| Criterion | Check | Result |
+| --- | --- | --- |
+| One fixture per code gets exactly that code with its line and path | CHK-M7-065 | PASS: 90 content and valid fixtures; code set, first-finding line and element path equal the manifest for BIT003, 004, 005, 008, 010–014, 016, 017, 101, 102, 103 |
+| SR §1.1 example: no finding, and a `Candidate` equal to the expected normalised values | CHK-M7-066 | PASS: name and line 3, description, `enabled`, family, `1.0`, uuid, line 13, plugin name, `control_ref` `1.3.1.1`, Execute exactly the SR text and its SHA-256, `equals`, `install ok installed`, 30 s; `RuleKeys` with `RuleId(uuid, 13, 1)` |
+| REQ-152 (1) bound table | CHK-M7-067 | PASS: each length at its limit accepted and +1 refused (BIT017 with its path; BIT008 for `Execute` at 16,384/16,385), counted in characters with `é` (bytes ≠ characters); trimmed first (#17), U+00A0 not trimmed; whitespace-only names and `Execute` count as empty; descriptions may be empty |
+| Enums | CHK-M7-068 | PASS: `ENABLED`, `Disabled` and ` disabled\n` stored lowercase; `on`, empty, fullwidth, `enabled ` (inner), `disabled;` → BIT003 at line 5; `EQUALS` → `equals`; `equal`, `==`, fullwidth → BIT010 at line 17; all 14 operators accepted |
+| BIT004 / BIT005 | CHK-M7-069 | PASS: uppercase, braces, `urn:uuid:`, 32-hex, short, empty → BIT004 at line 13 with no `RuleId`; padded id trimmed; a third use of an id gives BIT005 on the 2nd and 3rd uses at their `PluginId` lines; `RuleKeys` holds the first use only |
+| Timeout table (REQ-152 (5)) | CHK-M7-070 | PASS: `1`, `600`, `0600`, `00001`, 4,001-digit zero-padded `7` accepted; absent → 60; `0`, `601`, `30s`, `1.5`, `-1`, `+5`, ` 30`, `30 `, empty, Arabic-Indic, fullwidth, `0x1e`, `1e2`, `6000`, `00`, 5,000 nines, `1_0` → BIT017 at `Execute/@timeout` |
+| 5,000 plugins pass, 5,001 BIT017 | CHK-M7-071 | PASS: 5,000 → candidate with 5,000 plugins and ids; 5,001 → BIT017 at `Policy/PluginsGroups` (pipeline stops it in the parser; `validate`'s own rule on a built `ParsedPolicy`) |
+| Missing `Operator` / `ExpectedResult` (#2) | CHK-M7-072 | PASS: BIT010 for `Plugin[2]/Operator` at the plugin line plus the file's BIT003; BIT011 at line 10; a missing `Operator` gives no BIT014 |
+| BIT012 / BIT013 / BIT014 | CHK-M7-073 | PASS: 11 non-numbers × 6 numeric operators → BIT012; 6 numbers pass; 6 non-RE2 patterns × `regex` and `not_regex` → BIT013 (RE2 helper, never `re`); a valid RE2 pattern passes; BIT014 in both directions (9 rows) |
+| A file with three faults gets all three in line order and no `Candidate` | CHK-M7-074 | PASS: `three-faults.bit` → BIT003, BIT004, BIT012 at 6, 14, 25; every fixture sorted by line; same-line rule order kept; new missing-element ordering test |
+| Warnings have Warn severity and never reject | CHK-M7-075 | PASS: warnings-only file has a candidate, BIT101 and BIT103 both `Severity.WARN`, `rejects` false; listed next to an error |
+| Messages (#105 (g)) | CHK-M7-076 | PASS: ≤ 64 characters of value, a 16,384-char value never whole, control characters escaped; exactly the four JSON keys for every fixture |
+| No retired code | CHK-M7-077 | PASS: across every fixture |
+| `RuleKeys` always built; `Candidate` only without Reject | CHK-M7-066, -074 | PASS: rule keys built on a rejected file, `policy_name` None when it fails BIT017; `Validated` frozen; input not mutated |
+| No `import re` | CHK-M7-348 | PASS: AST test and ruff TID251 |
+
+CHK-M7-334 (BIT001/BIT002 failure still runs the content rules) is shared with TASK-143: `validate()` only accepts a `ParsedPolicy`, so TASK-144 has no code path to plant. The stop is in `structure.check` (TASK-143, its plant red there) and in `import_one` (TASK-154). **NOT RUN here** for that reason.
+
+#### Plants (scratch copy; each anchor asserted to occur once, file restored after)
+
+Tests run per plant: `tests/test_bit_validate.py tests/test_bit_fixtures.py` (916 tests), `-n 4`.
+
+| Plant | Change | Result |
+| --- | --- | --- |
+| CHK-M7-326 | BIT013 only for `regex` (skipped for `not_regex`) | red, 8 failed |
+| CHK-M7-348 (G1) | `import re` in `validate.py` | red: `ruff check` TID251 "`re` is banned" (still red with `# noqa: F401`) |
+| CHK-M7-348 (AST) | same, ruff silenced with `# noqa: F401, TID251` | red, 1 failed (`test_validate_module_imports_no_re`) |
+| V-len-off1 | length limit +1 | red, 14 |
+| V-len-bytes | length counted in UTF-8 bytes | red, 12 |
+| V-notrim | values not trimmed before the length check | red, 20 |
+| V-bit003-case | `PolicyStatus` case-sensitive | red, 5 |
+| V-bit003-off | BIT003 removed | red, 19 |
+| V-bit004-off | UUID form not checked | red, 32 |
+| V-bit005-off | duplicate ids allowed | red, 2 |
+| V-bit008-empty | empty `Execute` allowed | red, 5 |
+| V-bit008-max | `Execute` limit 16,385 | red, 2 |
+| V-timeout-max | timeout up to 6,000 | red, 2 |
+| V-timeout-min0 | timeout 0 allowed | red, 7 |
+| V-timeout-trim | `@timeout` trimmed | red, 3 |
+| V-timeout-default | absent timeout → 30 | red, 1 |
+| V-bit010-case | `Operator` case-sensitive | red, 4 |
+| V-bit010-missing | missing `Operator` not reported | red, 5 |
+| V-bit011-missing | missing `ExpectedResult` not reported | red, 3 |
+| V-bit012-off | BIT012 removed | red, 74 |
+| V-bit013-off | BIT013 removed | red, 16 |
+| V-bit014-oneway | BIT014 only for empty/not_empty with a value | red, 6 |
+| V-5001 | plugin cap 5,001 | red, 1 |
+| V-unsorted | findings not sorted by line | red, 2 (survived before the added test) |
+| V-first-only | only the first finding kept | red, 12 |
+| V-bit101-off | BIT101 never raised | red, 12 |
+| V-bit103-off | BIT103 never raised | red, 4 |
+| V-candidate-on-reject | `Candidate` built despite a Reject | red, 15 |
+| V-exec-untrimmed | `Execute` stored and hashed untrimmed | red, 6 |
+| V-msg-unquoted | values put in messages raw (no `quote`) | red, 2 |
+| V-rulekeys-dup | duplicate id kept in `RuleKeys` | red, 1 |
+| V-rulekeys-name | invalid `PolicyName` kept in `RuleKeys` | red, 1 |
+
+**32/32 red** (one after the added test).
+
+#### Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-065 | CODE | C | `pytest -q tests/test_bit_validate.py -k "fixture_codes or every_content_code"` | PASS | 90 fixtures match the manifest | 2026-10-27 |
+| CHK-M7-066 | CODE | C | `pytest -q tests/test_bit_validate.py -k "sr_example or format_version or nbsp"` | PASS | no finding; candidate fields and `RuleId` exact | 2026-10-27 |
+| CHK-M7-067 | CODE | C | `pytest -q tests/test_bit_validate.py -k "length or trimmed or whitespace or execute_bound"` | PASS | 6 bounds at/over in characters; BIT008 at 16,385 | 2026-10-27 |
+| CHK-M7-068 | CODE | C | `pytest -q tests/test_bit_validate.py -k "policy_status or operator"` | PASS | lowercase storage; BIT003 line 5, BIT010 line 17 | 2026-10-27 |
+| CHK-M7-069 | CODE | C | `pytest -q tests/test_bit_validate.py -k "plugin_id or duplicate"` | PASS | 7 BIT004 forms; BIT005 on each later use | 2026-10-27 |
+| CHK-M7-070 | CODE | C | `pytest -q tests/test_bit_validate.py -k timeout` | PASS | 7 accepted, 18 refused, absent 60 | 2026-10-27 |
+| CHK-M7-071 | CODE | C | `pytest -q tests/test_bit_validate.py -k "5000 or 5001"` | PASS | 5,000 pass; 5,001 BIT017 | 2026-10-27 |
+| CHK-M7-072 | CODE | C | `pytest -q tests/test_bit_validate.py -k missing` | PASS | BIT010/BIT011 at the plugin line | 2026-10-27 |
+| CHK-M7-073 | CODE | C | `pytest -q tests/test_bit_validate.py -k "numeric or regex or re2 or bit014"` | PASS | 66 + 36 + 12 + 2 + 9 rows | 2026-10-27 |
+| CHK-M7-074 | CODE | C | `pytest -q tests/test_bit_validate.py -k "faults or sorted or rule_order or plugin_line"` | PASS | 3 faults in line order; new ordering test | 2026-10-27 |
+| CHK-M7-075 | CODE | C | `pytest -q tests/test_bit_validate.py -k "warning or control_ref"` | PASS | Warn severity, never rejects | 2026-10-27 |
+| CHK-M7-076 | CODE | C | `pytest -q tests/test_bit_validate.py -k "messages or control_characters or long_execute or four_keys"` | PASS | ≤ 64 chars, escaped, four keys | 2026-10-27 |
+| CHK-M7-077 | CODE | C | `pytest -q tests/test_bit_validate.py -k retired` | PASS | no retired code in any fixture | 2026-10-27 |
+| CHK-M7-334 | CODE | — | — | NOT RUN | no TASK-144 code path: `validate()` takes only a `ParsedPolicy`; the stop is planted at TASK-143 (red) and at TASK-154 | 2026-10-27 |
+| CHK-M7-326 | CODE | C | plant: BIT013 skipped for `not_regex` | PASS (red) | 8 failed | 2026-10-27 |
+| CHK-M7-348 | CODE | C | plant: `import re` in `validate.py`; `ruff check` | PASS (red) | TID251; AST test 1 failed with ruff silenced | 2026-10-27 |
+| CHK-M7-144-extra | CODE | C | 30 further plants (table above) | PASS (red) | 30/30 red | 2026-10-27 |
+| static | CODE | C | ruff, ruff format, mypy (CI form) | PASS | clean, 276 files | 2026-10-27 |
+
+Verdict: **PASS**. 689/689 passed, 0 failed, 0 errors, 0 skipped. Plants: 32/32 red.
+
+### TASK-145
+
+Tester: tester-m7c, 2026-10-27 (re-run in the cloud container; the first tester's report and plants were lost). REQ-156; #108 (c), (h), (j). Spec: SR §4.2 (SR L277, L285, L287); POSIX XCU §2.3, §2.6.3, §2.7, §2.10; design note D2 and `work/plans/TASK-145.md` §5. Checks CHK-M7-100 to -102 and -112; mutation rows CHK-M7-332 (lexer half) and -387. Test file: `manager/tests/test_bit102_lexer.py`. Implementation: `shlex_model.py`, `shlex_grammar.py`, `shlex_posix.py` under `manager/bitscan_manager/services/importer/` (impl report `work/reports/TASK-145-impl.md`).
+
+C is as in `work/reports/TASK-144-test.md` (Ubuntu 24.04.5 container, 4 cores, CPython 3.12.3, `manager/.venv`, `CI=true`). Unit-only; no PostgreSQL needed. Plants are in the same scratch copy, imported first through `PYTHONPATH`.
+
+#### Runs
+
+| Run | Where | Command | Count |
+| --- | --- | --- | --- |
+| r0 (as found) | C | `pytest -q -p no:cacheprovider tests/test_bit102_lexer.py` | 173/173 passed, 0 failed, 0 errors, 0 skipped (matches the lost run) |
+| r1 (final) | C | same | 175/175 passed, 0 failed, 0 errors, 0 skipped |
+| dependents | C | `pytest -q tests/test_bit102.py` (BIT102 runs on the lexer) | 1177/1177 passed |
+| load | C | full manager suite `pytest -n 8` on 4 cores, 3 times | 8143/8143, 8145/8145, 8147/8147 passed, 0 failed |
+| load + 12 CPU burners | C | `pytest -n 8 tests/test_bit_parse.py tests/test_bit102_lexer.py tests/test_bit102.py tests/test_bit_validate.py`, 3 rounds | 2317/2317 passed each round |
+| static | C | ruff, ruff format, `mypy --strict --config-file manager/pyproject.toml manager` | clean; 276 files |
+
+The load runs used no `CI=true`. With `CI=true` the PostgreSQL fixtures error, because the Docker image build cannot reach the Debian apt hosts (`docker.errors.BuildError` on `apt-get install postgresql-16-debversion`): 6491 passed, 1652 errors, all of them PostgreSQL setup. None of this task's tests use PostgreSQL.
+
+#### Test added (tester-owned)
+
+`test_param_and_arith_count_toward_depth_8[param, arith]` (REQ-156 "nesting deeper than 8"). As built, `${…}` and `$((…))` count toward `MAX_DEPTH` like `$( )` (impl report, accepted by the lead), so no form nests without a bound. Plant `L-scan-depth` (that count removed) **survived** the 173 tests as found. The new test checks that 7 wrappers plus a `$( )` lex with `rm` found, and that 8 wrappers plus the `$( )` raise. It also checks 8 plain wrappers pass and 9 raise. The plant is now red (2 failed).
+
+#### Acceptance criteria (tasks.md TASK-145, REQ-156)
+
+| Criterion | Check | Result |
+| --- | --- | --- |
+| A table of at least 60 inputs gives the expected tokens | CHK-M7-100 | PASS: 85-row table (command words and nested scripts at each depth), plus quoting (`echo "rm -rf /"` one `dq` argument; `r''m`, `\rm`, `"r"m` → `rm`), word boundaries, assignments, 15 redirection rows (fd, op, target), the SR §1.1 command, quoted here-document body as data and unquoted body scanned, CRLF `\r` literal, line counts, `for`/`case`/function names as data words, reserved words only in command position |
+| Unterminated quotes or substitutions and 9-deep nesting raise the fail-closed error | CHK-M7-101 | PASS: 34 fail-closed inputs (incl. `'`, `"`, `$(`, backtick, `${`, here-document, `)`, `fi`, `if x; then y`, `; rm`, NUL, `$((1)`) raise `ShellSyntaxError` with a line and quote no input; 8 nested `$(`, `<(`, `>(`, backticks accepted, 9 refused; mixed nesting; `depth=` argument; new param/arith depth test |
+| Random strings up to 16,384 characters raise nothing else, within 100 ms each | CHK-M7-112 | PASS: 3,000 shell-soup and 1,000 random-text Hypothesis examples, 60 inputs repeated to 16,384 chars, 10 pathological 16,384-char inputs; each under 100 ms of thread CPU time (best of 5 only when the first try is over) |
+| The module imports nothing that executes | CHK-M7-102 | PASS: AST of all three files: no `subprocess`, `os`, `shlex`, `re`, `regex`, `pty`, `ctypes`, `multiprocessing`, `importlib`, `runpy`, `code`, `socket`; no `eval`/`exec`/`compile`/`__import__`/`open` calls; no `system`/`popen`/`exec*`/`spawn`; `test_lexer_runs_nothing` with those patched to raise |
+
+#### Plants (scratch copy; tests run: `tests/test_bit102_lexer.py tests/test_bit102.py`, 1352 tests, `-n 4`)
+
+| Plant | Change | Result |
+| --- | --- | --- |
+| CHK-M7-332 (lexer half) | `lex` returns an empty `Script` on `ShellSyntaxError` and on NUL (fail open) | red, 58 failed (TASK-146's corpus included, as the plan requires) |
+| CHK-M7-387 | `$( )`, `<( )`, `>( )` keep no nested script | red, 192 |
+| L-backtick | backticks keep no nested script | red, 35 |
+| L-heredoc-unscanned | unquoted here-document bodies not scanned | red, 34 |
+| L-heredoc-quoted-scanned | quoted bodies scanned as code (over-detection) | red, 6 |
+| L-maxdepth9 | `MAX_DEPTH` 9 | red, 10 |
+| L-scan-depth | `${…}`/`$((…))` not counted toward depth | red, 2 (survived before the added test) |
+| L-scan-noscripts | `${…}`/`$((…))` drop their substitutions' scripts | red, 32 |
+| L-sq-unterminated | an unterminated `'` runs to the end | red, 4 |
+| L-dq-unterminated | an unterminated `"` accepted | red, 3 |
+| L-reserved-anywhere | reserved words recognised outside command position | red, 1 |
+| L-forlist-dropped | `for`/`case` list words dropped (substitutions hidden) | red, 6 |
+| L-escape-lit | `\x` kept as a literal part (so `\if` is a keyword) | red, 1 |
+| L-lines | line numbers off by one | red, 2 |
+| L-unbalanced-paren | a stray `)` ignored | red, 3 |
+| L-assign-not-kept | assignments treated as command words | red, 11 |
+| L-quadratic | `line()` rescans the source in Python per token (super-linear) | red, 8 (best of 5 ≈ 1.95 s against 100 ms). A first form using C-speed `str.count` stayed under the bound; it is not a realistic regression, so the plant was made genuinely super-linear |
+
+**17/17 red** (one after the added test).
+
+#### Load-sensitive time bounds (main's known item)
+
+In the user's full `pytest -n 8` run, `test_bit_parse.py::test_35015_elements_is_bit002_bounded` (TASK-141) and `test_bit102_lexer.py::test_pathological_inputs_bounded[seps]` each failed once, and passed alone.
+
+Measurements (C, 4 cores):
+
+| Test | Bound and measure | Idle | 3× oversubscribed (12 burners on 4 cores) |
+| --- | --- | --- | --- |
+| `test_35015_elements_is_bit002_bounded` | 2.0 s, **wall clock** (`perf_counter`), tracemalloc on | 0.20–0.26 s (15 samples) | 0.20–**1.50 s** (15 samples) |
+| `test_pathological_inputs_bounded[seps]` | 100 ms, thread CPU time, best of 5 when the first try is over | 39–56 ms (30 samples) | 39–63 ms (30 samples, 0 over 100 ms) |
+
+Repeated runs: neither test failed in 3 full-suite `-n 8` runs, nor in 3 rounds of the four importer test files under `-n 8` with 12 burners.
+
+Diagnosis:
+- **The parse bound is load-sensitive.** It measures wall time, so time spent waiting for a core counts. Under 3× oversubscription one run took 1.5 s, 7.5× its idle time. On a slower machine shared with other agents, more than 2 s is plausible, which explains the failure.
+- **The lexer bound is not scheduler-sensitive.** It measures the thread's CPU time and takes the best of 5. Here it never exceeded 63 ms, even single-shot under load. The bound is the REQ-156 (4) acceptance figure (100 ms), so I did not raise it.
+- The margin on `seps` is still about 2× (impl report: 52 ms worst on the user's Windows box). The one failure there was likely CPU contention: an SMT sibling or frequency drop lowers per-thread throughput, which CPU time does not hide.
+
+Changes (tester-owned test files; nothing weakened):
+1. `manager/tests/test_bit_parse.py` `_measure` (TASK-141's test): the elapsed time is now `time.thread_time()` (this thread's CPU time) instead of `time.perf_counter()`, with the same 2.0 s bound and the same tracemalloc peak. It applies to every `_measure` user (bombs, 5 MiB file, 5 MiB element, 35,015 elements).
+   - The parser is single-threaded, so expat and the collector are all counted; only waiting for a core is not.
+   - Proof it still catches a slow parser: plant `P-quadratic-collector` (per start tag, Python work proportional to the elements seen so far) is red, `test_35015_elements_is_bit002_bounded` 1 failed.
+2. `manager/tests/test_bit102_lexer.py` `_bounded`: diagnostics only. The assertion now reports the five measured times in ms. The bound, the measure and the best-of-5 rule are unchanged. Plant `L-quadratic` is still red.
+
+Recommendation: keep both bounds as they now are. If `seps` fails again on the user's machine, the message now gives the five times. If they are all just over 100 ms with no super-linear growth, the fix is a decision on the REQ-156 (4) figure for loaded developer machines, which is for main and the user. It is not a test change: retrying until green is not allowed. Note for TASK-141: its report should cite this change to `_measure`.
+
+#### Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-100 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "table or command_words or quoted or escaped or boundaries or assignments or redirections or digits or sr_example or heredoc or crlf or lines or function or reserved"` | PASS | 85-row table and the plan §5 row 1 shapes | 2026-10-27 |
+| CHK-M7-101 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "fail_closed or unlexable or depth or nested or mixed"` | PASS | 34 inputs raise with a line; 8 accepted, 9 refused for `$(`, `<(`, `>(`, backticks, `${`, `$((` | 2026-10-27 |
+| CHK-M7-102 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "imports_nothing or runs_nothing"` | PASS | AST clean in 3 files | 2026-10-27 |
+| CHK-M7-112 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "random or long_inputs or pathological"` | PASS | 4,060 generated + 10 pathological inputs, each < 100 ms CPU | 2026-10-27 |
+| CHK-M7-332 | CODE | C | plant: lexer errors swallowed (empty `Script`) | PASS (red) | 58 failed incl. the TASK-146 corpus | 2026-10-27 |
+| CHK-M7-387 | CODE | C | plant: `$( )` recursion dropped | PASS (red) | 192 failed | 2026-10-27 |
+| CHK-M7-145-extra | CODE | C | 15 further plants (table above) | PASS (red) | 15/15 red | 2026-10-27 |
+| CHK-M7-112-load | CODE | C | 3 × full suite `-n 8`; 3 × importer files `-n 8` + 12 burners | PASS | both named tests green every time; measurements above | 2026-10-27 |
+| static | CODE | C | ruff, ruff format, mypy (CI form) | PASS | clean, 276 files | 2026-10-27 |
+
+Verdict: **PASS**. 175/175 passed, 0 failed, 0 errors, 0 skipped. Plants: 17/17 red. Changed: `test_bit102_lexer.py` (added test; bound message) and `test_bit_parse.py` (`_measure` uses CPU time).
+
+---
+
+### TASK-145 TEST (revision 1 and 1b): PASS
+
+Tester: tester-m7d, 2026-10-27. Code under test: `0529083` (r1 at `8173527`, plus r1b, which makes the function-definition removal linear). Impl report: `work/reports/TASK-145-impl.md` "Revision 1" and "Revision 1b". Review being answered: `work/reviews/TASK-145.md` findings 1 (blocking), 2 (should-fix) and 3 (nit). Spec: SR §4.2 L277 and L287; TS §3.3 L249 (`/bin/sh -c` is dash); POSIX XCU §2.7.4; REQ-156 (4).
+
+Environment C: cloud container, Ubuntu 24.04, 4 cores, `manager/.venv`, dash 0.5.12-6ubuntu5, bash 5.2.21. Unit-only; no PostgreSQL. Plants were made in the scratch copy `scratchpad/mut`, which was refreshed from the working tree. A control run first proved that the copy is the code imported: a marker planted in the copy raised on import through `PYTHONPATH`.
+
+#### Runs
+
+| Run | Command (from `manager/`) | Count |
+| --- | --- | --- |
+| as found (r1, before my rows) | `pytest -q -p no:cacheprovider -n 4` on the six files | 2548/2548 passed |
+| r1 + my rows | `pytest -q tests/test_bit102_lexer.py -k pathological` | 10/14 passed, **4 failed** (`fndefs*`, see the finding below) |
+| re-run, failing rows only, after r1b | the 4 node ids `test_pathological_inputs_bounded[fndefs]`, `[fndefs-nl]`, `[fndefs-true]` and `[fndefs-hypothesis]` | 4/4 passed |
+| final (`0529083`) | `pytest -q -p no:cacheprovider tests/test_bit102_lexer.py` | 230/230 passed, 0 failed, 0 errors, 0 skipped |
+| final, six files, 3 runs | `pytest -q -p no:cacheprovider -n 4 tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py tests/test_bit_parse.py tests/test_bit_validate.py` | 2981/2981 passed, 3 times |
+| static (repo root) | `ruff check manager`; `ruff format --check manager`; `mypy --strict --config-file manager/pyproject.toml manager` | clean; 278 files |
+
+#### Finding (product, fixed in r1b): the lexer was quadratic on function definitions (REQ-156 (4))
+
+- **How it was found.** Hypothesis found it in `test_long_inputs_up_to_16384_chars`, with `unit='{{\nrm()'` repeated to 16 KB. The example was stored in the scratch copy's `.hypothesis` database, and from then on the test failed every run there.
+- **Cause.** `cmds.remove(cur)` in the `NAME ( )` branch of `shlex_grammar.py` ran the dataclass `__eq__` against every earlier command. cProfile: 2.74 M `__eq__` calls, 0.58 s of 0.68 s.
+- **Timings before the fix**, `lex()`, best-of-3 thread CPU time, at 4 K / 8 K / 16 K chars:
+  - `x;f(){ :;};`: 53 / 200 / **774 ms**;
+  - `a\nf()\n:\n`: 37 / 134 / 533 ms;
+  - `true\nf() { :; }\n`: 13 / 41 / 140 ms;
+  - `{{\nrm()`: 24 / 87 / 326 ms.
+
+  `150bcd3` timed the same, so this predates r1. The r0 PASS was a test gap: no fixed input had many function definitions.
+- **After r1b**, `cmds.pop()` behind an identity check that raises (fail closed): 34 ms and 26 ms at 16 K for the first and last forms.
+- **Pins.** Four fixed rows were added to `test_pathological_inputs_bounded`. They make the bound deterministic, without relying on Hypothesis finding the input again.
+
+#### Tests added (tester-owned; nothing weakened)
+
+- `bits/tests/bit102/must_reject.json` gets 38 TASK-145 rows, `rule` starting `145r1`:
+  - the 10 review here-document forms, each with `rm -rf /x` and with `rm x`;
+  - two levels (`$(echo $(⏎…))`), a backtick inside `$( )`, two here-documents, `<<-`, and a flock `-c` script;
+  - a substitution on the here-document line with no newline inside it;
+  - `coproc rm x` and 9 `bash -c 'coproc …'` forms;
+  - the nit `>/etc/x f() { :; }`, and `f() { :; } >/etc/x; f`.
+- `must_pass.json` gets the 6 forms the shells read normally: `cat <<E $(date)` (the old false positive), `x=$(cat <<E⏎body⏎E⏎)`, `cat <<E⏎$(⏎date⏎)⏎E`, backticks in a body, `( cat <<E )`, and a quoted body inside `{ }`. It also gets `bash -c 'coproc cat /etc/x'`, `coproc NAME { … }` and `f() { cat /x; }; f`.
+- `manager/tests/test_bit102_lexer.py`:
+  - `test_heredoc_pending_across_a_substitution_newline_fails_closed` (13), which asserts the exact reason;
+  - `test_heredoc_forms_the_shells_read_normally` (7);
+  - `test_coproc_command_words` (10) and `test_coproc_name_is_a_data_word_and_assignment_kept`;
+  - `test_redirection_before_a_function_definition_fails_closed`;
+  - the 4 `fndefs` rows in `test_pathological_inputs_bounded`;
+  - `test_time_keyword_or_command` (6) and `test_prompt_and_escape_transforms_fail_closed` / `test_quoted_or_other_transforms_lex`, which are for TASK-146 r2 but live in the lexer file.
+
+#### Real-shell confirmation (scratch `sh146/shellprobe.py`; `rm` replaced by `echo RAN`, run in a fresh temp dir under the scratchpad)
+
+| Rows | Result |
+| --- | --- |
+| Here-document forms (`$( )`, `<<E`, `"$( )"`, `; echo $( )`, `${x:-$( )}`, backticks, two levels, backtick in `$( )`, two here-documents, `<<-`, flock `-c`) | dash runs the inner line (prints RAN, then `E: not found`) in every form |
+| `<( )`, `>( )` | bash runs it; dash has no process substitution |
+| `$(($( ⏎…)))` | dash runs it; RAN shown on stderr (stdout is used up by the arithmetic) |
+| `x=$(cat <<'E' $(⏎…⏎E⏎)⏎)` | dash and bash give a syntax error and nothing runs; the refusal is fail closed |
+| coproc: 9 `bash -c` forms, and `coproc rm x` under bash | bash runs the command (RAN on stderr). dash has no coproc keyword, so the top-level row is over-detection, which is allowed |
+| `>/etc/x f() { :; }` | dash: `Syntax error: "(" unexpected`; nothing runs |
+| `f() { :; } >FILE; f` | dash creates FILE |
+
+#### Plants (scratch copy; tests `tests/test_bit102.py tests/test_bit102_lexer.py`, `-n 4`)
+
+| Plant | Change | Result |
+| --- | --- | --- |
+| L1-heredoc-depth | the depth test removed from the newline check (`if self.outer:`) | red, 34 |
+| L1-backtick-outer | backticks no longer get `outer=` | red, 6 |
+| L1-coproc-reserved | `coproc` not reserved | red, 21 |
+| L1-coproc-name-dropped | `coproc NAME` not kept as a data word | red, 1 |
+| L1-fn-redirect-dropped | the raise for a redirection before `NAME ( )` removed | red, 2 |
+| L1-close-paren-any-pending | the r0 `)` rule (any pending here-document) | red, 4 (incl. must-pass `cat <<E $(date)`) |
+| L1b-fndef-remove-by-eq | `cmds.remove(cur)` back (quadratic) | red, 5 (the 4 `fndefs` rows and `test_long_inputs`) |
+
+**7/7 red.**
+- The grammar plants were re-run on `0529083`.
+- The two shlex_posix plants were run on `8173527`; r1b does not touch that file.
+- In the first plant pass, `test_long_inputs_up_to_16384_chars` also failed, because of the stored quadratic example described above. Every plant also had a red test of its own, and the counts above leave that extra failure out.
+
+#### Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-100 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "heredoc_forms or coproc or time_keyword or transforms_lex"` | PASS | 7 + 11 + 6 + 5 rows | 2026-10-27 |
+| CHK-M7-101 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "across_a_substitution or redirection_before or transforms_fail_closed"` | PASS | 13 + 1 + 8 raise the fail-closed error | 2026-10-27 |
+| CHK-M7-112 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "pathological or long_inputs or random"` | PASS after r1b (FAIL at r1) | 4 `fndefs` rows: 774/533/140/326 ms → < 50 ms | 2026-10-27 |
+| CHK-M7-115 (145 rows) | CODE | C | `pytest -q tests/test_bit102.py -k must_reject` | PASS | 38 rows `145r1`, each with its token; real-shell: dash/bash run each hidden command (table above) | 2026-10-27 |
+| CHK-M7-145-r1-plants | CODE | C | `python plant2.py plants_r2_grammar.json` and the full `plants_r2.json` | PASS (red) | 7/7 | 2026-10-27 |
+| static | CODE | C | ruff, ruff format, mypy (CI form) | PASS | clean, 278 files | 2026-10-27 |
+
+Verdict: **PASS** (r1b). 230/230 passed in the lexer file; 2981/2981 passed across the six files, 3 times; 0 failed, 0 errors, 0 skipped. Plants: 7/7 red. Revision 1 alone was **FAIL** on REQ-156 (4); r1b fixes it.
+
+### TASK-146
+
+Tester: tester-m7c, 2026-10-27 (re-run in the cloud container; the first tester's report and plants were lost). REQ-157, REQ-177, REQ-180; #108 (a)–(k). Spec: SR §4.2 (SR L277–L287), §4.1 BIT102, §1.1; TS §3.7, §8.1. Rulings tested as written:
+- User, 2026-10-27: a non-literal command word passes, and only its nested scripts are checked.
+- Lead, 2026-10-27: apt, apt-get and systemctl verbs are refused anywhere among the literal arguments; `<>` is an output redirection; `env -S` is lexed.
+- The `stdbuf -io L` dispute is closed (`work/status.md`: the builder was right). The test uses `stdbuf -i0 -oL rm x`.
+
+Checks CHK-M7-115 to -121; mutation rows CHK-M7-327 to -332. Test file: `manager/tests/test_bit102.py`. Corpora: `bits/tests/bit102/must_reject.json` (149) and `must_pass.json` (96). Implementation: `manager/bitscan_manager/services/importer/bit102.py` (impl report `work/reports/TASK-146-impl.md`, revision 1).
+
+C is as in `work/reports/TASK-144-test.md`. Unit-only; no PostgreSQL needed. Plants are in the same scratch copy.
+
+#### Runs
+
+| Run | Where | Command | Count |
+| --- | --- | --- | --- |
+| r0 (as found) | C | `pytest -q -p no:cacheprovider tests/test_bit102.py` | 1160/1160 passed, 0 failed, 0 errors, 0 skipped (matches the lost run) |
+| r1 (final, with added tests) | C | same | 1177/1177 passed, 0 failed, 0 errors, 0 skipped |
+| dependents | C | `pytest -q tests/test_bit_validate.py` (runs `check_execute` on every fixture); `tests/test_bit_fixtures.py tests/test_bit_fuzz.py` | 689/689; 231/231 passed |
+| load | C | full suite `pytest -n 8`, 3 times | 8143/8143, 8145/8145, 8147/8147 passed |
+| static | C | ruff, ruff format, `mypy --strict --config-file manager/pyproject.toml manager` | clean; 276 files |
+
+#### Tests added (tester-owned; 17 cases, nothing weakened)
+
+- `test_wrapper_long_option_values_do_not_hide_the_command` (13). #108 (d) says "skipping its options". A long option with its value as the next word must not hide the command: `sudo --user root rm x`, `sudo --group adm`, `env --unset HOME`, `env --chdir /`, `nice --adjustment 5`, `ionice --class 3`, `stdbuf --output L`, `timeout --signal KILL 5`, `timeout --kill-after 1 5`, `chroot --userspec a:b /`, and `env --split-string 'rm x'`, `env -iS 'rm x'`, `env -iS'rm x'`.
+  - Plant `B-long-opt-value` (a long option's separate value not skipped) **survived** the 1160 tests as found. That is a #108 (d) bypass (`root` would be taken as the command, hiding `rm`).
+  - Now red (10 failed). The `-iS` rows also make the new plant `B-envS-cluster` red.
+- `test_sed_in_place_abbreviations` (4): `sed --in`, `--in-pl`, `--in-pl=.bak`, `-n --i`. SR §4.2 refuses `--in-place`, and GNU getopt accepts any unique prefix of it. Plant `B-sed-long-abbrev` (only the full `--in-place` matched) **survived**; it is now red (4 failed).
+
+The code already handled every added case (the impl report's r1 probes list them). The gap was in the tests only. No product bug.
+
+#### Acceptance criteria (tasks.md TASK-146)
+
+| Criterion | Check | Result |
+| --- | --- | --- |
+| Every must-reject case gets BIT102 with the offending token in its message | CHK-M7-115 | PASS: 149/149, each finding BIT102, Reject, at the caller's line and element, and the corpus token in a message |
+| Every simple command anywhere (pipelines, lists, subshells, substitutions, `-c` scripts) | CHK-M7-116 | PASS: 24 corpus cases × 27 contexts = 646 rows: `|`, `;`, `&&`, `||`, `&`, `( )`, `{ ; }`, `if`, `while`, `until`, `for`, `case`, function, `$( )`, backticks, `<( )`, `>( )`, `!`, assignment, `"$( )"`, `${x:-$( )}`, here-document, `bash -c`, `sh -c`, `dash -c`, `sudo`, `env`. Plus 10 substitutions in data words and input-redirection targets |
+| #108 matching (paths, `mkfs.*`, wrappers, assignments) | CHK-M7-117 | PASS: 66 forms (`/bin/rm`, `../../bin/rm`, `mkfs.ext4`, 13 wrappers with options, `FOO=1 rm`, `sed` clusters and `--in-place`, apt and systemctl verbs after option values, `dpkg --purge=x`); 11 short-cluster rows (r1 fix, incl. `stdbuf -i0 -oL rm x`); 13 + 4 added rows |
+| Redirections | CHK-M7-118 | PASS: 25 refused (incl. `/tmp/../etc/x`, `"$F"`, `$HOME/x`, `/tmpx`, `/tmp`, `&>`, `>&`, `<>`, `/dev/sda`, `/tmp/$(id -u)`); 18 pass (`/dev/null`, `/dev/stdout`, `/dev/stderr`, `/tmp/…`, `2>&1`, `>&2`, `>&-`, input forms, `<>/tmp/x`) |
+| Code-running forms | CHK-M7-119 | PASS: 36 rows: `.`, `source`, `eval`, `exec`, `xargs`, the 4 `find` actions, shells without `-c` (file, `-s`, stdin, `<`), `-c` with `$( )`, backticks, `<( )`, `${…$( )}`, here-document substitution, `-c` scripts checked (also through `-o pipefail`, `-ec`, `--`, nested `sh -c`), `env -S` forms, `sudo sh -c`, `busybox sh -c` |
+| No case of the must-pass corpus (the SR §1.1 `Execute` included) gets BIT102 | CHK-M7-120 | PASS: 96/96 corpus (first entry = the SR §1.1 `Execute`, extracted from the spec); all 32 `Execute`s in `bits/samples/` read through the real parser; 47 ruled and read-only forms (the lead's false-positive guards, the user's 6 non-literal forms, `command -v`/`-V`, here-document with a quoted delimiter, `sed -ei`, `sed -- -i`) |
+| Unlexable `Execute` is BIT102 (fail closed) | CHK-M7-121 | PASS: 13 unlexable inputs give exactly one "cannot be checked" BIT102; 10 nested `sh -c` levels fail closed |
+| Messages | — | PASS: the token as written (`r''m`, `"rm" (via "sudo")`); a 16,000-char target never whole, under 300 chars; `\x01` escaped; one finding per distinct offence, in order; 3,000-example fuzz never raises, each under 1 s CPU |
+
+Accepted residual risk (user decision 2026-10-27, `work/decisions.md`): `c=rm; "$c" -rf /` passes BIT102 and is tested as must-pass. The runner sandbox (TS §3.7, M10) is the control. This report notes it, as the decision asks.
+
+#### Plants (scratch copy; tests run: `tests/test_bit102.py tests/test_bit_validate.py`, 1866 tests, `-n 4`)
+
+Security rows (tasks.md mutation table):
+
+| Plant | Change | Result |
+| --- | --- | --- |
+| CHK-M7-327 | substring search over `Execute` for the listed words instead of the lexer | red, 473 failed (incl. `test_not_a_substring_search`: `echo "rm"` rejected, `r''m` accepted) |
+| CHK-M7-328 | path-qualified names not reduced (`name = value`) | red, 14 |
+| CHK-M7-329 (a) | nested scripts (`$( )`, backticks, `<( )`, here-documents) not walked (`_nested` empty) | red, 188 |
+| CHK-M7-329 (b) | `-c` scripts not checked | red, 88 |
+| CHK-M7-329 (c) | data words (`for` lists, `case` words) not walked | red, 5 |
+| CHK-M7-329 (d) | redirect-target substitutions not walked | red, 5 |
+| CHK-M7-330 (a) | `WRAPPERS` empty | red, 127 |
+| CHK-M7-330 (b) | `busybox` dropped from `WRAPPERS` | red, 3 |
+| CHK-M7-331 (a) | any redirect target accepted | red, 69 |
+| CHK-M7-331 (b) | `..` component allowed under `/tmp/` | red, 3 |
+| CHK-M7-331 (c) | non-literal target (`"$F"`) accepted | red, 7 |
+| CHK-M7-331 (d) | `/tmp` prefix without the slash | red, 4 |
+| CHK-M7-332 (a) | `check_execute` returns `[]` on `ShellSyntaxError` (fail open) | red, 13 |
+| CHK-M7-332 (b) | an unlexable `-c` script passes | red, 2 |
+
+Revision 1 and further rule plants:
+
+| Plant | Change | Result |
+| --- | --- | --- |
+| B-r1-cluster | the r1 bug back: a short cluster whose letter takes a value (`-iu root`) skipped as one word | red, 8 |
+| B-r1-next-word | a value-taking short option never takes the next word | red, 17 |
+| B-long-opt-value | a long option's separate value not skipped | red, 10 (after the added test) |
+| B-envS-cluster | `env -S` found only as the first letter of a cluster | red, 2 (added test) |
+| B-envS-unchecked | `env -S` strings not checked | red, 6 |
+| B-sed-cluster | `sed -i` only as the whole word | red, 5 |
+| B-sed-long-abbrev | `--in-place` only in full | red, 4 (after the added test) |
+| B-verb-first-only | apt/systemctl/dpkg/find only the first argument checked | red, 44 |
+| B-dpkg-eq | `dpkg --opt=value` forms not matched | red, 5 |
+| B-mkfs-dot | `mkfs.*` not matched | red, 6 |
+| B-find-okdir | `-okdir` dropped | red, 2 |
+| B-write-word-tee | `tee` dropped | red, 27 |
+| B-code-xargs | `xargs` dropped | red, 30 |
+| B-apt-autoremove | `autoremove` dropped | red, 2 |
+| B-systemctl-setprop | `set-property` dropped | red, 1 |
+| B-sh-c-subst | `-c` word holding a substitution allowed | red, 3 |
+| B-sh-c-literal-subst | a literal `-c` script holding a substitution allowed | red, 7 |
+| B-sh-no-c | a shell without `-c` allowed | red, 43 |
+| B-ltgt-input | `<>` treated as input | red, 1 |
+| B-nonliteral-reject | a non-literal command word rejected (against the user's ruling) | red, 9 |
+| B-command-v-runs | `command -v`/`-V` treated as running the command | red, 1 |
+| B-assignments-unchecked | substitutions in assignments not walked | red, 25 |
+| B-msg-unquoted | token not quoted in messages | red, 2 |
+| B-sed-skip-value | `-e`/`-f`/`-l` no longer take the next word | **survived** (see below) |
+
+**38/39 red; all 14 security rows red.** The survivor, `B-sed-skip-value`, errs toward rejecting. Without the skip, an `-e`/`-f`/`-l` value that starts with `-` and holds an `i` (for example `sed -f -i.sed f`, where GNU sed reads `-i.sed` as a script file) would be refused as in-place. No realistic CIS command has such a value, and the change can only add rejections, never hide one. So it is not a security row, and I added no contrived must-pass case. Reviewer: please confirm, or ask for a must-pass row.
+
+#### Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-115 | CODE | C | `pytest -q tests/test_bit102.py -k "must_reject and not context or corpora"` | PASS | 149/149 with token | 2026-10-27 |
+| CHK-M7-116 | CODE | C | `pytest -q tests/test_bit102.py -k "every_context or context_count or data_words"` | PASS | 646 + 10 rows | 2026-10-27 |
+| CHK-M7-117 | CODE | C | `pytest -q tests/test_bit102.py -k "108_matching or wrapper or abbreviations"` | PASS | 66 + 11 + 13 + 4 rows | 2026-10-27 |
+| CHK-M7-118 | CODE | C | `pytest -q tests/test_bit102.py -k "redirections"` | PASS | 25 refused, 18 pass | 2026-10-27 |
+| CHK-M7-119 | CODE | C | `pytest -q tests/test_bit102.py -k code_running` | PASS | 36 rows | 2026-10-27 |
+| CHK-M7-120 | CODE | C | `pytest -q tests/test_bit102.py -k "must_pass or sample or sr_example or ruled or substring"` | PASS | 96 + 32 + 1 + 47 rows | 2026-10-27 |
+| CHK-M7-121 | CODE | C | `pytest -q tests/test_bit102.py -k "unlexable or depth_8"` | PASS | 13 + 1 rows, one "cannot be checked" finding | 2026-10-27 |
+| CHK-M7-327 | CODE | C | plant: substring search | PASS (red) | 473 failed | 2026-10-27 |
+| CHK-M7-328 | CODE | C | plant: `/bin/rm` not reduced | PASS (red) | 14 failed | 2026-10-27 |
+| CHK-M7-329 | CODE | C | plants (a)–(d): nested, `-c`, data words, redirect targets not walked | PASS (red) | 188, 88, 5, 5 failed | 2026-10-27 |
+| CHK-M7-330 | CODE | C | plants: `WRAPPERS` empty; `busybox` dropped | PASS (red) | 127, 3 failed | 2026-10-27 |
+| CHK-M7-331 | CODE | C | plants (a)–(d): any target, `..`, `"$F"`, `/tmp` without slash | PASS (red) | 69, 3, 7, 4 failed | 2026-10-27 |
+| CHK-M7-332 | CODE | C | plants: fail open in `check_execute` and in `-c` scripts (lexer half in TASK-145) | PASS (red) | 13, 2 failed | 2026-10-27 |
+| CHK-M7-146-extra | CODE | C | 24 rule plants (table above) | PASS (23 red, 1 survivor that errs toward rejecting) | see table | 2026-10-27 |
+| static | CODE | C | ruff, ruff format, mypy (CI form) | PASS | clean, 276 files | 2026-10-27 |
+
+Verdict: **PASS**. 1177/1177 passed, 0 failed, 0 errors, 0 skipped. Plants: 38/39 red, with every security row red.
+
+---
+
+### TASK-146 TEST (revision 2 final): PASS
+
+Tester: tester-m7d, 2026-10-27. Code under test: `0529083`. The r2 final code is `8173527`; it includes the three fixes in (6) for this tester's findings, and TASK-145 r1b is on top. Impl report: `work/reports/TASK-146-impl.md` "Revision 2", items (1) to (6). Review being answered: `work/reviews/TASK-146.md` findings 1 and 2 (blocking) and 3 (should-fix, tester-owned).
+
+Rulings tested as written (`work/decisions.md`):
+- the r2 order: the wrappers time, nsenter, unshare, flock, setpriv, taskset, chrt, `su -c` and runuser, plus brace expansion in bash mode;
+- trap is refused whenever it sets an action;
+- alias with a definition, `hash -p`, let, and `${…@P}` / `${…@E}` are refused;
+- the readings the lead accepted (`trap SIG` passes; `sudo VAR=value cmd`);
+- "three more fail-open forms" (the env `--` and nsenter `-S`/`-G` fixes, and `sudo -s`/`-i` and `doas -s` with no command are BIT102);
+- the `sudo -e` residual, which has no test.
+
+Spec: SR §4.2 L277–L287, §4.1 BIT102, §1.1; TS §3.3 L249.
+
+Environment C and the scratch copy are as in `TASK-145-test.md` "revision 1 and 1b". GNU `time` 1.9 was installed in the container for the real-shell checks. `doas` is not installed, so its rows follow the ruling without a shell run.
+
+#### Runs
+
+| Run | Command (from `manager/`) | Count |
+| --- | --- | --- |
+| as found (r2 snapshot, before my rows) | six files, `-n 4` | 2548/2548 passed |
+| r2 + my rows, before (6) | `pytest -q tests/test_bit102.py` (scratch probe) | the 4 `env --` rows and the 4 `nsenter -S +0` rows not refused (bugs 1 and 2 below) |
+| r2 final (`8173527`) + all rows | `pytest -q -p no:cacheprovider -n 4` on the six files | 2977/2977 passed |
+| final (`0529083`) | `pytest -q -p no:cacheprovider -n 4 tests/test_bit102.py` | 1555/1555 passed, 0 failed, 0 errors, 0 skipped |
+| final, six files, 3 runs | `pytest -q -p no:cacheprovider -n 4 tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py tests/test_bit_parse.py tests/test_bit_validate.py` | 2981/2981 passed, 3 times |
+| static (repo root) | `ruff check manager`; `ruff format --check manager`; `mypy --strict --config-file manager/pyproject.toml manager` | clean; 278 files |
+
+The existing corpus still passes:
+- the 96 old must-pass rows;
+- the SR §1.1 `Execute` (`test_sr_example_execute_passes`);
+- every `Execute` in `bits/samples/*.bit`, read through the real parser (`test_every_sample_execute_passes`);
+- the 149 old must-reject rows and their 646 context rows.
+
+#### Findings (product; all three fixed in r2 (6), real-shell checked)
+
+1. **env reads `-` and `NAME=value` after `--`** (#108 (d)). `env -- FOO=1 rm x`, `env -- - rm x`, `env -i -- FOO=1 rm x` and `env -u HOME -- FOO=1 rm x` all passed BIT102. Under dash, coreutils 9.4 runs the command in each (`dash -c 'env -- FOO=1 echo RAN'` prints RAN). sudo is not affected (`sudo -- FOO=1 echo RAN`: command not found). The implementer widened the fix to any operand holding `=` (`env a-b=1`, `env 1=2`, `env "$x"=1`, `sudo a-b=1`); all four run under dash, checked here.
+2. **nsenter `-S`/`-G`/`--setuid`/`--setgid` take the next word as a required argument in util-linux 2.39.3**, even though `--help` prints `[=<uid>]`. `nsenter -S echo RAN` gives "failed to parse uid: 'echo'". `+0` and `' 0'` parse as uid 0, so `nsenter -S +0 rm x`, `-S ' 0'`, `--setuid +0` and `-G +0` passed BIT102 while nsenter runs the command. Now a non-decimal value is "cannot be checked".
+3. **`sudo -s` / `sudo -i` / `doas -s` with no command start a root shell that reads stdin.** `echo 'echo RAN' | sudo -s` prints RAN, and the same holds for `-i`. The lead ruled them BIT102. With a command, the words are checked as a script. sudo really escapes the words (`sudo -s 'echo RAN; echo TWO'` runs one command named `echo RAN; echo TWO`), so refusing `sudo -s 'ls; rm x'` is stricter than sudo. The ruling allows that.
+
+#### Tests added (tester-owned; nothing weakened, corpus size guards raised to 386 / 190)
+
+- `bits/tests/bit102/must_reject.json` gets 199 TASK-146 rows (`rule` starting `146`), each with the token its message must hold:
+  - 39 wrappers naming `rm`, plus 14 wrapper rows that fail closed;
+  - 20 brace expansions, plus 4 brace rows that fail closed (unmatched, nested, 257 words, 65 levels), plus 1 brace inside a trap action;
+  - 19 trap/alias/hash/let rows and 7 `@P`/`@E` rows;
+  - 12 shell-option rows, plus 6 that fail closed;
+  - 20 old-wrapper abbreviation and unknown-option rows (`option "--un"` …), plus 10 rows that still name `rm`;
+  - 4 `env --` rows and 7 sed attached-value rows (review finding 3: `sed -es/a/b/ -i f`, `sed -l5 -i f`, `sed -nfx -i f`, `-l5 -i p f`, `-fx -i f`, `--line-length=5 -i p f`, `--expression=p -i f`);
+  - 36 rows for (6).
+- `must_pass.json` gets 94 rows in all, including the TASK-145 ones:
+  - every must-pass list in the impl report, and the (6) list;
+  - `trap -p 'rm x' EXIT` and `trap -l 'rm x' EXIT`: neither shell sets an action (dash: "Illegal option -p"; bash: invalid signal spec);
+  - `sudo -l`, `sudo -v`, `sudo -k`;
+  - `sed -es/a/b/ f`, `sed -l5 p f`, `sed -nfx f`.
+- `manager/tests/test_bit102.py`:
+  - `test_sed_attached_value_does_not_take_the_next_word` (7), and `test_sed_separate_value_is_taken` (2; `sed -e -i f`, `sed -l 5 p f`). The second is the opposite pin that the r1 survivor `B-sed-skip-value` lacked;
+  - `test_brace_expansion_word_limit_256` (256 words pass, 257 refused), `test_brace_nesting_limit_64` (64 pass, 65 refused) and `test_brace_expansion_only_in_bash_mode`;
+  - `test_shell_option_values_are_not_the_script` (7; the script is found, not "without -c") and `test_shell_option_values_with_read_only_script_pass` (3);
+  - `test_code_defining_builtins_use_the_eval_message` (8), `test_listing_and_reset_forms_pass` (16) and `test_at_p_message_is_the_fail_closed_one`.
+
+#### Real-shell confirmation (scratch `sh146/shellprobe.py` with `shellprobe.json`; `rm` replaced by `echo RAN`; sed rows edit a scratch file `f`)
+
+- **The hidden command really runs: 150 rows.** Each is the Execute run by `dash -c` (bash for the `<(`/`>(`, `@P` and `let` rows); the `echo RAN` stand-in prints RAN, or sed edits `f` in place:
+  - every wrapper row except the 5 below;
+  - every brace row (bash expands `{echo,RAN}`, `ech{o..o}`, `"e"{cho,}`, `{sh,-c,'echo RAN'}` …);
+  - every shell-option row (`-co`, `-oc`, `-Oc`, `+oc`, `-c -`, `-c -o`, `--rcfile`, `+c`);
+  - the abbreviations that real getopt accepts (`env --un`/`--ch`/`--sp`, `nice --adj`, `timeout --sig`/`--pres`, `stdbuf --out`, `sudo --us`/`--gr`, `chroot --sk`, `setsid --fo`, `nsenter --targ`, `setpriv --reu`);
+  - `echo 'rm x' | su root` and `su root -- -c 'rm x'`;
+  - the trap, alias, hash, let and `@P` rows;
+  - the `env --` and `nsenter -S +0` rows;
+  - 6 of the 7 sed rows.
+
+  The (6) rows were run by hand: `env a-b=1`, `env 1=2`, `sudo a-b=1`, `env "$x"=1`, `env -- - FOO=1 a-b=2`, `nsenter -S0`, `nsenter -S 0 -t $$`, `sudo -iu root CMD`, `sudo -s FOO=1 CMD`, `sudo --shell CMD`, `sudo --login` (stdin), `sudo -s -- CMD` and `sudo -sk CMD` each print their RAN.
+- **The shell itself refuses or runs nothing: 52 rows.** These are fail-closed or ruling rows, where refusing is the safe side:
+  - unknown options, `--flag=x`, `chrt -o`, `bash --rcf`, `sh -q`;
+  - the brace fail-closed rows (bash's reading differs, or the expansion is too large);
+  - `trap ''`, `trap "$a"`, `trap 0 'ls' EXIT`, `hash -p` under dash (bash only), `let x=1`, `${x@E}` (expands escapes only);
+  - `x=$(cat <<'E' $(⏎…)⏎)` (syntax error in both shells);
+  - `nsenter -S rm x` (uid parse error);
+  - `flock -c 'rm x' /tmp/l`: flock 2.39 says "invalid option -- 'c'", because `-c` is only valid after the file;
+  - `chrt -T 1 -P 2 -D 3 -d 0` (EINVAL here);
+  - `runuser -l nobody -c` (nologin; with root it runs);
+  - `sudo -h host` (sudo refuses a remote host);
+  - `sed -l5 -i f`, which has no script (the `-l5 -i p f` variant edits `f`).
+- **Skipped: 5 rows.**
+  - `bash -c 'systemctl {stop,status} ssh'`, which would stop ssh;
+  - `su root /tmp/script` (no script);
+  - `alias r=rm`, `alias -p r=rm` and `builtin alias r=rm`, which define an alias and run nothing (the `alias r=echo⏎r RAN` row runs).
+
+#### Plants (scratch copy; `tests/test_bit102.py tests/test_bit102_lexer.py`, `-n 4`; `scratchpad/plants_r2.json`, runner `plant2.py`)
+
+| Plant | Change | Red |
+| --- | --- | --- |
+| W-SPECS-empty | no r2 wrappers | 67 |
+| W-WRAPPERS-empty | no #108 (d) wrappers | 196 |
+| W-unknown-option-taken-1 | an unknown option (incl. abbreviations) takes 1 word | 23 |
+| W-flag-eq-accepted | `--flag=x` accepted | 3 |
+| W-optional-as-value | optional letters take the next word | 4 |
+| W-numeric-else-1 | nsenter `-S` non-decimal value read as the command (the bug-2 code) | 8 |
+| W-time-dropped | external `time` not a wrapper | 9 |
+| W-chrt-priority-unchecked | chrt non-decimal priority not refused | 3 |
+| W-flock-file-c-unchecked | `flock FILE -c CMD` not checked | 4 |
+| W-su-no-permute | su/runuser do not permute | 6 |
+| W-su-without-c-allowed | su without `-c` allowed | 7 |
+| W-su-script-unchecked | su/runuser/flock `-c` scripts not checked | 18 |
+| W-env-after-dashdash | env stops at `--` (the bug-1 code) | 5 |
+| W-sets-var-is-assignment | `_sets_var` back to `is_assignment` | 6 |
+| W-sudo-assignment-skip-dropped | `sudo FOO=1` not skipped | 5 |
+| W-sudo-shell-no-command-allowed | `sudo -s` with no command allowed | 12 |
+| W-sudo-shell-command-unchecked | `sudo -s CMD` not checked | 10 |
+| W-sudo-shell-rule-dropped | the sudo/doas shell rule removed | 14 |
+| S-oO-take-no-word | `o`/`O` take no word (r1 blocking 1) | 16 |
+| S-O-not-value | only `o` takes a word | 7 |
+| S-lone-dash-not-consumed | a lone `-` not consumed | 6 |
+| S-unknown-letter-accepted | an unknown shell letter accepted | 1 |
+| S-long-prefix-accepted | any shell long option accepted | 4 |
+| S-rcfile-takes-no-word | `--rcfile` takes no word | 1 |
+| B-bash-false | no brace expansion | 29 |
+| B-dash-is-bash | brace expansion for sh/dash too | 3 |
+| B-su-script-dash-mode | su `-c` scripts not in bash mode | 3 |
+| B-cap-unbounded | the 256-word cap removed | 3 |
+| B-depth-unbounded | the 64-level cap removed | 3 |
+| B-no-sequences | `{x..y}` not expanded | 3 |
+| B-empty-word-kept | a word that expands to nothing kept | 1 |
+| R-defines-code-false | trap/alias/hash/let never refused | 28 |
+| R-let-dropped | let allowed | 5 |
+| R-alias-dropped | alias definitions allowed | 8 |
+| R-hash-dropped | `hash -p` allowed | 5 |
+| R-trap-dropped | trap actions allowed | 12 |
+| R-trap-reset-refused | `trap - SIG` refused (false positive) | 5 |
+| R-trap-listing-ignored | `trap -p/-l …` refused (false positive) | 4 |
+| R-trap-one-operand-refused | `trap SIG` refused (false positive) | 2 |
+| R-atP-atE-dropped | `${…@P}`/`${…@E}` not refused | 17 |
+| R-atE-dropped | only `@P` refused | 3 |
+| T-time-always-keyword | `Grammar.time()` always `[]` | 6 |
+| D-sed-attached-skips-next | an attached `-e`/`-f`/`-l` value also skips the next word (review finding 3) | 11 |
+| D-sed-long-eq-skips-next | `--expression=…` also skips the next word | 5 |
+| D-sed-skip-value (r1 survivor) | `-e`/`-f`/`-l` never take the next word | 1 (`sed -e -i f`) |
+
+**45/45 red**, the r1 survivor included.
+- Every security row (W-*, S-*, B-bash-false, B-cap/B-depth, R-*-dropped, R-defines-code-false, R-atP-atE-dropped, D-sed-*) is red.
+- The `shlex_grammar.py` plant (T-time) was re-run on `0529083`.
+- Red counts leave out the extra `test_long_inputs` failure explained in the TASK-145 section (a stored quadratic example). Each plant above has a red test of its own.
+
+#### For the reviewer
+
+- **Stricter than the shell, which is the safe side:**
+  - `flock -c CMD FILE`, because flock 2.39 rejects `-c` before the file;
+  - `sudo -s 'a; b'`, because sudo escapes it;
+  - `coproc` at the top level under dash.
+- **Brace sequences.** `bit102_brace._sequence` accepts any single character, while bash expands only letters (`{....}` stays literal). The impl over-expands, which is the safe direction: a literal bash word is never hidden.
+- **Possibly in the open "arithmetic subscript" class (decisions 2026-10-27, open for the user).** bash `${!x}` indirection with `x='a[$(cmd)]'` runs `cmd` (checked: `a=(1); x="a[\$(echo RAN >&2)0]"; echo ${!x}` prints RAN). It is not in the rulings, so I added no test; main may add it to the open item.
+- **Hypothesis database.** Once a slow example was stored, `test_long_inputs_up_to_16384_chars` failed on every run in that checkout, but a fresh database would not find it again. The deterministic `fndefs` rows now pin the case.
+
+#### Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-115 (r2) | CODE | C | `pytest -q tests/test_bit102.py -k must_reject` | PASS | 386/386 rows with token (199 new for TASK-146 r2); 150 real-shell RUNS | 2026-10-27 |
+| CHK-M7-117 (r2) | CODE | C | `pytest -q tests/test_bit102.py -k "must_reject or sed_attached or sed_separate"` | PASS | 39 + 14 wrapper rows, 30 old-wrapper rows, 36 (6) rows, 7 + 2 sed rows | 2026-10-27 |
+| CHK-M7-119 (r2) | CODE | C | `pytest -q tests/test_bit102.py -k "shell_option or code_defining or listing_and_reset or at_p"` | PASS | 7 + 3 + 8 + 16 + 1 | 2026-10-27 |
+| CHK-M7-120 (r2) | CODE | C | `pytest -q tests/test_bit102.py -k "must_pass or sample or sr_example or ruled"` | PASS | 190 corpus (SR §1.1 first) + every `bits/samples` Execute | 2026-10-27 |
+| CHK-M7-121 (r2) | CODE | C | `pytest -q tests/test_bit102.py -k "brace_expansion or brace_nesting"` and the fail-closed corpus rows | PASS | 256/257 and 64/65 bounds; 24 fail-closed corpus rows | 2026-10-27 |
+| CHK-M7-330 (r2) | CODE | C | plants W-* (18) | PASS (red) | 18/18 | 2026-10-27 |
+| CHK-M7-146-r2-plants | CODE | C | `python plant2.py plants_r2.json` | PASS (red) | 45/45 | 2026-10-27 |
+| static | CODE | C | ruff, ruff format, mypy (CI form) | PASS | clean, 278 files | 2026-10-27 |
+
+Verdict: **PASS** (r2 final). 1555/1555 passed in `test_bit102.py`; 2981/2981 passed across the six files, 3 times; 0 failed, 0 errors, 0 skipped. Plants: 45/45 red. Three fail-open forms were found by this round and fixed in r2 (6) before the verdict.
+
+### TASK-151
+
+Tester: tester-m7, 2026-10-27. REQ-158, REQ-159, REQ-177; SR §3.1 to §3.6, §4.1 BIT007 and BIT015; TS §4.1 L519 to L524, §4.3 L548 to L550; #14, #15, #21, #100 (a), #104, #106; design note D3; plan `work/plans/TASK-151.md` §6 rows 1 to 12. Files under test: `bm/services/importer/store.py` and `store_decide.py`. Test file: `manager/tests/test_import_store_pg.py` (32 tests), as `bitscan_app` on a database of its own; `Candidate` and `RuleKeys` built by the test.
+
+#### Runs
+
+| Run | Command | Count |
+| --- | --- | --- |
+| r0 (W, label m7t-t151, `CI=true`, `-n 0`) | `pytest tests/test_import_store_pg.py` (with the TASK-153 r2 files) | store file 31/32 passed, 1 failed: `test_106_y_in_another_existing_server_file_is_bit007` (my test bug, below) |
+| r1 (m7t-t151b) | that node id after the fix | 1/1 passed |
+| r2 (m7t-t151c) | `test_fault_after_the_third_plugin_leaves_the_catalog_unchanged` after a second test fix (below) | 2/2 passed |
+| static (L) | ruff, ruff format, mypy (CI form) | clean, 269 files |
+
+Test bugs (mine, both fixed; lead confirmed the first, 2026-10-27):
+1. #106 (a). The file `a.bit` held X and now names Y, while Y lives in an existing `b.bit`. I expected only BIT007, but the store also reports BIT015 for X's plugin. That is right: X is live, still lists the plugin, and is not displaced because nothing moves, and every failing rule is reported (SR L250).
+2. The fault wrapper raised on its first call, so the commit-per-plugin plant (CHK-M7-338) stayed green. The fault now fires after 3 plugin rows counted across calls, and the catalog is read from another connection; 338 is red.
+
+#### Report rows (tests/m7/report.md format)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-173 | APP | W | r0 | PASS | SR §1.1 candidate as `x.bit`: every policy, family, plugin and `policy_plugin` column exact (execute `dpkg-query -W -f='${Status}' apparmor 2>/dev/null`, its sha, timeout 30, control_ref `1.3.1.1`, active, sort 1, source_sha256 of the fixture bytes); `v_plugin.display_name` `CIS Ubuntu 24.04 - 1.3.1.1 - Ensure AppArmor is installed`; result v1, 1/0/0, one changed Execute | 2026-10-27 |
+| CHK-M7-174 | APP | W | r0 | PASS | identical re-import: `update`, `is_unchanged`, v1, 0/0/0, no changed Execute, same ids; new hash → v2, then v3; `is_unchanged` false for a rename | 2026-10-27 |
+| CHK-M7-175 | APP | W | r0 | PASS | override true: file enabled leaves disabled; override false: both change; `reenabled` true only without the override; a file disable is not a re-enable; **race**: an import waiting on an uncommitted PATCH (seen blocked) keeps the PATCH's disabled + override and gets v2 | 2026-10-27 |
+| CHK-M7-176 | APP | W | r0 | PASS | reorder 0/0/0 with new sort order; drop 0/0/1 (row kept, retired); one Execute changed 0/1/0 with exactly that changed Execute; mixed file 2/1/1 (#21); family change: a new family row, old kept, plugin follows (updated 1) | 2026-10-27 |
+| CHK-M7-177 | APP | W | r2 | PASS | fault after the 3rd plugin, for a new and an existing policy: catalog checksums from another connection unchanged after the caller's rollback | 2026-10-27 |
+| CHK-M7-178 | APP | W | r0 | PASS | revival with identical bytes: `revive`, same id, v2, `deleted_at` NULL, override and disabled kept, plugins active (updated 2), schedules still disabled (#14); an upload revival of a server policy goes to `uploaded/policy-<id>.bit` | 2026-10-27 |
+| CHK-M7-179 | APP | W | r0 | PASS | upload: insert (`uploaded/policy-<id>.bit`), update, `PolicyManagedOnServer` (id, fixed message, nothing changed); BIT007 when the other server file exists (line 3, `Policy/PolicyName`, names the file; `file_exists` asked about that file only; nothing changed; `apply` on a rejected decision refused); `move_server` when it is gone (same id, new file, `moved_from`, v1 for equal bytes); server file wins over an upload (`move_upload`, `remove_after_commit` the upload, then a later upload gets `PolicyManagedOnServer`); `Target` refuses mismatched kind and path; an invalid `PolicyName` gives `rejected` with no extra finding | 2026-10-27 |
+| CHK-M7-181 | APP | W | r0, r1 | PASS | #106: (a) BIT007 + BIT015 naming X, nothing changed; (b) Y uploaded → `move_upload`, X soft-deleted (`deleted/<id>`), the upload to remove; (c) Y deleted → revived at the file, X deleted; (d) Y absent → rename in place, same id, `renamed_from`, membership kept, the committed `scan` row still points at it | 2026-10-27 |
+| CHK-M7-182 | APP | W | r0 | PASS | BIT015 for a live listing owner (line, `Plugin[3]/PluginId`, names owner and uuid; nothing changed); no BIT015 when the owner is deleted or dropped it, and the claim moves `owner_policy_id` (the deleted owner's membership row kept, #104 (c)); none for self or the displaced X; findings in document order | 2026-10-27 |
+| CHK-M7-183/184 | APP | W | r0 | PASS | no `policy` row ever deleted (count +2 after inserts, a move and a displacement); `imported_at` moves on every import, `updated_at` only on a change (#104 (d)); revival with identical Executes carries no changed Execute (pinned; question with the user via main) | 2026-10-27 |
+| CHK-M7-335 | APP | W | plant: `check_ownership` returns `()` | PASS (red) | 3 failed | 2026-10-27 |
+| CHK-M7-338 | APP | W | plant: COMMIT after each plugin | PASS (red) | 2 failed (after test fix 2; green before it) | 2026-10-27 |
+| CHK-M7-369 (store half) | APP | W | plants: (s) override reset after the update; (v) version + 1 on an identical-hash update | PASS (red) | (s) 3 failed incl. the PATCH race; (v) 2 failed | 2026-10-27 |
+| CHK-M7-151-a | APP | W | plant: `file_exists` ignored (always move) | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-151-b | APP | W | plant: no `PolicyManagedOnServer` | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-151-c | APP | W | plant: `displaced_id` never set | PASS (red) | 3 failed | 2026-10-27 |
+| CHK-M7-151-d | APP | W | plant: `is_unchanged` ignores the hash | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-151-e | APP | W | plant: displaced policy counted for BIT015 | PASS (red) | 3 failed | 2026-10-27 |
+| CHK-M7-151-f | APP | W | plant: every plugin listed as a changed Execute | PASS (red) | 4 failed | 2026-10-27 |
+| CHK-M7-151-g | APP | W | plant: upload copy not reported for removal | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-151-h | APP | W | plant: no rename in place | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-151-i | APP | W | plant: BIT015 ignores "still lists it" | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-151-j | APP | W | plant: upload of a deleted name not revived | PASS (red) | 2 failed | 2026-10-27 |
+| static | CODE | L | ruff (no SQL in either file), format, mypy | PASS | clean | 2026-10-27 |
+
+#### Revision 2 (#100 (a) widened by the user, 2026-10-27: `ChangedExecute.reason` ∈ new, changed, reactivated)
+
+Updated rows: the changed-Execute assertions of CHK-M7-173 (`new`), -176 (`changed`, and the mixed file's two `new`), and -178 (the revival: both plugins `reactivated`). `test_revival_changed_executes_pinned` is flipped to `test_revival_changed_executes_reactivated` (a revived `cat /etc/shadow` plugin is carried as `reactivated`). New rows: `test_a_retired_plugin_listed_again_is_reactivated` (an active, unchanged plugin stays out) and `test_106_takeover_from_the_displaced_policy_is_not_reactivated`. In (b), Y takes over X's active plugins and none is carried, because the prior state is read before the displaced delete. In (c), the revive of Y carries the listed plugin as `reactivated`.
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-173..184-r2 | APP | W | `pytest -n 2 tests/test_import_store_pg.py` (with the TASK-153 r3 files, m7t-t151r2) | PASS | 34/34 passed (the run: 166/166) | 2026-10-27 |
+| CHK-M7-151-rv | APP | W | plant: a revive no longer marks plugins reactivated | PASS (red) | 1 failed (#106 (c)) | 2026-10-27 |
+| CHK-M7-151-rl | APP | W | plant: a re-listed retired plugin not reactivated | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-151-or | APP | W | plant: prior state read after the displaced delete | PASS (red) | 1 failed (#106 (b): X's plugins appear reactivated) | 2026-10-27 |
+
+Verdict after revision 2: **PASS**.
+
+#### Revision 3 (crash-window ruling, user and lead 2026-10-27; plan §3.3 r3)
+
+New rows:
+- `test_a_server_target_refuses_a_path_with_a_slash`: `uploaded/policy-1.bit`, `deleted/1`, `a/b.bit`, `/abs.bit` and `sub/x.bit` each raise `ValueError`.
+- `test_a_plain_server_file_name_is_accepted`.
+- `test_is_unchanged_for_an_upload_target`: True for an `update` with an equal hash, False with a different hash, and False once the policy is deleted (the decision becomes `revive`).
+- `test_is_unchanged_still_compares_the_server_file`: a server file at a new path with an equal hash is a `move_server`, not unchanged.
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-174-r3 | APP | W | `pytest -n 2 tests/test_import_store_pg.py tests/test_import_alerts.py tests/test_import_alerts_pg.py` (m7t-t151r3) | PASS | 42/42 store (the run 103/103), 0 failed, 0 skipped | 2026-10-27 |
+| CHK-M7-151-sl | APP | W | plant: server target accepts a `/` path | PASS (red) | 5 failed (all except the first case, which an earlier check catches) | 2026-10-27 |
+| CHK-M7-151-up | APP | W | plant: upload target compared by `source_file` (r2 behaviour) | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-151-uh | APP | W | plant: `is_unchanged` ignores the hash | PASS (red) | 2 failed | 2026-10-27 |
+
+Verdict after revision 3: **PASS**.
+
+### TASK-152
+
+Tester: tester-m7, 2026-10-27. REQ-167 (1), (2), (5), (6), REQ-161 (2); TS §4.3 L550, §4.1 L526, §8.4 L1290; #98 (e), #101. File under test: `bm/services/importer/delete.py` (unchanged since round 1). Test file: `manager/tests/test_policy_delete_pg.py` (11 tests), PostgreSQL as `bitscan_app` with a temporary bits folder.
+
+#### Round 1: FAIL
+
+4/11 passed, 7 failed with `AuditError: audit append needs a transaction, not autocommit`. The pinned session's transaction left `conn.autocommit` True, so `PgAuditRepo` refused the delete alert. This is a TASK-147 defect, fixed in TASK-147 revision 2 (session transactions run with autocommit off). `delete.py` did not change.
+
+#### Round 2
+
+| Run | Command | Count |
+| --- | --- | --- |
+| W (label m7t-t147r2, `CI=true`, `-n 2`) | `pytest tests/test_policy_delete_pg.py` (with the TASK-147 r2 files) | 11/11 passed (the run: 77/77), 0 failed, 0 skipped |
+
+#### Report rows (tests/m7/report.md format)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-224 | APP | W | round 1 (m7t-t152b) | FAIL | 4/11; `AuditError` (TASK-147 defect) | 2026-10-27 |
+| CHK-M7-224-r2 | APP | W | round 2 (m7t-t147r2) | PASS | REQ-167 (1) through `delete_policy`: owner-written jobs (`queued`, `dispatched`, `running`) and two schedules; only the queued job is cancelled; both schedules disabled; `deleted_at` = the clock, `source_file` `deleted/<id>`; plugins retired; `uploaded/policy-<id>.bit` removed and another upload kept; exactly one `policy.delete` entry (actor `user:1`, `alert = true`, kind `policy_deleted`, `reason` "deleted through the API", the old `source_file`); `bitscan_alerts_total{policy_deleted}` +1; the catalog lock free afterwards. (2) A server-folder policy raises `PolicyManagedOnServer` (its id), with nothing changed (6 table checksums), no alert, its file untouched. Unknown → `PolicyNotFound`; already deleted → `PolicyAlreadyDeleted`, nothing changed. (5) A new policy claims the deleted policy's plugin with no BIT015. (6) The `policy` row count is unchanged | 2026-10-27 |
+| CHK-M7-225-r2 | APP | W | round 2 | PASS | a fault before commit (`emit` raising) leaves the row, the checksums, the counter and the upload file as they were, and frees the lock; the core inside a caller's transaction that later raises rolls back with it (checksums, counter); the core without the refusal deletes a server policy with reason "file removed", actor `system`, and never removes its file; a delete waits while another holder has the catalog lock (REQ-161 (2)); two racing deletes give one success, one `PolicyAlreadyDeleted` and exactly one alert; `remove_after_commit` removes only `uploaded/policy-<ASCII digits>.bit` (refuses `x.bit`, `uploaded/../x.bit`, a traversal through a policy name, Arabic-Indic digits, `policy-.bit`, `.tmp-`, `deleted/7`; a symlink is removed without touching its target; a missing file is no error) and logs no path | 2026-10-27 |
+| CHK-M7-351 | APP | W | plant: no `emit` (no `policy_deleted`) | PASS (red) | 4 failed | 2026-10-27 |
+| CHK-M7-152-s | APP | W | plant: server-folder refusal ignored | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-152-f | APP | W | plant: upload file removed before commit | PASS (red) | 1 failed (fault row: file gone) | 2026-10-27 |
+| CHK-M7-356 (152 half) | APP | W | plant: delete without the catalog lock | PASS (red) | 1 failed (did not wait) | 2026-10-27 |
+| CHK-M7-152-p | APP | W | plant: path check removed (relative path joined) | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-365 (152 half) | APP | W | hard DELETE / skipped job cancel | covered | planted at the repository (TASK-150: red); the route-path rows above see the cancel and the kept row | 2026-10-27 |
+
+### TASK-153
+
+Tester: tester-m7, 2026-10-27. REQ-162, REQ-165 to REQ-168; TS §8.4 L1288 to L1291, §4.1 L530, §5.2 L699; #23, #100 (a) to (d), #101, #103. Files under test: `bm/services/audit/alerts.py`, `bm/services/audit/metrics.py`, `bm/services/importer/alerts.py`. Checks CHK-M7-185 to -188, mutation row CHK-M7-354 and extra plants. New test file `manager/tests/test_import_alerts.py` (51 tests). Updated tester-owned tests:
+- `test_alerts.py`: the #101 kinds, 34 kinds, the `bitscan_import_failures` family. Its unknown-kind example `policy_imported` (now a real kind) is replaced by `Policy_Imported` and `policy_moved`.
+- `test_thresholds.py`: the family, type counter, label `mode`, and the REQ-086 (3) label-name pin extended with `mode`, whose values must be exactly `auto`, `manual`, `rebuild`.
+- `test_metrics_api_pg.py`: the same label pin with the mode values.
+
+None of these updates weakens a check. Each adds the fixed set #101 approved and asserts its exact values.
+
+#### Runs
+
+| Run | Command | Count |
+| --- | --- | --- |
+| r0 (W, label m7t-t153, `CI=true`, `-n 0`) | `pytest tests/test_import_alerts.py tests/test_alerts.py tests/test_thresholds.py tests/test_alerts_pg.py tests/test_metrics_api_pg.py tests/test_metrics_scrape.py tests/test_fleet_alerts_pg.py` | 152/155 passed, 3 failed, 0 skipped. The 3 failures are existing tests that pin the pre-M7 sets (test updates, not product bugs) |
+| r1 (W, label m7t-t153b) | the 3 failing node ids after the test updates: `test_alerts.py::test_unknown_kind_is_refused_and_nothing_is_written`, `test_thresholds.py::test_no_unbounded_label_names_anywhere`, `test_metrics_api_pg.py::test_no_label_holds_an_unbounded_value` | 7/7 passed |
+| static (L) | ruff, ruff format, `mypy --strict --config-file manager/pyproject.toml manager` | clean (257 files) |
+
+#### Report rows (tests/m7/report.md format)
+
+W = WSL2 Ubuntu 24.04, copy `/root/bstest-m7-w1`, venv `/root/venv-m7`, `CI=true`, `BSTEST_RUN_LABEL=m7t-<label>`, `-n 0`, leftover-own 0. L = Windows 11, `manager/.venv`. Plants in `/root/bstest-m7-mut-<id>`, imported first through `PYTHONPATH`.
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-185 | CODE | W | r0 (`test_import_alerts.py`, `test_alerts.py`) | PASS | `M7_ALERT_KINDS` = the six #101 kinds, no move kind; union of 34; each M7 kind and each of the 3 modes exported at `0.0` in a fresh process, no other mode; `raise_alert` refuses `policy_moved`, `Policy_Imported`, `policy_imported ` with nothing written; every kind (M7 included) writes one entry with `alert = true` and its kind | 2026-10-27 |
+| CHK-M7-186 | CODE | W | r0 | PASS | `policy_imported`: action `policy.import`, target `policy:<id>`, the full detail (incl. `renamed_from`, `revived`), every changed Execute in full and in order (a 16,000-character Execute whole), actor kept; the six words flagged case-insensitively, each alone (12 cases incl. `SHADOW`, `.SSH`, `A.PEM`, `.Key`, `Token`, `CREDENTIALS`); six plain CIS commands (incl. `/etc/ssh/sshd_config`, `ssh_host_ed25519_key`) unflagged; several words listed once in spec order; the count +1 only on commit, none on rollback; the Execute text never in a log record | 2026-10-27 |
+| CHK-M7-187 | CODE | W | r0 | PASS | `rejected`: action, kind, target the file name, else `policy:<id>`, else null; distinct codes in first-seen order; finding messages not in the entry (canary); `deleted` with the 3 reasons; `moved` is a plain `policy.move` entry with no alert key and no counter hook; `status_change` alerts only disabled → enabled (8 cases, PATCH and file); `rebuilt` target `task:<uuid>`; `integrity_failed` lists the first 100 of 150 in order with the total, and an empty list is refused; U+0000 and lone surrogates in path fields become U+FFFD, so every entry is UTF-8-encodable JSON | 2026-10-27 |
+| CHK-M7-188 | CODE | W | r0 + r1 (`test_thresholds.py`, `test_metrics_api_pg.py`) | PASS | `bitscan_import_failures_total{mode}` is a counter; +1 per mode only on commit and only for that mode; none on rollback; unknown mode (`Auto`, `watch`, ``, `rebuild `) refused with no hook; a rejected alert and its count land together; label names on the wire = {kind, status, le, mode}; mode values exactly the three; the scrape route's samples obey the same | 2026-10-27 |
+| CHK-M7-185..188 static | CODE | L | ruff, format, mypy (CI form) | PASS | clean, 257 files | 2026-10-27 |
+| CHK-M7-354 | CODE | W | plants: (a) `execute` cut to 64 characters; (b) `flags` always `[]` | PASS (red) | (a) 1 failed; (b) 12 failed | 2026-10-27 |
+| CHK-M7-153-case | CODE | W | plant: flags without `casefold` | PASS (red) | 6 failed | 2026-10-27 |
+| CHK-M7-153-word | CODE | W | plant: `token` dropped from `FLAG_WORDS` | PASS (red) | 3 failed | 2026-10-27 |
+| CHK-M7-153-reen | CODE | W | plant: re-enable alert on any status change | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-153-cnt | CODE | W | plant: failure counted before commit | PASS (red) | 3 failed | 2026-10-27 |
+| CHK-M7-153-cap | CODE | W | plant: integrity list capped at 10 | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-153-move | CODE | W | plant: move raised as an alert | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-153-nul | CODE | W | plant: no U+0000 / surrogate replacement | PASS (red) | 1 failed (`UnicodeEncodeError`) | 2026-10-27 |
+| CHK-M7-153-msg | CODE | W | plant: finding messages copied into the rejected entry | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-153-mode | CODE | W | plant: `rebuild` dropped from `IMPORT_MODES` | PASS (red) | 3 failed | 2026-10-27 |
+| CHK-M7-153-kind | CODE | W | plant: `policy_reenabled` dropped from `M7_ALERT_KINDS` | PASS (red) | 8 failed | 2026-10-27 |
+
+Not here (by design): REQ-162 (4) and (5) on PostgreSQL. That is the alert in the catalog transaction, no alert or count after a rollback, and the entry reaching the fake sink. They run at TASK-154 (G60, CHK-M7-286, -349, -350). The detail keys the implementer chose (rejected, deleted, status_change, rebuilt, integrity) are tested as written; they were sent to main as choices.
+
+#### Round 2 (reviewer-m7 should-fix: `rejected()` fallback target capped at 255 characters, `TARGET_MAX`)
+
+New rows: `test_import_alerts.py::test_rejected_fallback_target_fits_the_column_and_detail_keeps_it_whole` (n = 250, 255, 300: target = the first 255 characters of `uploaded/aaa….bit`, and `detail.file_name` holds the whole name) and `::test_rejected_target_counts_characters_not_bytes` (`é` × 300). New PostgreSQL file `test_import_alerts_pg.py::test_long_name_rejected_alert_is_stored` (the 263-character `uploaded/` name and `é` × 300 + `.bit` are written through `emit` and `PgAuditRepo` into `audit_log`; the stored target is the first 255 characters and the stored detail holds the full name).
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-187-r2 | CODE + APP | W | `pytest -q -n 0 tests/test_import_alerts.py tests/test_import_alerts_pg.py` (label m7t-t151, in one run with TASK-151) | PASS | 55/55 + 2/2 passed, 0 failed, 0 skipped | 2026-10-27 |
+| CHK-M7-153-cut | CODE + APP | W | plant: cut removed (`name or None`) | PASS (red) | 6 failed: 4 unit (length) and both PostgreSQL rows (the insert into `audit_log.target` VARCHAR(255) fails) | 2026-10-27 |
+| CHK-M7-153 static | CODE | L | ruff, ruff format, mypy (CI form) | PASS | clean | 2026-10-27 |
+
+Verdict after round 2: **PASS**.
+
+#### Round 3 (#100 (a) widened: each `changed_executes` entry gains `reason`)
+
+Updated: `test_imported_shape_carries_every_changed_execute_in_full` (each entry carries `reason`). New: `test_each_entry_carries_its_reason_in_the_101_key_order` (keys exactly `plugin_uuid, plugin_name, execute, execute_sha256, reason, flags`; reasons new, changed, reactivated in order; a reactivated `cat /etc/shadow` in full with its flag).
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-186-r3 | CODE + APP | W | `pytest -n 2 tests/test_import_alerts.py tests/test_import_alerts_pg.py tests/test_alerts.py tests/test_thresholds.py` (with the TASK-151 r2 file, m7t-t151r2) | PASS | 56 + 2 + 51 + 22 = 131/131 passed (the run: 166/166) | 2026-10-27 |
+| CHK-M7-153-rr | CODE | W | plant: `reason` dropped from the entry | PASS (red) | 2 failed | 2026-10-27 |
+
+Verdict after round 3: **PASS**.
+
+#### Round 4 (crash-window ruling: `rebuilt(..., removed_leftovers)`)
+
+Updated `test_rebuilt_shape`: two leftover paths are listed in the given order, not sorted. New rows:
+- `test_rebuilt_with_no_leftovers_lists_an_empty_list` (`()` gives `[]`).
+- `test_rebuilt_leftover_paths_are_storable` (U+0000 and a lone surrogate become U+FFFD; UTF-8-encodable JSON).
+- `test_rebuilt_requires_the_leftovers_keyword` (omitting it is a `TypeError`).
+
+Tester note: while editing, a failed edit script of mine truncated the untracked `test_import_alerts.py`. I restored it byte for byte from my WSL copy synced at the m7t-t151r2 run (583 lines) before adding these rows, and checked it. No test was lost.
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-187-r4 | CODE + APP | W | same run as TASK-151 r3 (m7t-t151r3) | PASS | 59/59 alerts + 2/2 PostgreSQL | 2026-10-27 |
+| CHK-M7-153-lo | CODE | W | plant: leftovers always `[]` | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-153-lr | CODE | W | plant: leftovers sorted | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-153-ls | CODE | W | plant: leftovers not through `_storable` | PASS (red) | 1 failed (`UnicodeEncodeError`) | 2026-10-27 |
+
+Verdict after round 4: **PASS**.
+
+### TASK-161
+
+Tester: tester-m7, 2026-10-27. REQ-168 (1) to (5), REQ-169 (1) to (5), REQ-174 (2), REQ-178; TS §6.2 L1100 to L1102, §4.3 L546 to L548, §6.3, §6 L1056; #9, #98 (a) to (c), #101. Files under test: `bm/services/importer/profiles.py`, `bm/api/user/policies.py`, `bm/api/user/__init__.py`, `manager/openapi.json`. New test file `manager/tests/test_policies_api_pg.py` (59 tests) on the M2 users-API environment (real sink gate and shipper). Policies are built through the TASK-151 store. One tester-owned pin updated: `test_invariants_m3.py::test_no_query_parameter_can_switch_inventory_off`. It now pins `GET /policies` to exactly {`limit`, `cursor`, `status`} (TS §6.2 L1100), and the general set is unchanged.
+
+#### Runs
+
+| Run | Command | Count |
+| --- | --- | --- |
+| r0 (W, label m7t-t161, `CI=true`, `-n 2`) | `pytest tests/test_policies_api_pg.py tests/test_openapi.py tests/test_invariants_m3.py tests/test_catalog_repo_pg.py` | 152/154 passed, 2 failed: `test_non_json_body_is_400` (my test bug: `headers` passed twice) and the route-walk query pin (the expected new `status` parameter) |
+| r1 (m7t-t161b) | those two node ids after the fixes | 2/2 passed |
+| static (L) | ruff, ruff format, mypy (CI form) | clean |
+
+#### Report rows (tests/m7/report.md format)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-251 | APP | W | r0 | PASS | REQ-169: of 3 enabled, 2 disabled (one by override) and 1 deleted, the list holds 5, `enabled` 3, `disabled` 2; `status` `deleted`, `ENABLED`, `` and a list → 400; N + 1 with limit N (1, 2, 5), each once in name order; limit 0, 501, `a`, garbage cursors and a `/users` cursor → 400; item keys exactly #98 (a) in order, integer ids, `Z` timestamps, `plugin_count`; detail = item + `deleted_at` + `plugins` (#98 (b) keys in order, file order, `display_name` `<family> - <plugin>`, `execute` visible to a viewer); a deleted policy's detail shows `deleted_at` and its plugins (#9); `abc`, `+1`, `1.0`, `1_0`, `-1`, ` 1`, `1e3`, 21 digits, `١` → 400; `0`, 2^62, 2^63, 20 nines → 404; hostile text byte-identical as JSON; viewer session and `bsk_` → 200 | 2026-10-27 |
+| CHK-M7-250 | APP | W | r0, r1 | PASS | REQ-168: each body sets the stated columns, for an admin session and an admin `bsk_`; the response is the item; every PATCH writes one `policy.status_change` (`by` patch, actor `user:<id>`); 14 other bodies (`status_overridden` true, `execute`, both keys, `{}`, `on`, `Enabled`, nulls, `"false"`, `0`, an extra key, a list, a string, `null`) and a non-JSON body → 400, nothing changed and no entry; a re-enable by PATCH and an override cleared onto an enabled file each raise one `policy_reenabled`; a disable, a no-op and a clear onto a disabled file raise none; deleted → 409 `conflict` with no entry; unknown and `0` → 404; viewer and operator (session and API) → 403 `forbidden`; a restricted admin session → 403 `totp_enrolment_required`; a file import after a PATCH disable stays disabled (version 2); PATCH never changes a plugin row | 2026-10-27 |
+| CHK-M7-282 | APP | W | r0 | PASS | `bsa_`, `bse_`, no token and a garbage `bsu_` → 401 problem+json on all three operations, and nothing is audited | 2026-10-27 |
+| CHK-M7-281 | APP | W | r0, r1 (`test_invariants_m3.py`) | PASS | the route walk has the three operations; no request schema carries a command; the query-parameter pin is updated as above | 2026-10-27 |
+| G6 | CODE | W | `test_openapi.py` (r0) | PASS | the export is byte-identical to `manager/openapi.json` | 2026-10-27 |
+| CHK-M7-161-rbac | APP | W | plant: PATCH role lowered to operator | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-353 | APP | W | plant: re-enable decided from the new row (never alerts) | PASS (red) | 2 failed | 2026-10-27 |
+| CHK-M7-361 | APP | W | plant: `execute` added to the PATCH body | PASS (red) | 3 failed: G6 export differs, and `test_no_request_schema_carries_a_command` (G34) flags `PATCH /policies/{id}` `execute` | 2026-10-27 |
+| route-group plant | — | — | — | NOT RUN (by design) | the token-prefix check is per router in the M2 code, not in this task; the rows above prove it on these routes | 2026-10-27 |
+
+### TASK-147 (revision)
+
+#### Revision 2 (session transactions run with autocommit off; found through TASK-152)
+
+New rows in `test_catalog_lock_pg.py` (20 tests now):
+- `test_audit_append_inside_a_session_transaction`: an audit append inside `session.transaction()` under `catalog_lock` succeeds; the entry is invisible before COMMIT and visible after; a rolled-back session transaction leaves no entry.
+- `test_between_transactions_the_session_is_autocommit_and_idle` (reviewer rows 1 and 2): after a commit and after a rollback, `autocommit` is True and the status IDLE; `catalog_lock` then takes the lock while idle, session-level.
+- `test_commit_failure_closes_the_connection_and_the_pool_replaces_it` (reviewer row 4): the backend is terminated inside the transaction, so COMMIT fails with `DatabaseUnavailable`; the session's connection is closed or broken; the next pooled connection (`max_size=1`) is a new backend with autocommit False and 0 advisory locks.
+- Reviewer row 3 is the existing `test_connection_goes_back_clean`, which still passes.
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-140..145-r2 | APP | W | `pytest -q -n 2 tests/test_catalog_lock_pg.py tests/test_db_pool_pg.py tests/test_runtime.py tests/test_policy_delete_pg.py tests/test_audit_append_pg.py` (m7t-t147r2) | PASS | 77/77 passed, 0 failed, 0 skipped (20 lock + 30 pool/runtime + 11 delete + the M2 audit append tests) | 2026-10-27 |
+| CHK-M7-147-ac | APP | W | plant: `autocommit = False` removed in `transaction()` | PASS (red) | 8 failed (`AuditError` in the audit row and in the delete tests) | 2026-10-27 |
+| CHK-M7-147-rs | APP | W | plant: `_restore_autocommit()` removed | PASS (red) | 2 failed (`test_between_transactions…`: autocommit False; `test_released_when_a_transaction_inside_raises`: ProgrammingError) | 2026-10-27 |
+
+Verdict after revision 2: **PASS**.
+
+### TASK-148 (revision)
+
+#### Revision 1 (`retired_among`, for the #100 (a) widening)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-153-r1 | APP | W | `pytest -n 2 tests/test_catalog_repo_pg.py` (m7t-t161) | PASS | 52/52 passed. New: `test_retired_among_returns_only_the_retired_ids` (retired, active and unknown ids mixed: only the retired come back; none for active and unknown); `test_retired_among_empty_input_runs_no_statement` (a connection that refuses any statement: empty set, no query) | 2026-10-27 |
+| CHK-M7-148-ra | APP | W | plant: state filter dropped | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-148-rb | APP | W | plant: state filter inverted (`active`) | PASS (red) | 1 failed | 2026-10-27 |
+| CHK-M7-336-r1 | CODE | L | plant: f-string query in `retired_among` | PASS (red) | S608 at catalog_plugins.py:53 | 2026-10-27 |
+
+Verdict after revision 1: **PASS**.
