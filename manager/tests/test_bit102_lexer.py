@@ -569,7 +569,7 @@ _HD_BODY = NL + "rm -rf /x" + NL + "E" + NL
 HEREDOC_ACROSS = [
     "cat <<'E' $(" + _HD_BODY + ")",
     "cat <<E $(" + _HD_BODY + ")",
-    "cat <<'E' \"$(" + _HD_BODY + ")\"",
+    "cat <<'E' \"$(" + _HD_BODY + ')"',
     "cat <<'E'; echo $(" + _HD_BODY + ")",
     "cat <<'E' ${x:-$(" + _HD_BODY + ")}",
     "cat <<'E' $(($(" + _HD_BODY + ")))",
