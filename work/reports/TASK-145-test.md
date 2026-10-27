@@ -95,3 +95,95 @@ Recommendation: keep both bounds as they now are. If `seps` fails again on the u
 | static | CODE | C | ruff, ruff format, mypy (CI form) | PASS | clean, 276 files | 2026-10-27 |
 
 Verdict: **PASS**. 175/175 passed, 0 failed, 0 errors, 0 skipped. Plants: 17/17 red. Changed: `test_bit102_lexer.py` (added test; bound message) and `test_bit_parse.py` (`_measure` uses CPU time).
+
+---
+
+# TASK-145 TEST (revision 1 and 1b): PASS
+
+Tester: tester-m7d, 2026-10-27. Code under test: `0529083` (r1 at `8173527`, plus r1b, which makes the function-definition removal linear). Impl report: `work/reports/TASK-145-impl.md` "Revision 1" and "Revision 1b". Review being answered: `work/reviews/TASK-145.md` findings 1 (blocking), 2 (should-fix) and 3 (nit). Spec: SR §4.2 L277 and L287; TS §3.3 L249 (`/bin/sh -c` is dash); POSIX XCU §2.7.4; REQ-156 (4).
+
+Environment C: cloud container, Ubuntu 24.04, 4 cores, `manager/.venv`, dash 0.5.12-6ubuntu5, bash 5.2.21. Unit-only; no PostgreSQL. Plants were made in the scratch copy `scratchpad/mut`, which was refreshed from the working tree. A control run first proved that the copy is the code imported: a marker planted in the copy raised on import through `PYTHONPATH`.
+
+## Runs
+
+| Run | Command (from `manager/`) | Count |
+| --- | --- | --- |
+| as found (r1, before my rows) | `pytest -q -p no:cacheprovider -n 4` on the six files | 2548/2548 passed |
+| r1 + my rows | `pytest -q tests/test_bit102_lexer.py -k pathological` | 10/14 passed, **4 failed** (`fndefs*`, see the finding below) |
+| re-run, failing rows only, after r1b | the 4 node ids `test_pathological_inputs_bounded[fndefs]`, `[fndefs-nl]`, `[fndefs-true]` and `[fndefs-hypothesis]` | 4/4 passed |
+| final (`0529083`) | `pytest -q -p no:cacheprovider tests/test_bit102_lexer.py` | 230/230 passed, 0 failed, 0 errors, 0 skipped |
+| final, six files, 3 runs | `pytest -q -p no:cacheprovider -n 4 tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py tests/test_bit_parse.py tests/test_bit_validate.py` | 2981/2981 passed, 3 times |
+| static (repo root) | `ruff check manager`; `ruff format --check manager`; `mypy --strict --config-file manager/pyproject.toml manager` | clean; 278 files |
+
+## Finding (product, fixed in r1b): the lexer was quadratic on function definitions (REQ-156 (4))
+
+- **How it was found.** Hypothesis found it in `test_long_inputs_up_to_16384_chars`, with `unit='{{\nrm()'` repeated to 16 KB. The example was stored in the scratch copy's `.hypothesis` database, and from then on the test failed every run there.
+- **Cause.** `cmds.remove(cur)` in the `NAME ( )` branch of `shlex_grammar.py` ran the dataclass `__eq__` against every earlier command. cProfile: 2.74 M `__eq__` calls, 0.58 s of 0.68 s.
+- **Timings before the fix**, `lex()`, best-of-3 thread CPU time, at 4 K / 8 K / 16 K chars:
+  - `x;f(){ :;};`: 53 / 200 / **774 ms**;
+  - `a\nf()\n:\n`: 37 / 134 / 533 ms;
+  - `true\nf() { :; }\n`: 13 / 41 / 140 ms;
+  - `{{\nrm()`: 24 / 87 / 326 ms.
+
+  `150bcd3` timed the same, so this predates r1. The r0 PASS was a test gap: no fixed input had many function definitions.
+- **After r1b**, `cmds.pop()` behind an identity check that raises (fail closed): 34 ms and 26 ms at 16 K for the first and last forms.
+- **Pins.** Four fixed rows were added to `test_pathological_inputs_bounded`. They make the bound deterministic, without relying on Hypothesis finding the input again.
+
+## Tests added (tester-owned; nothing weakened)
+
+- `bits/tests/bit102/must_reject.json` gets 38 TASK-145 rows, `rule` starting `145r1`:
+  - the 10 review here-document forms, each with `rm -rf /x` and with `rm x`;
+  - two levels (`$(echo $(⏎…))`), a backtick inside `$( )`, two here-documents, `<<-`, and a flock `-c` script;
+  - a substitution on the here-document line with no newline inside it;
+  - `coproc rm x` and 9 `bash -c 'coproc …'` forms;
+  - the nit `>/etc/x f() { :; }`, and `f() { :; } >/etc/x; f`.
+- `must_pass.json` gets the 6 forms the shells read normally: `cat <<E $(date)` (the old false positive), `x=$(cat <<E⏎body⏎E⏎)`, `cat <<E⏎$(⏎date⏎)⏎E`, backticks in a body, `( cat <<E )`, and a quoted body inside `{ }`. It also gets `bash -c 'coproc cat /etc/x'`, `coproc NAME { … }` and `f() { cat /x; }; f`.
+- `manager/tests/test_bit102_lexer.py`:
+  - `test_heredoc_pending_across_a_substitution_newline_fails_closed` (13), which asserts the exact reason;
+  - `test_heredoc_forms_the_shells_read_normally` (7);
+  - `test_coproc_command_words` (10) and `test_coproc_name_is_a_data_word_and_assignment_kept`;
+  - `test_redirection_before_a_function_definition_fails_closed`;
+  - the 4 `fndefs` rows in `test_pathological_inputs_bounded`;
+  - `test_time_keyword_or_command` (6) and `test_prompt_and_escape_transforms_fail_closed` / `test_quoted_or_other_transforms_lex`, which are for TASK-146 r2 but live in the lexer file.
+
+## Real-shell confirmation (scratch `sh146/shellprobe.py`; `rm` replaced by `echo RAN`, run in a fresh temp dir under the scratchpad)
+
+| Rows | Result |
+| --- | --- |
+| Here-document forms (`$( )`, `<<E`, `"$( )"`, `; echo $( )`, `${x:-$( )}`, backticks, two levels, backtick in `$( )`, two here-documents, `<<-`, flock `-c`) | dash runs the inner line (prints RAN, then `E: not found`) in every form |
+| `<( )`, `>( )` | bash runs it; dash has no process substitution |
+| `$(($( ⏎…)))` | dash runs it; RAN shown on stderr (stdout is used up by the arithmetic) |
+| `x=$(cat <<'E' $(⏎…⏎E⏎)⏎)` | dash and bash give a syntax error and nothing runs; the refusal is fail closed |
+| coproc: 9 `bash -c` forms, and `coproc rm x` under bash | bash runs the command (RAN on stderr). dash has no coproc keyword, so the top-level row is over-detection, which is allowed |
+| `>/etc/x f() { :; }` | dash: `Syntax error: "(" unexpected`; nothing runs |
+| `f() { :; } >FILE; f` | dash creates FILE |
+
+## Plants (scratch copy; tests `tests/test_bit102.py tests/test_bit102_lexer.py`, `-n 4`)
+
+| Plant | Change | Result |
+| --- | --- | --- |
+| L1-heredoc-depth | the depth test removed from the newline check (`if self.outer:`) | red, 34 |
+| L1-backtick-outer | backticks no longer get `outer=` | red, 6 |
+| L1-coproc-reserved | `coproc` not reserved | red, 21 |
+| L1-coproc-name-dropped | `coproc NAME` not kept as a data word | red, 1 |
+| L1-fn-redirect-dropped | the raise for a redirection before `NAME ( )` removed | red, 2 |
+| L1-close-paren-any-pending | the r0 `)` rule (any pending here-document) | red, 4 (incl. must-pass `cat <<E $(date)`) |
+| L1b-fndef-remove-by-eq | `cmds.remove(cur)` back (quadratic) | red, 5 (the 4 `fndefs` rows and `test_long_inputs`) |
+
+**7/7 red.**
+- The grammar plants were re-run on `0529083`.
+- The two shlex_posix plants were run on `8173527`; r1b does not touch that file.
+- In the first plant pass, `test_long_inputs_up_to_16384_chars` also failed, because of the stored quadratic example described above. Every plant also had a red test of its own, and the counts above leave that extra failure out.
+
+## Report rows (tests/m7/report.md format; main folds them in)
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-100 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "heredoc_forms or coproc or time_keyword or transforms_lex"` | PASS | 7 + 11 + 6 + 5 rows | 2026-10-27 |
+| CHK-M7-101 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "across_a_substitution or redirection_before or transforms_fail_closed"` | PASS | 13 + 1 + 8 raise the fail-closed error | 2026-10-27 |
+| CHK-M7-112 | CODE | C | `pytest -q tests/test_bit102_lexer.py -k "pathological or long_inputs or random"` | PASS after r1b (FAIL at r1) | 4 `fndefs` rows: 774/533/140/326 ms → < 50 ms | 2026-10-27 |
+| CHK-M7-115 (145 rows) | CODE | C | `pytest -q tests/test_bit102.py -k must_reject` | PASS | 38 rows `145r1`, each with its token; real-shell: dash/bash run each hidden command (table above) | 2026-10-27 |
+| CHK-M7-145-r1-plants | CODE | C | `python plant2.py plants_r2_grammar.json` and the full `plants_r2.json` | PASS (red) | 7/7 | 2026-10-27 |
+| static | CODE | C | ruff, ruff format, mypy (CI form) | PASS | clean, 278 files | 2026-10-27 |
+
+Verdict: **PASS** (r1b). 230/230 passed in the lexer file; 2981/2981 passed across the six files, 3 times; 0 failed, 0 errors, 0 skipped. Plants: 7/7 red. Revision 1 alone was **FAIL** on REQ-156 (4); r1b fixes it.
