@@ -1,9 +1,16 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { Icon, Logo } from "../components/Icon";
 import { SignIn } from "../screens/SignIn";
 import { TotpEnrol } from "../screens/TotpEnrol";
 import { formatHash, navigate, useRoute, type Route } from "./router";
-import { navFor, RouteView } from "./routes";
+import {
+  entryFor,
+  NAV_GROUPS,
+  navFor,
+  RouteView,
+  type NavGroup,
+} from "./routes";
 import {
   nextScreen,
   signOut,
@@ -22,11 +29,13 @@ function SignOutButton() {
   return (
     <button
       type="button"
+      className="btn btn-ghost"
       onClick={() => {
         // signOut() clears the session even when logout fails (REQ-120 (4)).
         void signOut();
       }}
     >
+      <Icon name="sign-out" />
       Sign out
     </button>
   );
@@ -39,42 +48,231 @@ function isActive(entry: Route, route: Route): boolean {
   );
 }
 
+const ROLE_LABELS: Record<Role, string> = {
+  viewer: "Viewer",
+  operator: "Operator",
+  admin: "Admin",
+};
+
+function Brand() {
+  return (
+    <span className="brand">
+      <Logo />
+      <span className="brand-name">Bitscan</span>
+    </span>
+  );
+}
+
+/**
+ * Sign-in and the TOTP-only screens: no navigation at all (TS §6.2 L1089),
+ * just the brand and the screen in a centred card.
+ */
+function AuthLayout({
+  children,
+  signOut: withSignOut = false,
+}: {
+  readonly children: ReactNode;
+  readonly signOut?: boolean;
+}) {
+  return (
+    <div className="auth">
+      <div className="auth-panel">
+        <div className="auth-brand">
+          <Brand />
+          {withSignOut && <SignOutButton />}
+        </div>
+        <div className="auth-card">{children}</div>
+        <p className="auth-foot">
+          Fleet inventory and compliance for Ubuntu hosts
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({
+  role,
+  route,
+  collapsed,
+  open,
+  onToggleCollapsed,
+  onClose,
+}: {
+  readonly role: Role;
+  readonly route: Route;
+  readonly collapsed: boolean;
+  readonly open: boolean;
+  readonly onToggleCollapsed: () => void;
+  readonly onClose: () => void;
+}) {
+  // Every section starts open; the state lives in memory only.
+  const [closed, setClosed] = useState<ReadonlySet<NavGroup>>(new Set());
+  const entries = navFor(role);
+  const classes =
+    "sidebar" + (collapsed ? " is-collapsed" : "") + (open ? " is-open" : "");
+  return (
+    <aside id="sidebar" className={classes}>
+      <div className="sidebar-head">
+        <Brand />
+        <button
+          type="button"
+          className="icon-btn sidebar-collapse"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-pressed={collapsed}
+          onClick={onToggleCollapsed}
+        >
+          <Icon name="sidebar" />
+        </button>
+        <button
+          type="button"
+          className="icon-btn sidebar-close"
+          aria-label="Close menu"
+          onClick={onClose}
+        >
+          <Icon name="close" />
+        </button>
+      </div>
+      <nav aria-label="Main" className="sidebar-nav">
+        {NAV_GROUPS.map((group) => {
+          const items = entries.filter((entry) => entry.group === group);
+          if (items.length === 0) return null;
+          const expanded = collapsed || !closed.has(group);
+          const listId = "nav-" + group.toLowerCase();
+          return (
+            <div
+              key={group}
+              className={
+                "nav-group" + (group === "Account" ? " nav-group-last" : "")
+              }
+            >
+              <button
+                type="button"
+                className="nav-group-toggle"
+                aria-expanded={expanded}
+                aria-controls={listId}
+                onClick={() => {
+                  setClosed((now) => {
+                    const next = new Set(now);
+                    if (next.has(group)) next.delete(group);
+                    else next.add(group);
+                    return next;
+                  });
+                }}
+              >
+                <span>{group}</span>
+                <Icon name="chevron" />
+              </button>
+              {expanded && (
+                <ul id={listId} className="nav-list">
+                  {items.map((entry) => (
+                    <li key={entry.route.name}>
+                      <a
+                        className="nav-link"
+                        href={formatHash(entry.route)}
+                        title={collapsed ? entry.label : undefined}
+                        aria-current={
+                          isActive(entry.route, route) ? "page" : undefined
+                        }
+                        onClick={onClose}
+                      >
+                        <Icon name={entry.icon} />
+                        <span className="nav-label">{entry.label}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}
+
 function Shell({
   role,
   route,
   children,
 }: {
-  readonly role: Role | null;
-  readonly route: Route | null;
+  readonly role: Role;
+  readonly route: Route;
   readonly children: ReactNode;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [open, setOpen] = useState(false);
+  const entry = entryFor(route);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent): void {
+      if (event.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <>
-      <header>
-        <strong>Bitscan</strong>
-        {role !== null && route !== null && (
-          <nav aria-label="Main">
-            <ul>
-              {navFor(role).map((entry) => (
-                <li key={entry.route.name}>
-                  <a
-                    href={formatHash(entry.route)}
-                    aria-current={
-                      isActive(entry.route, route) ? "page" : undefined
-                    }
-                  >
-                    {entry.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        )}
-        <SignOutButton />
-      </header>
-      {/* Each screen renders its own <main>, so the shell does not. */}
-      <div>{children}</div>
-    </>
+    <div className={"app" + (collapsed ? " is-collapsed" : "")}>
+      <Sidebar
+        role={role}
+        route={route}
+        collapsed={collapsed}
+        open={open}
+        onToggleCollapsed={() => {
+          setCollapsed((c) => !c);
+        }}
+        onClose={() => {
+          setOpen(false);
+        }}
+      />
+      {open && (
+        <button
+          type="button"
+          className="backdrop"
+          aria-label="Close menu"
+          tabIndex={-1}
+          onClick={() => {
+            setOpen(false);
+          }}
+        />
+      )}
+      <div className="workspace">
+        <header className="topbar">
+          <button
+            type="button"
+            className="icon-btn menu-btn"
+            aria-label="Open menu"
+            aria-controls="sidebar"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen(true);
+            }}
+          >
+            <Icon name="menu" />
+          </button>
+          <span className="crumbs">
+            {entry !== null && (
+              <>
+                <span className="crumb-group">{entry.group}</span>
+                <Icon name="chevron" />
+                <span className="crumb-page">
+                  {route.name === "host" ? "Host detail" : entry.label}
+                </span>
+              </>
+            )}
+          </span>
+          <span className="topbar-actions">
+            <span className="role-chip">{ROLE_LABELS[role]}</span>
+            <SignOutButton />
+          </span>
+        </header>
+        {/* Each screen renders its own <main>, so the shell does not. */}
+        <div className="content">{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -96,13 +294,15 @@ export function App() {
       ? { notice: "password-changed" as const }
       : {};
     return (
-      <SignIn
-        onSignedIn={() => {
-          setPasswordChanged(false);
-          goToHosts();
-        }}
-        {...noticeProps}
-      />
+      <AuthLayout>
+        <SignIn
+          onSignedIn={() => {
+            setPasswordChanged(false);
+            goToHosts();
+          }}
+          {...noticeProps}
+        />
+      </AuthLayout>
     );
   }
 
@@ -110,15 +310,15 @@ export function App() {
   if (next === "totp-required") {
     // TS §6.2 L1089: an admin without TOTP gets only TOTP and sign-out.
     return (
-      <Shell role={null} route={null}>
+      <AuthLayout signOut>
         <TotpEnrol mode="required" onDone={goToHosts} />
-      </Shell>
+      </AuthLayout>
     );
   }
   if (next === "totp-offer" && offerSkipped !== session) {
     // #85 (a): offered after every sign-in; "Not now" leads to the host list.
     return (
-      <Shell role={null} route={null}>
+      <AuthLayout signOut>
         <TotpEnrol
           mode="offer"
           onDone={goToHosts}
@@ -127,7 +327,7 @@ export function App() {
             goToHosts();
           }}
         />
-      </Shell>
+      </AuthLayout>
     );
   }
 

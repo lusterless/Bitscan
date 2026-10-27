@@ -7,6 +7,7 @@ import { toProblem, type ProblemInfo } from "../app/problems";
 import { formatHash, type Route } from "../app/router";
 import { Pager, useCursorPages } from "../components/Pager";
 import { ProblemBanner } from "../components/ProblemBanner";
+import { Icon } from "../components/Icon";
 import { TypeAhead } from "../components/TypeAhead";
 
 type SearchQuery = NonNullable<
@@ -48,6 +49,14 @@ const TEXT_FIELDS: readonly (readonly [TextKey, string])[] = [
   ["host", "Hostname contains"],
   ["agent_id", "Agent id"],
 ];
+// The form's two field groups; together they are exactly TEXT_FIELDS.
+const PACKAGE_KEYS: readonly TextKey[] = ["q", "name", "version", "arch"];
+const HOST_KEYS: readonly TextKey[] = ["os", "tag", "host", "agent_id"];
+
+function labelOf(key: TextKey): string {
+  return TEXT_FIELDS.find(([k]) => k === key)?.[1] ?? key;
+}
+
 const OPS: readonly VersionOp[] = ["lt", "le", "eq", "ge", "gt"];
 const EMPTY: Filters = {
   q: "",
@@ -195,185 +204,249 @@ export function PackageSearch({ navigate }: PackageSearchProps) {
     );
   }
 
+  function textField(key: TextKey) {
+    return (
+      <label key={key}>
+        {labelOf(key)}
+        <input
+          value={filters[key]}
+          onChange={(event) => {
+            setFilters({ ...filters, [key]: event.target.value });
+          }}
+        />
+      </label>
+    );
+  }
+
   const drill = query !== null && query.group_by === undefined;
   const list = items ?? [];
   return (
-    <main>
-      <h1>Package search</h1>
-      <form onSubmit={submit} aria-label="Search packages">
-        {TEXT_FIELDS.map(([key, label]) =>
-          key === "q" ? (
-            <TypeAhead
-              key={key}
-              label={label}
-              value={filters.q}
-              onChange={(value) => {
-                setFilters((f) => ({ ...f, q: value }));
-              }}
-              onChoose={(name) => {
-                setFilters((f) => ({ ...f, name, q: "" }));
-              }}
-            />
-          ) : (
-            <label key={key}>
-              {label}
-              <input
-                value={filters[key]}
-                onChange={(event) => {
-                  setFilters({ ...filters, [key]: event.target.value });
+    <main className="page">
+      <div className="page-header">
+        <div>
+          <h1>Package search</h1>
+          <p className="page-subtitle">
+            Find a package across the fleet by name, version, architecture or
+            host. Fill in only the filters you need.
+          </p>
+        </div>
+      </div>
+      <form
+        onSubmit={submit}
+        aria-label="Search packages"
+        className="card filters"
+      >
+        <fieldset className="filter-group">
+          <legend>Package</legend>
+          {PACKAGE_KEYS.map((key) =>
+            key === "q" ? (
+              <TypeAhead
+                key={key}
+                label={labelOf(key)}
+                value={filters.q}
+                onChange={(value) => {
+                  setFilters((f) => ({ ...f, q: value }));
+                }}
+                onChoose={(name) => {
+                  setFilters((f) => ({ ...f, name, q: "" }));
                 }}
               />
-            </label>
-          ),
-        )}
-        <label>
-          Version comparison
-          <select
-            value={filters.version_op}
-            disabled={filters.version === ""}
-            onChange={(event) => {
-              const op = OPS.find((o) => o === event.target.value);
-              setFilters({ ...filters, version_op: op ?? "" });
-            }}
-          >
-            <option value="">exact version</option>
-            {OPS.map((op) => (
-              <option key={op} value={op}>
-                {op}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Status
-          <select
-            value={filters.status}
-            onChange={(event) => {
-              setFilters({
-                ...filters,
-                status: event.target.value === "any" ? "any" : "installed",
-              });
-            }}
-          >
-            <option value="installed">installed</option>
-            <option value="any">any</option>
-          </select>
-        </label>
-        <label>
-          View
-          <select
-            value={filters.view}
-            onChange={(event) => {
-              setFilters({
-                ...filters,
-                view: event.target.value === "host" ? "host" : "package",
-              });
-            }}
-          >
-            <option value="package">by package and version</option>
-            <option value="host">by host</option>
-          </select>
-        </label>
-        <button type="submit">Search</button>
+            ) : (
+              textField(key)
+            ),
+          )}
+          <label>
+            Version comparison
+            <select
+              value={filters.version_op}
+              disabled={filters.version === ""}
+              onChange={(event) => {
+                const op = OPS.find((o) => o === event.target.value);
+                setFilters({ ...filters, version_op: op ?? "" });
+              }}
+            >
+              <option value="">exact version</option>
+              {OPS.map((op) => (
+                <option key={op} value={op}>
+                  {op}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Status
+            <select
+              value={filters.status}
+              onChange={(event) => {
+                setFilters({
+                  ...filters,
+                  status: event.target.value === "any" ? "any" : "installed",
+                });
+              }}
+            >
+              <option value="installed">installed</option>
+              <option value="any">any</option>
+            </select>
+          </label>
+        </fieldset>
+        <fieldset className="filter-group">
+          <legend>Hosts</legend>
+          {HOST_KEYS.map(textField)}
+        </fieldset>
+        <fieldset className="filter-group filter-group-last">
+          <legend>Results</legend>
+          <label>
+            View
+            <select
+              value={filters.view}
+              onChange={(event) => {
+                setFilters({
+                  ...filters,
+                  view: event.target.value === "host" ? "host" : "package",
+                });
+              }}
+            >
+              <option value="package">by package and version</option>
+              <option value="host">by host</option>
+            </select>
+          </label>
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary">
+              <Icon name="search" />
+              Search
+            </button>
+          </div>
+        </fieldset>
       </form>
-      {note !== null && <p role="alert">{note}</p>}
+      {note !== null && (
+        <p role="alert" className="callout callout-danger">
+          {note}
+        </p>
+      )}
       <ProblemBanner problem={problem} />
       {query !== null && (
-        <button
-          type="button"
-          disabled={exporting}
-          onClick={() => {
-            void exportCsv(query);
-          }}
-        >
-          Export CSV
-        </button>
+        <div className="toolbar">
+          {drill && search !== null && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                open(search);
+              }}
+            >
+              <Icon name="back" />
+              Back to results
+            </button>
+          )}
+          <span className="toolbar-spacer" />
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={exporting}
+            onClick={() => {
+              void exportCsv(query);
+            }}
+          >
+            <Icon name="download" />
+            Export CSV
+          </button>
+        </div>
       )}
-      {drill && search !== null && (
-        <button
-          type="button"
-          onClick={() => {
-            open(search);
-          }}
-        >
-          Back to results
-        </button>
+      {query === null && (
+        <p className="card empty">
+          Enter one or more filters and choose Search.
+        </p>
       )}
-      {items !== null && list.length === 0 && <p>No packages found.</p>}
-      {[...byName(list.filter(isPackageGroup))].map(([name, groups]) => (
-        <section key={name} aria-label={name}>
-          <h2>{name}</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Version</th>
-                <th>Architecture</th>
-                <th>Hosts</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((group, index) => (
-                <tr key={index}>
-                  <td>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        open(drillQuery(search, group));
-                      }}
-                    >
-                      {group.version}
-                    </button>
-                  </td>
-                  <td>{group.architecture}</td>
-                  <td>{group.host_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      ))}
-      {list.some(isHostGroup) && (
-        <table aria-label="Hosts">
-          <thead>
-            <tr>
-              <th>Host</th>
-              <th>Matching packages</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.filter(isHostGroup).map((group, index) => (
-              <tr key={index}>
-                <td>{hostLink(group.agent_id, group.hostname)}</td>
-                <td>{group.package_count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {items !== null && list.length === 0 && (
+        <p className="card empty">No packages found.</p>
       )}
-      {list.some(isRow) && (
-        <table aria-label="Hosts with this version">
-          <thead>
-            <tr>
-              <th>Host</th>
-              <th>Name</th>
-              <th>Version</th>
-              <th>Architecture</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.filter(isRow).map((row, index) => (
-              <tr key={index}>
-                <td>{hostLink(row.agent_id, row.hostname)}</td>
-                <td>{row.name}</td>
-                <td>{row.version}</td>
-                <td>{row.architecture}</td>
-                <td>{row.status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div className="results">
+        {[...byName(list.filter(isPackageGroup))].map(([name, groups]) => (
+          <section key={name} aria-label={name} className="card card-flush">
+            <h2 className="card-title">{name}</h2>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Architecture</th>
+                    <th>Hosts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groups.map((group, index) => (
+                    <tr key={index}>
+                      <td>
+                        <button
+                          type="button"
+                          className="link-btn mono"
+                          onClick={() => {
+                            open(drillQuery(search, group));
+                          }}
+                        >
+                          {group.version}
+                        </button>
+                      </td>
+                      <td>{group.architecture}</td>
+                      <td className="num">{group.host_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))}
+        {list.some(isHostGroup) && (
+          <div className="card card-flush">
+            <div className="table-wrap">
+              <table aria-label="Hosts" className="table">
+                <thead>
+                  <tr>
+                    <th>Host</th>
+                    <th>Matching packages</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.filter(isHostGroup).map((group, index) => (
+                    <tr key={index}>
+                      <td>{hostLink(group.agent_id, group.hostname)}</td>
+                      <td className="num">{group.package_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {list.some(isRow) && (
+          <div className="card card-flush">
+            <div className="table-wrap">
+              <table aria-label="Hosts with this version" className="table">
+                <thead>
+                  <tr>
+                    <th>Host</th>
+                    <th>Name</th>
+                    <th>Version</th>
+                    <th>Architecture</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.filter(isRow).map((row, index) => (
+                    <tr key={index}>
+                      <td>{hostLink(row.agent_id, row.hostname)}</td>
+                      <td>{row.name}</td>
+                      <td>{row.version}</td>
+                      <td>{row.architecture}</td>
+                      <td>{row.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
       {query !== null && <Pager pages={pages} nextCursor={nextCursor} />}
     </main>
   );

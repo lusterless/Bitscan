@@ -114,12 +114,19 @@ export function TotpEnrol({ mode, onDone, onSkip }: TotpEnrolProps) {
   }
 
   return (
-    <main>
+    <main className={mode === "manage" ? "page page-narrow" : "auth-main"}>
       <h1>{replacing ? "Replace TOTP" : "Set up TOTP"}</h1>
-      {note !== null && <p role="alert">{note}</p>}
+      {note !== null && (
+        <p role="alert" className="callout callout-danger">
+          {note}
+        </p>
+      )}
       <ProblemBanner problem={problem} />
       {step.kind === "start" ? (
-        <form onSubmit={start}>
+        <form
+          onSubmit={start}
+          className={mode === "manage" ? "card form" : "form"}
+        >
           <p>
             {replacing
               ? "Enter your current password and a current code to get a new secret."
@@ -153,27 +160,34 @@ export function TotpEnrol({ mode, onDone, onSkip }: TotpEnrolProps) {
               </label>
             </>
           )}
-          <button type="submit" disabled={busy}>
-            Start
-          </button>
-          {mode === "offer" && onSkip !== undefined && (
-            <button type="button" onClick={onSkip}>
-              Not now
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              Start
             </button>
-          )}
+            {mode === "offer" && onSkip !== undefined && (
+              <button type="button" className="btn btn-ghost" onClick={onSkip}>
+                Not now
+              </button>
+            )}
+          </div>
         </form>
       ) : (
-        <form onSubmit={confirm}>
+        <form
+          onSubmit={confirm}
+          className={mode === "manage" ? "card form" : "form"}
+        >
           <p>
             Add this secret to your authenticator app, then enter the code it
             shows.
           </p>
-          <QrCode value={step.uri} label="QR code of the TOTP secret" />
+          <div className="qr">
+            <QrCode value={step.uri} label="QR code of the TOTP secret" />
+          </div>
           <p>
-            Secret: <code>{step.secret}</code>
+            Secret: <code className="secret">{step.secret}</code>
           </p>
           <p>
-            URI: <code>{step.uri}</code>
+            URI: <code className="secret">{step.uri}</code>
           </p>
           <label>
             Code
@@ -187,9 +201,15 @@ export function TotpEnrol({ mode, onDone, onSkip }: TotpEnrolProps) {
               }}
             />
           </label>
-          <button type="submit" disabled={busy || code === ""}>
-            Confirm
-          </button>
+          <div className="form-actions">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={busy || code === ""}
+            >
+              Confirm
+            </button>
+          </div>
         </form>
       )}
     </main>

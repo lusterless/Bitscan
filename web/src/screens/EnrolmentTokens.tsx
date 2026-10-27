@@ -120,160 +120,209 @@ export function EnrolmentTokens() {
   }
 
   return (
-    <main>
-      <h1>Enrolment tokens</h1>
-      {note !== null && <p role="alert">{note}</p>}
+    <main className="page">
+      <div className="page-header">
+        <div>
+          <h1>Enrolment tokens</h1>
+          <p className="page-subtitle">
+            Tokens let new hosts enrol. Each token has a use limit and an
+            expiry, and can be limited to CIDRs.
+          </p>
+        </div>
+      </div>
+      {note !== null && (
+        <p role="alert" className="callout callout-danger">
+          {note}
+        </p>
+      )}
       <ProblemBanner problem={problem} />
-      {created !== null ? (
-        <section aria-label="New enrolment token">
-          <p>Copy this token now. It is shown only once.</p>
-          <code>{created.token}</code>
-          <button
-            type="button"
-            onClick={() => {
-              // Inside a promise, so a missing Clipboard API is caught too.
-              const token = created.token;
-              void Promise.resolve()
-                .then(() => navigator.clipboard.writeText(token))
-                .then(() => {
-                  setCopied(true);
-                })
-                .catch(() => {
-                  setCopied(false);
-                });
-            }}
+      <div className="split">
+        {created !== null ? (
+          <section
+            aria-label="New enrolment token"
+            className="card card-success"
           >
-            Copy
-          </button>
-          {copied && <span role="status">Copied.</span>}
-          <p>
-            Token {created.token_id}: up to {created.max_uses} uses, expires{" "}
-            {formatTime(created.expires_at)}.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setCreated(null);
-              setCopied(false);
-            }}
+            <h2>Token created</h2>
+            <p className="callout callout-warning">
+              Copy this token now. It is shown only once.
+            </p>
+            <div className="secret-row">
+              <code className="secret">{created.token}</code>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => {
+                  // Inside a promise, so a missing Clipboard API is caught too.
+                  const token = created.token;
+                  void Promise.resolve()
+                    .then(() => navigator.clipboard.writeText(token))
+                    .then(() => {
+                      setCopied(true);
+                    })
+                    .catch(() => {
+                      setCopied(false);
+                    });
+                }}
+              >
+                Copy
+              </button>
+            </div>
+            {copied && (
+              <span role="status" className="status-ok">
+                Copied.
+              </span>
+            )}
+            <p className="muted">
+              Token {created.token_id}: up to {created.max_uses} uses, expires{" "}
+              {formatTime(created.expires_at)}.
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setCreated(null);
+                setCopied(false);
+              }}
+            >
+              Done
+            </button>
+          </section>
+        ) : (
+          <form
+            onSubmit={create}
+            aria-label="Create enrolment token"
+            className="card form form-wide"
           >
-            Done
-          </button>
+            <h2>New token</h2>
+            <p className="hint">
+              A multi-use token should set max uses to the expected number of
+              hosts and set allowed CIDRs.
+            </p>
+            <p className="hint">
+              Creating a token with auto-approve or more than 100 uses raises an
+              alert.
+            </p>
+            <label>
+              Max uses (1 to 10,000)
+              <input
+                type="number"
+                min={1}
+                max={10_000}
+                value={maxUses}
+                onChange={(event) => {
+                  setMaxUses(event.target.value);
+                }}
+              />
+            </label>
+            <label>
+              Expires in hours (1 to 720)
+              <input
+                type="number"
+                min={1}
+                max={720}
+                value={hours}
+                onChange={(event) => {
+                  setHours(event.target.value);
+                }}
+              />
+            </label>
+            <label>
+              Allowed CIDRs (optional, one per line)
+              <textarea
+                value={cidrs}
+                onChange={(event) => {
+                  setCidrs(event.target.value);
+                }}
+              />
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={autoApprove}
+                onChange={(event) => {
+                  setAutoApprove(event.target.checked);
+                }}
+              />
+              Auto-approve new hosts
+            </label>
+            <div className="form-actions">
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                Create token
+              </button>
+            </div>
+          </form>
+        )}
+        <section className="card card-flush" aria-labelledby="tokens-title">
+          <h2 id="tokens-title" className="card-title">
+            Tokens
+          </h2>
+          <ProblemBanner problem={listProblem} />
+          {page !== null && page.items.length === 0 && (
+            <p className="empty">No enrolment tokens yet.</p>
+          )}
+          {page !== null && page.items.length > 0 && (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Uses</th>
+                    <th>Auto-approve</th>
+                    <th>Allowed CIDRs</th>
+                    <th>Expires</th>
+                    <th>Created</th>
+                    <th>Created by (user id)</th>
+                    <th>Revoked</th>
+                    <th className="sticky-end" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {page.items.map((item) => (
+                    <tr key={item.token_id}>
+                      <td>{item.token_id}</td>
+                      <td>
+                        {item.uses} / {item.max_uses}
+                      </td>
+                      <td>{item.auto_approve ? "yes" : "no"}</td>
+                      <td className="wrap">
+                        {item.allowed_cidrs?.join(", ") ?? "any"}
+                      </td>
+                      <td>{formatTime(item.expires_at)}</td>
+                      <td>{formatTime(item.created_at)}</td>
+                      <td>{item.created_by}</td>
+                      <td>
+                        {item.revoked_at === null
+                          ? "not revoked"
+                          : formatTime(item.revoked_at)}
+                      </td>
+                      <td className="sticky-end">
+                        {item.revoked_at === null && (
+                          <Confirm
+                            tone="danger"
+                            label="Revoke"
+                            message={
+                              "Revoke enrolment token " +
+                              String(item.token_id) +
+                              "? Hosts can no longer enrol with it."
+                            }
+                            disabled={busy}
+                            onConfirm={() => {
+                              revoke(item.token_id);
+                            }}
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="card-foot">
+            <Pager pages={pages} nextCursor={page?.next_cursor ?? null} />
+          </div>
         </section>
-      ) : (
-        <form onSubmit={create} aria-label="Create enrolment token">
-          <p>
-            A multi-use token should set max uses to the expected number of
-            hosts and set allowed CIDRs.
-          </p>
-          <p>
-            Creating a token with auto-approve or more than 100 uses raises an
-            alert.
-          </p>
-          <label>
-            Max uses (1 to 10,000)
-            <input
-              type="number"
-              min={1}
-              max={10_000}
-              value={maxUses}
-              onChange={(event) => {
-                setMaxUses(event.target.value);
-              }}
-            />
-          </label>
-          <label>
-            Expires in hours (1 to 720)
-            <input
-              type="number"
-              min={1}
-              max={720}
-              value={hours}
-              onChange={(event) => {
-                setHours(event.target.value);
-              }}
-            />
-          </label>
-          <label>
-            Allowed CIDRs (optional, one per line)
-            <textarea
-              value={cidrs}
-              onChange={(event) => {
-                setCidrs(event.target.value);
-              }}
-            />
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={autoApprove}
-              onChange={(event) => {
-                setAutoApprove(event.target.checked);
-              }}
-            />
-            Auto-approve new hosts
-          </label>
-          <button type="submit" disabled={busy}>
-            Create token
-          </button>
-        </form>
-      )}
-      <h2>Tokens</h2>
-      <ProblemBanner problem={listProblem} />
-      {page !== null && (
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Uses</th>
-              <th>Auto-approve</th>
-              <th>Allowed CIDRs</th>
-              <th>Expires</th>
-              <th>Created</th>
-              <th>Created by (user id)</th>
-              <th>Revoked</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {page.items.map((item) => (
-              <tr key={item.token_id}>
-                <td>{item.token_id}</td>
-                <td>
-                  {item.uses} / {item.max_uses}
-                </td>
-                <td>{item.auto_approve ? "yes" : "no"}</td>
-                <td>{item.allowed_cidrs?.join(", ") ?? "any"}</td>
-                <td>{formatTime(item.expires_at)}</td>
-                <td>{formatTime(item.created_at)}</td>
-                <td>{item.created_by}</td>
-                <td>
-                  {item.revoked_at === null
-                    ? "not revoked"
-                    : formatTime(item.revoked_at)}
-                </td>
-                <td>
-                  {item.revoked_at === null && (
-                    <Confirm
-                      label="Revoke"
-                      message={
-                        "Revoke enrolment token " +
-                        String(item.token_id) +
-                        "? Hosts can no longer enrol with it."
-                      }
-                      disabled={busy}
-                      onConfirm={() => {
-                        revoke(item.token_id);
-                      }}
-                    />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <Pager pages={pages} nextCursor={page?.next_cursor ?? null} />
+      </div>
     </main>
   );
 }
