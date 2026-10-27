@@ -192,8 +192,7 @@ def read_input(bits_dir: Path, rel: str) -> FileInput | None:
     digest = hashlib.sha256()
     try:
         dir_fd = _open_folder(bits_dir, _folder(rel))
-    except OSError:
-        log.warning("folder file not read: its folder is unreadable")
+    except OSError:  # the caller's folder guard logs it, once per folder
         return None
     try:
         fd = os.open(rel.rpartition("/")[2], _OPEN, dir_fd=dir_fd)
@@ -260,10 +259,15 @@ def renamed(conn: Conn, rel: str, prepared: Prepared) -> bool:
     return row is not None and row.policy_name != name
 
 
-def remove_leftover(bits_dir: Path, rel: str) -> Difference:
+def remove_leftover(bits_dir: Path, rel: str) -> Difference | None:
     """Remove a leftover of an interrupted delete: no import, no `bit_import`
-    row, the policy stays deleted; one log line and one #103 difference."""
+    row, the policy stays deleted; one log line and one #103 difference.
+    None if the file is not confirmed gone through the no-follow folder
+    handle: the caller then treats `uploaded/` as unreadable (decisions,
+    TASK-156 revision 4)."""
     remove_after_commit(bits_dir, (rel,))
+    if _state(bits_dir, rel) != "absent":
+        return None
     log.warning("removed a leftover of an interrupted delete: %s", rel)
     return Difference(rel, LEFTOVER_CHECK)
 
@@ -295,7 +299,11 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
             with session.transaction() as tx:
                 kind = classify_upload(tx.conn, rel)
             if kind == "leftover":
-                leftovers.append(remove_leftover(bits_dir, rel))
+                gone = remove_leftover(bits_dir, rel)
+                if gone is None:
+                    _mark(blind, bits_dir, UPLOADED)
+                else:
+                    leftovers.append(gone)
                 continue
             if kind == "stray":
                 if present(bits_dir, rel):  # not removed by a move above
