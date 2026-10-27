@@ -408,13 +408,16 @@ def test_temp_open_flags_flush_then_commit_then_rename(
     events: list[tuple[str, Any]] = []
     real_open, real_fsync, real_replace = os.open, os.fsync, os.replace
     fds: dict[int, str] = {}
+    dir_flags: list[int] = []
 
     def spy_open(path: Any, flags: int, mode: int = 0o777, **kw: Any) -> int:
         fd = real_open(path, flags, mode, **kw)
-        if Path(path) == temp:
-            events.append(("open", (flags, mode)))
+        via = fds.get(kw.get("dir_fd", -1))  # "dir" when relative to uploaded/
+        if Path(path) == temp or (via == "dir" and Path(path).name == temp.name):
+            events.append(("open", (flags, mode, via)))
             fds[fd] = "temp"
         elif Path(path) == bits / "uploaded":
+            dir_flags.append(flags)
             fds[fd] = "dir"
         return fd
 
@@ -422,9 +425,10 @@ def test_temp_open_flags_flush_then_commit_then_rename(
         events.append(("fsync", fds.get(fd, "?")))
         real_fsync(fd)
 
-    def spy_replace(a: Any, b: Any) -> None:
-        events.append(("replace", (Path(a).name, Path(b).name)))
-        real_replace(a, b)
+    def spy_replace(a: Any, b: Any, **kw: Any) -> None:
+        via = (fds.get(kw.get("src_dir_fd", -1)), fds.get(kw.get("dst_dir_fd", -1)))
+        events.append(("replace", (Path(a).name, Path(b).name, via)))
+        real_replace(a, b, **kw)
 
     monkeypatch.setattr(os, "open", spy_open)
     monkeypatch.setattr(os, "fsync", spy_fsync)
@@ -439,16 +443,22 @@ def test_temp_open_flags_flush_then_commit_then_rename(
     assert out.outcome == "success"
     opens = [e for e in events if e[0] == "open"]
     assert len(opens) == 1
-    flags, mode = opens[0][1]
+    flags, mode, via = opens[0][1]
     for flag in ("O_WRONLY", "O_CREAT", "O_EXCL", "O_NOFOLLOW"):
         assert flags & getattr(os, flag), flag
     assert not flags & os.O_TRUNC and not flags & os.O_APPEND
     assert mode == 0o600
+    # Folder guard (r2 ruling): uploaded/ opened O_DIRECTORY | O_NOFOLLOW and
+    # the temp open, the directory fsync and the rename are relative to it.
+    assert via == "dir"
+    assert dir_flags and all(
+        f & os.O_DIRECTORY and f & os.O_NOFOLLOW for f in dir_flags
+    )
     kinds = [e[0] if e[0] != "fsync" else f"fsync:{e[1]}" for e in events]
     assert kinds.index("fsync:temp") < kinds.index("commit")
     assert kinds.index("fsync:dir") < kinds.index("commit")
     assert kinds.index("commit") < kinds.index("replace")
-    assert ("replace", (temp.name, f"policy-{pid}.bit")) in events
+    assert ("replace", (temp.name, f"policy-{pid}.bit", ("dir", "dir"))) in events
     assert listing(bits / "uploaded") == [f"policy-{pid}.bit"]
     assert stored(bits, pid).read_bytes() == data
 
@@ -755,7 +765,7 @@ def test_a_fault_between_commit_and_rename_is_finished_at_the_next_start(
     v2, _ = bit(name, status="disabled")
     s0 = snap(server)
 
-    def broken(a: Any, b: Any) -> None:
+    def broken(a: Any, b: Any, **kw: Any) -> None:
         raise OSError(errno.EIO, "I/O error")
 
     monkeypatch.setattr(os, "replace", broken)
@@ -780,7 +790,7 @@ def test_a_new_policy_whose_rename_failed_gets_its_file_from_finish(
     name = f"New {tag()}"
     data, _ = bit(name)
 
-    def broken(a: Any, b: Any) -> None:
+    def broken(a: Any, b: Any, **kw: Any) -> None:
         raise OSError(errno.EIO, "I/O error")
 
     monkeypatch.setattr(os, "replace", broken)

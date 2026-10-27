@@ -167,10 +167,12 @@ def test_discard_logs_only_the_error_type_when_removal_fails(
     upl = uploads._Upload(tmp_path, DATA, GOOD)
     upl.write(5)
 
-    def refuse(self: Path, missing_ok: bool = False) -> None:
-        raise PermissionError(13, "denied", str(self))
+    def refuse(path: Any, *a: Any, **kw: Any) -> None:
+        raise PermissionError(13, "denied", str(path))
 
     monkeypatch.setattr(Path, "unlink", refuse)
+    monkeypatch.setattr(os, "unlink", refuse)
+    monkeypatch.setattr(os, "remove", refuse)
     upl.discard()
     monkeypatch.undo()
     assert os.listdir(tmp_path) == [f".tmp-5-{GOOD}"]
