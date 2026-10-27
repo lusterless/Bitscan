@@ -199,3 +199,144 @@ describe("CHK-M5-186 toProblem", () => {
     ).toBeNull();
   });
 });
+
+// TASK-168 TEST (TP-M7-29, CHK-M7-310): REQ-183 problem mapping.
+// Expected values: the lead's 503 rule (work/decisions.md 2026-10-27 "Web: how
+// the UI shows the #102 start-up 503"): a valid Retry-After gives "The manager
+// is not ready yet. Try again in N seconds." with action "wait"; no, an
+// invalid or an HTTP-date Retry-After gives the CHK-M5-185 generic text; the
+// detail is never read. #98 (e) / TS §4.1 L522: policy_managed_on_server.
+const NOT_READY = (n: string): string =>
+  "The manager is not ready yet. Try again in " + n + ".";
+const GENERIC_503 = "The manager is unavailable. Try again later.";
+const SERVER_FOLDER =
+  "This policy is managed in the server folder; change its file there.";
+
+describe("CHK-M7-310 (TASK-168) policy_managed_on_server", () => {
+  it.each([409, 400, 403, 404, 500, 503])(
+    "status %i with the type gives the server-folder text, no action",
+    (status) => {
+      expect(messageFor(info(status, "policy_managed_on_server", 10))).toEqual({
+        text: SERVER_FOLDER,
+        action: null,
+      });
+    },
+  );
+
+  it("the text names neither an API token nor the detail", () => {
+    const m = messageFor(info(409, "policy_managed_on_server"));
+    expect(m.text).not.toContain("CANARY");
+    expect(m.text.toLowerCase()).not.toMatch(/api|bsk_|token/);
+  });
+
+  it("a 409 without the type keeps the generic status text", () => {
+    expect(messageFor(info(409, "about:blank")).text).toBe(
+      "Request failed (status 409).",
+    );
+  });
+});
+
+describe("CHK-M7-310 (TASK-168) the #102 start-up 503", () => {
+  it.each([
+    [10, "10 seconds"],
+    [1, "1 second"],
+    [2, "2 seconds"],
+    [0, "0 seconds"],
+    [999999999, "999999999 seconds"],
+  ] as const)("Retry-After %i -> not-ready text and wait", (s, words) => {
+    expect(messageFor(info(503, "about:blank", s))).toEqual({
+      text: NOT_READY(words),
+      action: "wait",
+    });
+  });
+
+  it("no Retry-After keeps the generic text (CHK-M5-185 unchanged)", () => {
+    expect(messageFor(info(503, "about:blank", null))).toEqual({
+      text: GENERIC_503,
+      action: null,
+    });
+  });
+
+  it.each([
+    ["10", NOT_READY("10 seconds"), "wait"],
+    ["1", NOT_READY("1 second"), "wait"],
+    ["999999999", NOT_READY("999999999 seconds"), "wait"],
+    ["Wed, 21 Oct 2026 07:28:00 GMT", GENERIC_503, null],
+    ["-1", GENERIC_503, null],
+    ["1.5", GENERIC_503, null],
+    ["abc", GENERIC_503, null],
+    ["", GENERIC_503, null],
+    ["1e3", GENERIC_503, null],
+  ] as const)("through toProblem: header %j -> %j", (header, text, action) => {
+    const p = toProblem(
+      { type: "about:blank", title: "t", status: 503, detail: CANARY },
+      response(503, { "Retry-After": header }),
+    );
+    expect(messageFor(p)).toEqual({ text, action });
+  });
+
+  it("through toProblem: an absent header and a non-problem body", () => {
+    expect(messageFor(toProblem(undefined, response(503)))).toEqual({
+      text: GENERIC_503,
+      action: null,
+    });
+    expect(
+      messageFor(toProblem(null, response(503, { "Retry-After": "10" }))),
+    ).toEqual({ text: NOT_READY("10 seconds"), action: "wait" });
+  });
+
+  it("the detail is never read: the text depends on the header only", () => {
+    for (const detail of [
+      null,
+      CANARY,
+      "The manager is starting",
+      "Retry-After: 99",
+      "starting up; try again in 5 seconds",
+    ]) {
+      expect(messageFor(info(503, "about:blank", null, detail))).toEqual({
+        text: GENERIC_503,
+        action: null,
+      });
+      expect(messageFor(info(503, "about:blank", 10, detail))).toEqual({
+        text: NOT_READY("10 seconds"),
+        action: "wait",
+      });
+    }
+  });
+
+  it("a typed 503 keeps its type's text even with Retry-After", () => {
+    expect(messageFor(info(503, "audit_sink_unavailable", 10))).toEqual({
+      text: PAUSED,
+      action: null,
+    });
+  });
+
+  it("an unknown type: header decides on 503, generic text elsewhere", () => {
+    expect(messageFor(info(503, "something_new", 10))).toEqual({
+      text: NOT_READY("10 seconds"),
+      action: "wait",
+    });
+    expect(messageFor(info(503, "something_new", null))).toEqual({
+      text: GENERIC_503,
+      action: null,
+    });
+    for (const status of [400, 404, 409, 500, 502]) {
+      expect(messageFor(info(status, "something_new", 10))).toEqual({
+        text: "Request failed (status " + String(status) + ").",
+        action: null,
+      });
+    }
+  });
+
+  it("Retry-After does not change the other statuses", () => {
+    expect(messageFor(info(500, "about:blank", 10)).text).toBe(
+      "Request failed (status 500).",
+    );
+    expect(messageFor(info(502, "about:blank", 10)).text).toBe(
+      "Request failed (status 502).",
+    );
+    expect(messageFor(info(401, "about:blank", 10)).text).toBe(
+      "Your session has ended. Sign in again.",
+    );
+  });
+});

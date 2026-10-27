@@ -212,3 +212,39 @@ describe("M3 generated paths (CHK-M3-299)", () => {
     expect(built.at(-1)).toBe(`/api/v1/agents/${id}/packages`);
   });
 });
+
+// TASK-168 TEST first pass (REQ-183 (2), TP-M7-29, CHK-M7-310 / -317). At this
+// head the M7 routes in manager/openapi.json are TASK-161 (profiles) and
+// TASK-165 (imports); the second pass adds TASK-162 to TASK-164.
+describe("M7 generated paths, first pass (CHK-M7-310)", () => {
+  it("has the profile and import routes under /api/v1", () => {
+    type M7FirstPass =
+      "/api/v1/policies" | "/api/v1/policies/{id}" | "/api/v1/imports";
+    expectTypeOf<M7FirstPass>().toExtend<keyof paths>();
+    expectTypeOf<"/policies">().not.toExtend<keyof paths>();
+    expectTypeOf<"/imports">().not.toExtend<keyof paths>();
+    expectTypeOf<Exclude<keyof paths, `/api/v1/${string}`>>().toEqualTypeOf<
+      "/healthz" | "/readyz"
+    >();
+  });
+
+  it("the list status filter is enabled or disabled only (#9)", () => {
+    type Query = NonNullable<
+      paths["/api/v1/policies"]["get"]["parameters"]["query"]
+    >;
+    expectTypeOf<NonNullable<Query["status"]>>().toEqualTypeOf<
+      "enabled" | "disabled"
+    >();
+    expectTypeOf<
+      components["schemas"]["PolicyItem"]["policy_status"]
+    >().toEqualTypeOf<"enabled" | "disabled">();
+  });
+
+  it("GET /api/v1/policies goes out once under the prefix", async () => {
+    await api.GET("/api/v1/policies", {
+      params: { query: { limit: 50, status: "disabled" } },
+    });
+    expect(built.at(-1)).toBe("/api/v1/policies?limit=50&status=disabled");
+    expect(sent.at(-1)?.method).toBe("GET");
+  });
+});

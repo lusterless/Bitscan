@@ -46,7 +46,7 @@ from pydantic import SecretStr
 from bitscan_manager.db.pool import AppDatabase
 from bitscan_manager.repositories.catalog_lock import catalog_lock
 from bitscan_manager.services.importer import delete as dl
-from bitscan_manager.services.importer import folders, pipeline, uploads
+from bitscan_manager.services.importer import folders, pipeline, store_decide, uploads
 from bitscan_manager.services.importer.alerts import Difference
 from bitscan_manager.services.importer.model import MAX_BIT_BYTES
 from bitscan_manager.services.importer.pipeline import Actor, FileInput, ImportOutcome
@@ -1046,8 +1046,8 @@ def test_iv_no_uploaded_file_ever_reaches_the_pipeline_as_a_server_target(
     put(bits, "new.bit", bit(f"New {tag()}")[0])
     seen: list[FileInput] = []
     targets: list[Target] = []
-    real_import = folders.import_one
-    real_decide = pipeline.store_decide.decide
+    real_import = pipeline.import_one
+    real_decide = store_decide.decide
 
     def spy_import(*a: Any, **k: Any) -> ImportOutcome:
         seen.append(a[3])
@@ -1058,7 +1058,7 @@ def test_iv_no_uploaded_file_ever_reaches_the_pipeline_as_a_server_target(
         return real_decide(conn, rules, target, exists)
 
     monkeypatch.setattr(folders, "import_one", spy_import)
-    monkeypatch.setattr(pipeline.store_decide, "decide", spy_decide)
+    monkeypatch.setattr(store_decide, "decide", spy_decide)
     res = rec(db, bits)
     for t in targets:
         assert not (t.kind == "server" and (t.source_file or "").startswith("uploaded"))
@@ -1202,7 +1202,7 @@ def test_a_live_upload_with_an_edited_name_is_skipped_and_reported(
     srv = policy_by_name(server, sname)
     assert srv is not None
     parses: list[int] = []
-    real_prepare = folders.prepare
+    real_prepare = pipeline.prepare
 
     def spy(data: bytes | None) -> Any:
         parses.append(1)
@@ -1242,6 +1242,35 @@ def test_a_live_upload_with_an_edited_name_is_skipped_and_reported(
     assert policy_row(server, later_id)["source_sha256"] == sha(later_data)
 
 
+@pytest.mark.parametrize("bad", ["unparsable", "oversize", "bad-name"])
+def test_a_live_upload_with_no_valid_name_is_rejected_every_time(
+    server: PgServer, db: AppDatabase, bits: Path, bad: str
+) -> None:
+    """A file with no valid PolicyName is not `renamed`: the pipeline rejects
+    it, and it is retried at each reconcile (TS §4.1 L532)."""
+    up = upload(db, bits, bit(f"U {tag()}")[0])
+    pid = int(up.policy_id or 0)
+    rel = f"uploaded/policy-{pid}.bit"
+    data = {
+        "unparsable": b"<not xml",
+        "oversize": b"<" + b"x" * MAX_BIT_BYTES,
+        "bad-name": bit("x" * 129)[0],  # PolicyName over 128 characters
+    }[bad]
+    put(bits, rel, data)
+    before = policy_row(server, pid)
+    for _ in range(3):
+        s = snap(server)
+        res = rec(db, bits)
+        rows = imports_since(server, s)
+        assert rows_by_file(rows) == [(rel, "rejected")]
+        assert rows[0]["file_sha256"] == sha(data)
+        assert actions(audits_since(server, s)) == ["policy.import_rejected"]
+        assert res.renamed == () and res.strays == () and res.deleted == ()
+        assert catalog_now(server) == s.catalog
+    assert policy_row(server, pid) == before
+    assert (bits / rel).read_bytes() == data
+
+
 # ----------------------------------------------------------------------------
 # Catalog lock (TASK-154 review carry (a)) and logging
 # ----------------------------------------------------------------------------
@@ -1269,7 +1298,7 @@ def test_the_lock_spans_every_import_and_a_concurrent_delete_waits(
     inside = threading.Event()
     release = threading.Event()
     held: list[bool] = []
-    real_import = folders.import_one
+    real_import = pipeline.import_one
 
     def slow(*a: Any, **k: Any) -> ImportOutcome:
         held.append(not _catalog_free(server))
