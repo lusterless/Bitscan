@@ -665,7 +665,7 @@ def _fault(monkeypatch: pytest.MonkeyPatch, target: str) -> None:
         monkeypatch.setattr(os, "fsync", full)
     else:
 
-        def dirsync(folder: Path) -> None:
+        def dirsync(folder: Any) -> None:
             raise OSError(errno.EIO, "I/O error")
 
         monkeypatch.setattr(uploads, "_fsync_dir", dirsync)
@@ -1141,6 +1141,107 @@ def test_the_folder_is_checked_at_each_call_not_cached(
     assert listing(bits / "uploaded") == sorted(
         [f"policy-{pid}.bit", f"policy-{out.policy_id}.bit"]
     )
+
+
+def _link_uploaded(bits: Path) -> Path:
+    """Replace a real uploaded/ by a symlink to it; return the real folder."""
+    real = bits.parent / "real-uploaded"
+    (bits / "uploaded").rename(real)
+    (bits / "uploaded").symlink_to(real, target_is_directory=True)
+    return real
+
+
+def test_a_server_file_taking_an_uploaded_name_through_a_linked_folder_leaves_the_copy(
+    server: PgServer, db: AppDatabase, bits: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """r2: the post-commit removal of the uploaded copy (``move_upload``) goes
+    through the guarded handle: the catalog move commits, nothing raises, the
+    copy behind the link is left (for the #103 check) and one line is logged."""
+    name, pid, v1 = seed(db, bits)
+    real = _link_uploaded(bits)
+    srv, _ = bit(name, status="disabled")
+    (bits / "srv.bit").write_bytes(srv)
+    caplog.set_level("DEBUG")
+    assert server_import(db, bits, srv, "srv.bit") == pid
+    row = policy_row(server, pid)
+    assert (row["source_file"], row["source_sha256"]) == ("srv.bit", sha(srv))
+    assert listing(real) == [f"policy-{pid}.bit"]
+    assert (real / f"policy-{pid}.bit").read_bytes() == v1
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("upload removal skipped" in m for m in msgs), msgs
+    assert not any(str(bits.parent) in m for m in msgs)
+
+
+def test_a_delete_through_a_linked_folder_commits_and_leaves_the_copy(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    _, pid, v1 = seed(db, bits)
+    real = _link_uploaded(bits)
+    delete_policy(db, pid, actor="user:7", clock=FixedClock(), bits_dir=bits)
+    assert policy_row(server, pid)["deleted_at"] is not None
+    assert listing(real) == [f"policy-{pid}.bit"]
+    assert (real / f"policy-{pid}.bit").read_bytes() == v1
+
+
+def test_a_delete_with_a_real_folder_still_removes_the_copy(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    _, pid, _ = seed(db, bits)
+    delete_policy(db, pid, actor="user:7", clock=FixedClock(), bits_dir=bits)
+    assert listing(bits / "uploaded") == []
+
+
+def test_a_failed_copy_removal_is_logged_by_type_and_never_raises(
+    server: PgServer,
+    db: AppDatabase,
+    bits: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """r2 ``remove_after_commit``: the catalog has committed, so an unlink
+    error other than "missing" is logged by type only and the copy is left."""
+    _, pid, v1 = seed(db, bits)
+    real_unlink = os.unlink
+
+    def refuse(path: Any, *a: Any, **kw: Any) -> None:
+        if str(path) == f"policy-{pid}.bit":
+            raise PermissionError(errno.EACCES, "denied")
+        real_unlink(path, *a, **kw)
+
+    monkeypatch.setattr(os, "unlink", refuse)
+    caplog.set_level("DEBUG")
+    delete_policy(db, pid, actor="user:7", clock=FixedClock(), bits_dir=bits)
+    monkeypatch.undo()
+    assert policy_row(server, pid)["deleted_at"] is not None
+    assert stored(bits, pid).read_bytes() == v1
+    msgs = [r.getMessage() for r in caplog.records]
+    assert "upload removal failed: PermissionError" in msgs
+    assert not any(f"policy-{pid}" in m or str(bits) in m for m in msgs)
+
+
+def test_a_folder_swapped_for_a_link_after_the_write_renames_in_the_original(
+    server: PgServer, db: AppDatabase, bits: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The handle opened at the write is the one renamed in: a swap between
+    commit and rename never moves the file into the link's target."""
+    name, pid, _ = seed(db, bits)
+    v2, _ = bit(name, status="disabled")
+    decoy = bits.parent / "decoy"
+    decoy.mkdir()
+    (decoy / "keep").write_bytes(b"decoy")
+    real_rename = uploads._Upload.rename
+    moved = bits.parent / "moved-uploaded"
+
+    def rename(self: Any, pending: Any) -> None:
+        (bits / "uploaded").rename(moved)
+        (bits / "uploaded").symlink_to(decoy, target_is_directory=True)
+        real_rename(self, pending)
+
+    monkeypatch.setattr(uploads._Upload, "rename", rename)
+    assert up(db, bits, v2).outcome == "success"
+    assert listing(decoy) == ["keep"]
+    assert listing(moved) == [f"policy-{pid}.bit"]
+    assert (moved / f"policy-{pid}.bit").read_bytes() == v2
 
 
 def test_finish_leaves_a_directory_named_like_a_temp_and_still_finishes(
