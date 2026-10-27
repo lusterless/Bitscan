@@ -224,3 +224,40 @@ Source: review `work/reviews/TASK-156.md`, finding 1 (should-fix) and nit 2, as 
 
 - Use `present` / `_state` semantics for every deletion, and run the check for each row just before its delete: never decide "absent" from a snapshot.
 - Read files through `read_input`, which opens them relative to the folder fd.
+
+## Revision 4 (impl-manager-156b): r3 test findings 1 and 2
+
+This revision is the last row of `work/decisions.md` (lead, yes to both). It fixes the two non-blocking findings from the r3 TEST in `work/reports/TASK-156-test.md`, "Revision 3". Only `manager/bitscan_manager/services/importer/folders.py` changed. It is now 383 lines, 275 of them code (270 in r3).
+
+### What changed
+
+- **(1) No log line per file.** When `read_input` cannot open the folder handle, it now returns None without logging (folders.py:195). The caller's folder guard (`_mark`, reached from `reconcile` at the `read_input` None check) still writes its one constant line per folder. Read errors on a single file inside a readable folder still log `folder file not read: <type>`, as before.
+- **(2) A leftover is reported only once it is gone.**
+  - `remove_leftover` (:262) now returns `Difference | None`. After `remove_after_commit`, it checks the file again with `_state` (:269), through the no-follow folder handle.
+  - Only `"absent"` counts as removed. Then, as before, it writes the log line `removed a leftover …` and returns the `Difference`.
+  - Otherwise it returns None and logs nothing. The cases are: the file is still there (the removal was refused or failed), or the folder became unreadable (a missing folder, or a swap for a symlink).
+  - On None, `reconcile` (:302–304) does not list the file in `leftovers`. It calls `_mark(blind, bits_dir, UPLOADED)` instead: one guard line, and `"uploaded/"` in `unreadable_folders`.
+  - The mark only reports the problem. Deletions are still decided row by row by `_state` (r3), so a real `uploaded/` whose leftover could not be removed still has its absent files deleted. On the next reconcile the leftover is tried again.
+  - TASK-157 must handle the None return from `remove_leftover` in the same way.
+
+### Gates (repo root)
+
+- `ruff check manager && ruff format --check manager`: pass (291 files).
+- `mypy --strict --config-file manager/pyproject.toml manager`: no issues (291 files).
+- PG suites from `manager/` (`test_folders_pg.py test_import_pipeline_pg.py test_import_store_pg.py test_policy_delete_pg.py test_catalog_lock_pg.py test_uploads.py test_uploads_pg.py`): **562 passed**.
+- Throwaway smoke checks, in a copy of the test file that has since been deleted. All 3 passed:
+  - A leftover whose `remove_after_commit` is a no-op (refused): `leftovers == ()`, `unreadable_folders == ("uploaded/",)`, no `removed a leftover` line, and exactly one `folder unreadable` line.
+  - A leftover with `uploaded/` swapped for a symlink to a copy after `discover`: the same result, and the file in the link target is still there.
+  - Three changed live uploads with `uploaded/` removed after `discover`: the only WARNING line from the module is `folder unreadable, not reconciled: uploaded/`, `unreadable_folders == ("uploaded/",)`, and `deleted == ()`.
+
+### Cases for the tester
+
+1. A folder swapped or removed after `discover`, with N ≥ 2 files in it: exactly one `folder unreadable` line for that folder, and no `folder file not read` line. A per-file read error in a readable folder (for example a FIFO swapped in, or EACCES) still logs `folder file not read: <type>`.
+2. A leftover with `uploaded/` swapped for a symlink, or removed, between `discover` and the removal:
+   - `leftovers == ()` and `unreadable_folders == ("uploaded/",)`.
+   - No `removed a leftover` line.
+   - The policy stays deleted and untouched.
+   - The file in the link target is untouched.
+3. A leftover whose removal fails while `uploaded/` stays real (patch `folders.remove_after_commit` to a no-op, or make the unlink raise): the same as case 2. The next reconcile tries again. Once the file can be removed, it is listed once in `leftovers`.
+4. Regression: a normal leftover is still removed, listed once with the existing log line, and never read. This is the r0 case ii, unchanged.
+5. `remove_leftover` called directly returns a `Difference` when the file is gone and None otherwise.
