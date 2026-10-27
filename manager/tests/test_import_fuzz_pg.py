@@ -64,7 +64,7 @@ pytestmark = pytest.mark.pg
 FILES = 500
 SYSTEM = Actor("system", None)
 NAMES = [f"Fuzz policy {i}" for i in range(12)]
-PATHS = [f"fuzz-{i}.bit" for i in range(10)]
+PATHS = [f"fuzz-{i}.bit" for i in range(12)]
 EXECUTES = [
     "cat /etc/hostname",
     "dpkg-query -W -f='${Status}' apparmor 2>/dev/null",
@@ -87,7 +87,9 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PgServer]:
 
 @pytest.fixture(scope="module")
 def db(server: PgServer) -> Iterator[AppDatabase]:
-    d = AppDatabase(SecretStr(server.dsn("bitscan_app")), max_size=2, connect_timeout_s=3)
+    d = AppDatabase(
+        SecretStr(server.dsn("bitscan_app")), max_size=2, connect_timeout_s=3
+    )
     d.open()
     try:
         yield d
@@ -95,13 +97,33 @@ def db(server: PgServer) -> Iterator[AppDatabase]:
         d.close()
 
 
-def generate(rng: random.Random, uuids: list[UUID]) -> bytes:
+GOOD = EXECUTES[:5]
+BAD = EXECUTES[5:]
+
+
+def generate(
+    rng: random.Random, pools: list[list[UUID]], shared: list[UUID]
+) -> tuple[int, bytes]:
+    """(name index, file). Each name has its own plugin-id pool; a few ids
+    are shared, so BIT015 and BIT005 happen without drowning the successes."""
+    n = rng.randrange(len(NAMES))
     plugins = []
     for _ in range(rng.randint(1, 4)):
-        u = rng.choice(uuids) if rng.random() < 0.7 else uuid4()
-        plugins.append(P(execute=rng.choice(EXECUTES), uuid=u))
-    data, _ = bit(rng.choice(NAMES), plugins, status=rng.choice(STATUSES))
-    if rng.random() < 0.3:  # byte-level mutation on top
+        r = rng.random()
+        u = (
+            rng.choice(shared)
+            if r < 0.05
+            else uuid4()
+            if r < 0.2
+            else rng.choice(pools[n])
+        )
+        execute = rng.choice(BAD) if rng.random() < 0.08 else rng.choice(GOOD)
+        plugins.append(P(execute=execute, uuid=u))
+    status = (
+        rng.choice(STATUSES[3:]) if rng.random() < 0.08 else rng.choice(STATUSES[:3])
+    )
+    data, _ = bit(NAMES[n], plugins, status=status)
+    if rng.random() < 0.2:  # byte-level mutation on top
         buf = bytearray(data)
         for _ in range(rng.randint(1, 4)):
             pos = rng.randrange(len(buf))
@@ -113,7 +135,7 @@ def generate(rng: random.Random, uuids: list[UUID]) -> bytes:
             else:
                 buf[pos:pos] = rng.choice(SPLICE)
         data = bytes(buf)
-    return data
+    return n, data
 
 
 def state_of(server: PgServer, policy_id: int) -> tuple[Any, ...]:
@@ -135,8 +157,9 @@ def state_of(server: PgServer, policy_id: int) -> tuple[Any, ...]:
 def test_500_generated_files_leave_the_catalog_complete_or_unchanged(
     server: PgServer, db: AppDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    rng = random.Random(154_500)
-    uuids = [uuid4() for _ in range(10)]
+    rng = random.Random(154_500)  # noqa: S311 (reproducible test data)
+    pools = [[uuid4() for _ in range(5)] for _ in NAMES]
+    shared = [uuid4() for _ in range(3)]
     bits = bits_dir(tmp_path)
     fault = {"db": False}
     real_membership = catalog_plugins.replace_membership
@@ -158,16 +181,17 @@ def test_500_generated_files_leave_the_catalog_complete_or_unchanged(
         if previous is not None and rng.random() < 0.08:
             file, mode = previous, Mode.AUTO  # the same file again
         else:
-            data = generate(rng, uuids)
-            if rng.random() < 0.6:
-                file = server_file(data, rng.choice(PATHS))
+            n, data = generate(rng, pools, shared)
+            if rng.random() < 0.75:  # mostly the name's own file
+                path = PATHS[n] if rng.random() < 0.85 else rng.choice(PATHS)
+                file = server_file(data, path)
             else:
                 file = upload_file(data, f"fuzz-{i}.bit")
             mode = rng.choice(list(Mode))
         previous = file
         roll = rng.random()
-        fault["db"] = roll < 0.06
-        before = disk_full if 0.06 <= roll < 0.12 else None
+        fault["db"] = roll < 0.1
+        before = disk_full if 0.1 <= roll < 0.2 else None
         exists = ALL if rng.random() < 0.5 else NONE
         s0 = snap(server)
         try:
@@ -199,11 +223,17 @@ def test_500_generated_files_leave_the_catalog_complete_or_unchanged(
         cand = prepare(file.data).candidate
         assert cand is not None and out.policy_id is not None, i
         pol, plugins = state_of(server, out.policy_id)
-        assert pol == (cand.policy_name, cand.file_status, sha(file.data or b""), None), i
+        assert pol == (
+            cand.policy_name,
+            cand.file_status,
+            sha(file.data or b""),
+            None,
+        ), i
         assert plugins == [
             (p.plugin_uuid, p.execute, p.timeout_s, "active", out.policy_id)
             for p in cand.plugins
         ], i
+    print(f"fuzz tally: {dict(tally)}")
     assert sum(tally.values()) == FILES
     # The mix must exercise every branch, or the property is empty.
     assert tally["success"] >= 50, tally

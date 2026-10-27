@@ -38,7 +38,7 @@ from bitscan_manager.db.pool import AppDatabase
 from bitscan_manager.repositories import catalog_plugins
 from bitscan_manager.repositories import imports as imports_repo
 from bitscan_manager.repositories.catalog_lock import catalog_lock
-from bitscan_manager.services.importer import pipeline, store
+from bitscan_manager.services.importer import pipeline, pipeline_record, store
 from bitscan_manager.services.importer.pipeline import (
     Actor,
     FileInput,
@@ -215,9 +215,8 @@ def test_sr_example_imports_with_one_success_row_and_one_alert_then_auto_skips(
     assert (srow["outcome"], srow["mode"], srow["policy_version"]) == (
         "skipped", "auto", 1,
     )  # fmt: skip
-    assert (srow["plugins_added"], srow["plugins_updated"], srow["plugins_retired"]) == (
-        0, 0, 0,
-    )  # fmt: skip
+    counts = ("plugins_added", "plugins_updated", "plugins_retired")
+    assert [srow[k] for k in counts] == [0, 0, 0]
     assert (srow["errors"], srow["imported_by"], srow["file_sha256"]) == (
         [], None, sha(data),
     )  # fmt: skip
@@ -700,7 +699,7 @@ def test_database_error_in_the_catalog_transaction_is_not_a_rejection(
 
         monkeypatch.setattr(store, "apply", apply)
     else:
-        real_s = pipeline.audit_success
+        real_s = pipeline_record.audit_success
 
         def audit(tx: Any, *a: Any, **k: Any) -> None:
             real_s(tx, *a, **k)
@@ -777,9 +776,10 @@ def test_after_commit_runs_after_the_commit_and_before_the_record(
     seen: list[tuple[str, int | None, bool, int]] = []
 
     def rename(p: Pending) -> None:
-        visible = p.policy_id is not None and policy_by_name(
-            server, str(p.policy_name)
-        ) is not None  # committed: visible from another connection
+        visible = (
+            p.policy_id is not None
+            and policy_by_name(server, str(p.policy_name)) is not None
+        )  # committed: visible from another connection
         seen.append((p.outcome, p.policy_id, visible, len(imports_since(server, s0))))
         raise OSError("rename failed")
 
@@ -799,7 +799,8 @@ def test_after_commit_is_not_called_for_a_rejection_or_a_skip(
     calls: list[Pending] = []
     data, _ = bit()
     run(db, bits, upload_file(data))
-    assert run(db, bits, upload_file(data), "auto", after_commit=calls.append).outcome == "skipped"
+    again = run(db, bits, upload_file(data), "auto", after_commit=calls.append)
+    assert again.outcome == "skipped"
     bad = data.replace(b"<PolicyStatus>enabled<", b"<PolicyStatus>on<")
     out = run(db, bits, upload_file(bad), after_commit=calls.append)
     assert out.outcome == "rejected"
@@ -859,8 +860,8 @@ def test_move_from_upload_to_the_server_folder_writes_a_move_entry(
     entries = audits_since(server, s0)
     assert [e["action"] for e in entries] == ["policy.import", "policy.move"]
     mv = entries[1]
-    assert "alert" not in mv["detail"]
-    assert f"uploaded/policy-{pid}.bit" in str(mv["detail"]) and "mv.bit" in str(mv["detail"])
+    assert mv["target"] == f"policy:{pid}"
+    assert mv["detail"] == {"from": f"uploaded/policy-{pid}.bit", "to": "mv.bit"}
     assert counter_delta(s0) == {"alert:policy_imported": 1.0}
     assert not copy.exists()  # removed after the commit
     assert policy_row(server, cast(int, pid))["source_file"] == "mv.bit"
