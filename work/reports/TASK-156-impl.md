@@ -118,12 +118,12 @@ Ruling: `work/decisions.md`, last row, "A live upload file with a hand-edited `<
 
 ## Revision 2 (impl-manager-156b): folder guard
 
-Ruling: `work/decisions.md`, last row, "Folder guard" (user, 2026-10-27). The r1 choices are accepted (lead). Only `manager/bitscan_manager/services/importer/folders.py` changed: 306 physical lines, 223 code lines (r1 had 207). `uploads.py` is untouched.
+Ruling: `work/decisions.md`, last row, "Folder guard" (user, 2026-10-27). Also the row "Folder guard details" (1) (lead). The r1 choices are accepted (lead). Only `manager/bitscan_manager/services/importer/folders.py` changed: 311 physical lines, 226 code lines (r1 had 207). `uploads.py` is untouched.
 
 ### What changed
 
 - `BITS_ROOT = "./"` (folders.py:49), next to the existing `UPLOADED = "uploaded/"`. These two constants are the labels for the folders.
-- **`unreadable(bits_dir) -> tuple[str, ...]`** (:106) is new and public, so TASK-157 and TASK-158 can use it. It returns `BITS_ROOT` and/or `UPLOADED` for each folder that `_real_dir` rejects. `_real_dir` uses `lstat` and never follows a link, so a folder that is missing, a symlink, or a non-directory (a file) is unreadable. A real empty folder is readable. `_folder(rel)` (:115) maps a `source_file` to its folder label.
+- **`unreadable(bits_dir) -> tuple[str, ...]`** (:106) is new and public, so TASK-157 and TASK-158 can use it. `_real_dir` uses `lstat` and never follows a link, so a folder that is missing, a symlink, or a non-directory (a file) is unreadable. If the bits folder is unreadable, it returns **both** `("./", "uploaded/")`, because `uploaded/` sits inside it ("Folder guard details" (1)). Otherwise it returns `("uploaded/",)` when `uploaded/` is unreadable, else `()`. A real empty folder is readable. `discover` (:121) returns `[]` when the bits folder is not a real directory, so nothing is read through a symlinked bits folder. `_folder(rel)` (:115) maps a `source_file` to its folder label.
 - **`ReconcileResult.unreadable_folders`** (:69) is a new last field, in the fixed order `("./", "uploaded/")`, for TASK-158's `catalog_integrity_failed` alert.
 - **`reconcile`** (:215):
   - It computes `unreadable` once at the start. For each unreadable folder it logs one fixed-words line, `folder unreadable, not reconciled: <label>`, where the label is one of the two constants and never a path from disk.
@@ -133,22 +133,21 @@ Ruling: `work/decisions.md`, last row, "Folder guard" (user, 2026-10-27). The r1
 
 ### Behaviour notes for the tester and reviewer
 
-- **The bits folder itself is missing, or is a regular file:** `uploaded/` beneath it cannot be lstat'ed either, so both folders are listed, `("./", "uploaded/")`.
-- **The bits folder is a symlink to a real folder:** only `"./"` is listed. `uploaded/` inside it is a real directory as seen through the link, because only the last path component is lstat'ed, so it is reconciled normally. This follows the ruling ("the other folder is reconciled normally"). If the lead wants a symlinked bits folder to also block `uploaded/`, that is a one-line change.
-- **Residual, not changed (owned by `delete.py` and `pipeline`):** a server file that takes an uploaded policy's name still moves it (`move_upload`, server folder wins). The pipeline's `remove_after_commit` then unlinks `bits/uploaded/policy-<id>.bit`. If `uploaded/` is a symlink, that unlink resolves through the link and removes the copy in the link's target. Before this revision the same was already true. I am reporting it, not fixing it, because the file is not mine.
+- **The bits folder is missing, a regular file, or a symlink:** both folders are listed, `("./", "uploaded/")`, and nothing is read or deleted in either.
+- **Residual, not changed (owned by `delete.py` and `pipeline`):** a server file that takes an uploaded policy's name still moves it (`move_upload`, server folder wins). The pipeline's `remove_after_commit` then unlinks `bits/uploaded/policy-<id>.bit`. If `uploaded/` is a symlink, that unlink resolves through the link and removes the copy in the link's target. Before this revision the same was already true. It is being handled in TASK-155 r2 by impl-manager-155 ("Folder guard details" (2)); not changed here.
 
 ### Gates (repo root)
 
 - `ruff check manager && ruff format --check manager`: pass (291 files).
 - `mypy --strict --config-file manager/pyproject.toml manager`: no issues (291 files).
-- PG run, from `manager/`: `test_folders_pg.py test_import_pipeline_pg.py test_import_store_pg.py test_policy_delete_pg.py` gives **340 passed**. No existing test asserted the old mass delete, so none fails.
+- PG run, from `manager/`: `test_folders_pg.py test_import_pipeline_pg.py test_import_store_pg.py test_policy_delete_pg.py` gives **340 passed** (re-run after the "details" change: 340 passed). No existing test asserted the old mass delete, so none fails.
 - `test_uploads.py test_uploads_pg.py`: 10 failures (for example `broken() got an unexpected keyword argument 'src_dir_fd'`). These come from TASK-155's in-progress uploads tests and code, not from this change: `uploads.py` does not import `folders`.
 - Throwaway smoke test (a copy of the test file, now deleted). Setup: one server policy, one uploaded policy, one reconcile. I then broke a folder and ran 2 more reconciles. Results:
 
 | Broken | missing | symlink to a real copy | regular file |
 | --- | --- | --- | --- |
 | `uploaded/` | `("uploaded/",)` | `("uploaded/",)` | `("uploaded/",)` |
-| bits folder | `("./","uploaded/")` | `("./",)` | `("./","uploaded/")` |
+| bits folder | `("./","uploaded/")` | `("./","uploaded/")` (after the "details" change, checked on scratch folders: `discover` gives `[]`) | `("./","uploaded/")` |
 
   In every cell, nothing was deleted on either run, there were no audit entries, and `deleted == ()`. An empty real `uploaded/` gave `()`, and the uploaded policy was deleted once (`policy.delete`) while the server policy was kept. An empty real bits folder (server file removed, `uploaded/` real) gave `()`, and the server policy was deleted once while the uploaded policy was kept.
 
@@ -159,9 +158,9 @@ Ruling: `work/decisions.md`, last row, "Folder guard" (user, 2026-10-27). The r1
    - No policy whose `source_file` is in the unreadable folder gets `deleted_at` set, and there is no `policy.delete` entry.
    - No `bit_import` row is written for any path in that folder, and nothing is followed through a symlink.
    - Exactly one log line per unreadable folder, and it contains no path from disk.
-2. The other folder is still reconciled. With `uploaded/` unreadable, a new or changed server file is imported, and a removed server file deletes its policy. With the bits folder a symlink, a changed live upload is `success`.
+2. The other folder is still reconciled. With `uploaded/` unreadable, a new or changed server file is imported, and a removed server file deletes its policy. With the bits folder a symlink, **both** folders are unreadable: no upload is read through the link (spy on `read_input`), and no policy in either folder is deleted.
 3. A real empty folder: `unreadable_folders == ()`, and each policy in it is soft-deleted once (`reason "file removed"`). The next reconcile writes nothing.
-4. Both folders unreadable, because the bits folder is missing: `("./", "uploaded/")`, no deletes, no rows, no audit entries.
+4. Both folders unreadable (the bits folder missing, a symlink, or a file): `("./", "uploaded/")`, no deletes, no rows, no audit entries.
 5. Recovery: put the folder back as a real directory with the same files. The next reconcile gives `unreadable_folders == ()` and only `skipped` rows (no churn).
 6. Call `delete_removed` directly with `uploaded/` missing: it returns `()` for the uploaded policies.
 
