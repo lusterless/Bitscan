@@ -66,6 +66,14 @@ function waitText(seconds: number | null): string {
     : "Too many requests. Wait " + String(seconds) + " seconds.";
 }
 
+function notReadyText(seconds: number): string {
+  return seconds === 1
+    ? "The manager is not ready yet. Try again in 1 second."
+    : "The manager is not ready yet. Try again in " +
+        String(seconds) +
+        " seconds.";
+}
+
 /** REQ-126: fixed messages. Screen-specific texts (409, 404) stay in the screens. */
 export function messageFor(problem: ProblemInfo): ProblemMessage {
   switch (problem.type) {
@@ -85,6 +93,12 @@ export function messageFor(problem: ProblemInfo): ProblemMessage {
       return { text: "Your role does not allow this.", action: null };
     case "totp_enrolment_required":
       return { text: "Set up TOTP to continue.", action: "totp-enrol" };
+    case "policy_managed_on_server":
+      // TS §4.1 L522, #98 (e): server-folder policies change only on disk.
+      return {
+        text: "This policy is managed in the server folder; change its file there.",
+        action: null,
+      };
   }
   switch (problem.status) {
     case 401:
@@ -92,6 +106,12 @@ export function messageFor(problem: ProblemInfo): ProblemMessage {
     case 429:
       return { text: waitText(problem.retryAfterS), action: "wait" };
     case 503:
+      // #102 (d): the catalog start-up answers 503 `about:blank` with
+      // Retry-After, which has no type of its own; the header alone decides
+      // (lead ruling, option (a)). The detail is never read.
+      if (problem.retryAfterS !== null) {
+        return { text: notReadyText(problem.retryAfterS), action: "wait" };
+      }
       return {
         text: "The manager is unavailable. Try again later.",
         action: null,
