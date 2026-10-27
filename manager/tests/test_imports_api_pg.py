@@ -516,6 +516,31 @@ def test_agent_tokens_bad_and_no_token_get_401(env: Env, token: str) -> None:
     assert b"secret-name" not in resp.content
 
 
+@pytest.mark.parametrize("kind", [AgentTokenKind.AGENT, AgentTokenKind.ENROLMENT])
+def test_an_agent_prefix_is_refused_even_if_its_hash_is_an_admin_token(
+    env: Env, kind: AgentTokenKind
+) -> None:
+    """The prefix decides the route group (TS §6 L1056), not the hash lookup:
+    a bsa_ or bse_ string whose hash sits in user_token as an admin API token
+    is still 401."""
+    tok = new_agent_token(kind)
+    with env.conn() as c:
+        c.execute(
+            "INSERT INTO user_token (user_id, kind, token_hash, totp_verified,"
+            " expires_at, created_at) VALUES (%s, 'api', %s, false, %s, %s)",
+            (
+                env.user("admin", totp=True),
+                token_hash(tok),
+                T0 + timedelta(days=30),
+                T0,
+            ),
+        )
+    seed(env, 1, file_name="secret-name.bit")
+    resp = env.call("GET", tok, ROUTE)
+    assert resp.status_code == 401, resp.text
+    assert b"secret-name" not in resp.content
+
+
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
 def test_there_is_no_write_operation(env: Env, method: str) -> None:
     ids = seed(env, 2)
