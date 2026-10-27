@@ -38,13 +38,11 @@ from bitscan_manager.services.importer.pipeline import (
     FileInput,
     ImportOutcome,
     Mode,
+    Prepared,
     import_one,
+    prepare,
 )
-from bitscan_manager.services.importer.store import (
-    Conn,
-    PolicyManagedOnServer,
-    Target,
-)
+from bitscan_manager.services.importer.store import Conn, Target
 
 log = logging.getLogger(__name__)
 UPLOADED = "uploaded/"
@@ -63,10 +61,10 @@ _OPEN = (
 @dataclass(frozen=True, slots=True)
 class ReconcileResult:
     outcomes: tuple[ImportOutcome, ...]  # one per file that reached the pipeline
-    refused: tuple[str, ...]  # a live upload now naming a server policy (#99 (e))
     deleted: tuple[DeleteResult, ...]  # policies whose files disappeared
     leftovers: tuple[Difference, ...]  # #103 differences, for TASK-158's alert
     strays: tuple[str, ...]  # skipped uploaded/ files, for the #103 check
+    renamed: tuple[str, ...]  # skipped live uploads with an edited name, for #103
 
 
 def _wanted(name: str) -> bool:
@@ -161,7 +159,8 @@ def classify_upload(conn: Conn, rel: str) -> UploadKind:
     """The one classification of an `uploaded/` file, shared by the reconcile
     and the rebuild (TASK-157), run in the caller's transaction under the
     catalog lock. "live": a live policy's own `source_file`, imported as an
-    upload target (in `auto` mode skipped when unchanged). "leftover": the file
+    upload target (in `auto` mode skipped when unchanged) unless `renamed`.
+    "leftover": the file
     of a deleted policy, never imported (`remove_leftover`). "stray": any other
     file (no such policy, or not its source_file), never imported: logged,
     skipped, no row, left for the #103 check (user, decisions 2026-10-27)."""
@@ -174,6 +173,20 @@ def classify_upload(conn: Conn, rel: str) -> UploadKind:
     if row.deleted_at is not None:
         return "leftover"
     return "live" if row.source_file == rel else "stray"
+
+
+def renamed(conn: Conn, rel: str, prepared: Prepared) -> bool:
+    """Whether a "live" upload's parsed `<PolicyName>` differs from its
+    policy's current name. Such a file is never imported: skipped and reported
+    like a stray, the policy keeps its rows (user, decisions 2026-10-27; TS
+    §4.3 renames an uploaded policy only by delete plus upload). A file with
+    no valid name is not renamed: the pipeline rejects it."""
+    name = prepared.rules.policy_name if prepared.rules is not None else None
+    policy_id = upload_policy_id(rel)
+    if name is None or policy_id is None:
+        return False
+    row = catalog.policy_by_id_for_update(conn, policy_id)
+    return row is not None and row.policy_name != name
 
 
 def remove_leftover(bits_dir: Path, rel: str) -> Difference:
@@ -199,9 +212,9 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
     )
     uploads = sorted((f for f in files if f.startswith(UPLOADED)), key=str.encode)
     outcomes: list[ImportOutcome] = []
-    refused: list[str] = []
     leftovers: list[Difference] = []
     strays: list[str] = []
+    edited: list[str] = []
     exists = partial(present, bits_dir)
     for rel in server + uploads:
         if rel.startswith(UPLOADED):
@@ -218,24 +231,28 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
         file = read_input(bits_dir, rel)
         if file is None:
             continue
-        try:
-            outcome = import_one(
-                session,
-                clock,
-                bits_dir,
-                file,
-                mode=Mode.AUTO,
-                actor=_SYSTEM,
-                file_exists=exists,
-            )
-        except PolicyManagedOnServer:  # a live upload edited to a server name
-            log.warning("uploaded file refused: its policy is in the server folder")
-            refused.append(rel)
-            continue
+        prepared = prepare(file.data)  # parsed once, passed to import_one
+        if rel.startswith(UPLOADED):
+            with session.transaction() as tx:
+                skip = renamed(tx.conn, rel, prepared)
+            if skip:
+                log.warning("uploaded file skipped: its policy name was edited")
+                edited.append(rel)
+                continue
+        outcome = import_one(
+            session,
+            clock,
+            bits_dir,
+            file,
+            mode=Mode.AUTO,
+            actor=_SYSTEM,
+            file_exists=exists,
+            prepared=prepared,
+        )
         outcomes.append(outcome)
     deleted = delete_removed(session, clock, bits_dir)
     return ReconcileResult(
-        tuple(outcomes), tuple(refused), deleted, tuple(leftovers), tuple(strays)
+        tuple(outcomes), deleted, tuple(leftovers), tuple(strays), tuple(edited)
     )
 
 

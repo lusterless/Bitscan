@@ -411,6 +411,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/imports": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Imports */
+    get: operations["list_imports_api_v1_imports_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/metrics": {
     parameters: {
       query?: never;
@@ -465,6 +482,45 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  "/api/v1/policies": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Policies */
+    get: operations["list_policies_api_v1_policies_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/policies/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Policy */
+    get: operations["get_policy_api_v1_policies__id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Patch Policy
+     * @description Sets the status with an override, or clears the override. Audited;
+     *     a re-enable alerts (#101). 409 for a deleted policy (#98 (c)).
+     */
+    patch: operations["patch_policy_api_v1_policies__id__patch"];
     trace?: never;
   };
   "/api/v1/settings": {
@@ -928,6 +984,47 @@ export interface components {
       /** Package Count */
       package_count: number;
     };
+    /**
+     * ImportItem
+     * @description #98 (h): the bit_import columns in DDL order (TS §5.2).
+     */
+    ImportItem: {
+      /** Errors */
+      errors: {
+        [key: string]: unknown;
+      }[];
+      /** File Name */
+      file_name: string;
+      /** File Sha256 */
+      file_sha256: string;
+      /** Import Id */
+      import_id: number;
+      /**
+       * Imported At
+       * Format: date-time
+       */
+      imported_at: string;
+      /** Imported By */
+      imported_by: number | null;
+      /**
+       * Mode
+       * @enum {string}
+       */
+      mode: "auto" | "manual" | "rebuild";
+      /**
+       * Outcome
+       * @enum {string}
+       */
+      outcome: "success" | "skipped" | "rejected";
+      /** Plugins Added */
+      plugins_added: number;
+      /** Plugins Retired */
+      plugins_retired: number;
+      /** Plugins Updated */
+      plugins_updated: number;
+      /** Policy Version */
+      policy_version: number | null;
+    };
     /** InventoryBody */
     InventoryBody: {
       /** List Sha256 */
@@ -1157,6 +1254,13 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** Page[ImportItem] */
+    Page_ImportItem_: {
+      /** Items */
+      items: components["schemas"]["ImportItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** Page[PackageGroupItem] */
     Page_PackageGroupItem_: {
       /** Items */
@@ -1168,6 +1272,13 @@ export interface components {
     Page_PackageRowItem_: {
       /** Items */
       items: components["schemas"]["PackageRowItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[PolicyItem] */
+    Page_PolicyItem_: {
+      /** Items */
+      items: components["schemas"]["PolicyItem"][];
       /** Next Cursor */
       next_cursor: string | null;
     };
@@ -1200,6 +1311,17 @@ export interface components {
       new_password: string;
     };
     /**
+     * PatchPolicy
+     * @description Exactly one of {"policy_status": "enabled" | "disabled"} or
+     *     {"status_overridden": false} (REQ-168).
+     */
+    PatchPolicy: {
+      /** Policy Status */
+      policy_status?: ("enabled" | "disabled") | null;
+      /** Status Overridden */
+      status_overridden?: boolean | null;
+    };
+    /**
      * PatchUser
      * @description One of: {role}, {disabled: false}, {totp: null}, {revoke_tokens: true}.
      */
@@ -1221,6 +1343,140 @@ export interface components {
       plugin_uuid: string;
       /** Timeout S */
       timeout_s: number;
+    };
+    /** PolicyDetailItem */
+    PolicyDetailItem: {
+      /** Deleted At */
+      deleted_at: string | null;
+      /** Family Id */
+      family_id: number;
+      /** Family Name */
+      family_name: string;
+      /**
+       * File Status
+       * @enum {string}
+       */
+      file_status: "enabled" | "disabled";
+      /** Format Version */
+      format_version: string;
+      /**
+       * Imported At
+       * Format: date-time
+       */
+      imported_at: string;
+      /** Plugin Count */
+      plugin_count: number;
+      /** Plugins */
+      plugins: components["schemas"]["PolicyPluginItem"][];
+      /** Policy Description */
+      policy_description: string;
+      /** Policy Id */
+      policy_id: number;
+      /** Policy Name */
+      policy_name: string;
+      /**
+       * Policy Status
+       * @enum {string}
+       */
+      policy_status: "enabled" | "disabled";
+      /** Source File */
+      source_file: string;
+      /** Status Overridden */
+      status_overridden: boolean;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+    };
+    /**
+     * PolicyItem
+     * @description #98 (a), in this field order.
+     */
+    PolicyItem: {
+      /** Family Id */
+      family_id: number;
+      /** Family Name */
+      family_name: string;
+      /**
+       * File Status
+       * @enum {string}
+       */
+      file_status: "enabled" | "disabled";
+      /** Format Version */
+      format_version: string;
+      /**
+       * Imported At
+       * Format: date-time
+       */
+      imported_at: string;
+      /** Plugin Count */
+      plugin_count: number;
+      /** Policy Description */
+      policy_description: string;
+      /** Policy Id */
+      policy_id: number;
+      /** Policy Name */
+      policy_name: string;
+      /**
+       * Policy Status
+       * @enum {string}
+       */
+      policy_status: "enabled" | "disabled";
+      /** Source File */
+      source_file: string;
+      /** Status Overridden */
+      status_overridden: boolean;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+    };
+    /**
+     * PolicyPluginItem
+     * @description #98 (b), in this field order; display_name from v_plugin.
+     */
+    PolicyPluginItem: {
+      /** Control Ref */
+      control_ref: string | null;
+      /** Display Name */
+      display_name: string;
+      /** Execute */
+      execute: string;
+      /** Execute Sha256 */
+      execute_sha256: string;
+      /** Expected Result */
+      expected_result: string;
+      /** Operator */
+      operator: string;
+      /** Plugin Description */
+      plugin_description: string;
+      /** Plugin Name */
+      plugin_name: string;
+      /**
+       * Plugin Uuid
+       * Format: uuid
+       */
+      plugin_uuid: string;
+      /** Sort Order */
+      sort_order: number;
+      /**
+       * State
+       * @enum {string}
+       */
+      state: "active" | "retired";
+      /** Timeout S */
+      timeout_s: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
     };
     Problem: {
       detail: string;
@@ -3379,6 +3635,74 @@ export interface operations {
       };
     };
   };
+  list_imports_api_v1_imports_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_ImportItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   metrics_api_v1_metrics_get: {
     parameters: {
       query?: never;
@@ -3567,6 +3891,240 @@ export interface operations {
       };
       /** @description Forbidden */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_policies_api_v1_policies_get: {
+    parameters: {
+      query?: {
+        status?: ("enabled" | "disabled") | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_PolicyItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_policy_api_v1_policies__id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PolicyDetailItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  patch_policy_api_v1_policies__id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PatchPolicy"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PolicyItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };
