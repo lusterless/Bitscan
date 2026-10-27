@@ -1209,6 +1209,7 @@ def test_a_live_upload_with_an_edited_name_is_skipped_and_reported(
         return real_prepare(data)
 
     monkeypatch.setattr(folders, "prepare", spy)
+    monkeypatch.setattr(pipeline, "prepare", spy)  # a re-parse inside import_one
     caplog.set_level(logging.DEBUG)
     for run in range(3):
         parses.clear()
