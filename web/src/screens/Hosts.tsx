@@ -51,59 +51,83 @@ export function Hosts({ navigate }: HostsProps) {
   }, [pages.cursor]);
 
   return (
-    <main>
-      <h1>Hosts</h1>
+    <main className="page">
+      <div className="page-header">
+        <div>
+          <h1>Hosts</h1>
+          <p className="page-subtitle">
+            Enrolled agents, their status and their last check-in. Select a
+            hostname for its inventory.
+          </p>
+        </div>
+      </div>
       {unreachable && (
-        <p role="alert">The manager is unavailable. Try again later.</p>
+        <p role="alert" className="callout callout-danger">
+          The manager is unavailable. Try again later.
+        </p>
       )}
       <ProblemBanner problem={problem} />
-      {page !== null && page.items.length === 0 && <p>No hosts yet.</p>}
-      {page !== null && page.items.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th>Hostname</th>
-              <th>Status</th>
-              <th>OS</th>
-              <th>Agent version</th>
-              <th>Last heartbeat</th>
-              <th>Last inventory</th>
-              <th>Tags</th>
-              <th>Runner helpers</th>
-            </tr>
-          </thead>
-          <tbody>
-            {page.items.map((host) => {
-              const route: Route = { name: "host", agentId: host.agent_id };
-              return (
-                <tr key={host.agent_id}>
-                  <td>
-                    <a
-                      href={formatHash(route)}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        navigate(route);
-                      }}
-                    >
-                      {host.hostname}
-                    </a>
-                  </td>
-                  <td>
-                    <StatusBadge status={host.status} />
-                  </td>
-                  <td>{host.os_pretty_name ?? "unknown"}</td>
-                  <td>{host.agent_version}</td>
-                  <td>{formatTime(host.last_heartbeat_at)}</td>
-                  <td>{formatTime(host.last_inventory_at)}</td>
-                  <td>{list(host.tags)}</td>
-                  <td>{list(host.runner_helpers)}</td>
+      <div className="card card-flush">
+        {page === null && !unreachable && problem === null && (
+          <p className="empty">Loading.</p>
+        )}
+        {page !== null && page.items.length === 0 && (
+          <p className="empty">No hosts yet.</p>
+        )}
+        {page !== null && page.items.length > 0 && (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Hostname</th>
+                  <th>Status</th>
+                  <th>OS</th>
+                  <th>Agent version</th>
+                  <th>Last heartbeat</th>
+                  <th>Last inventory</th>
+                  <th>Tags</th>
+                  <th>Runner helpers</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-      <Pager pages={pages} nextCursor={page?.next_cursor ?? null} />
+              </thead>
+              <tbody>
+                {page.items.map((host) => {
+                  const route: Route = { name: "host", agentId: host.agent_id };
+                  return (
+                    <tr key={host.agent_id}>
+                      <td>
+                        <a
+                          className="strong-link"
+                          href={formatHash(route)}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            navigate(route);
+                          }}
+                        >
+                          {host.hostname}
+                        </a>
+                      </td>
+                      <td>
+                        <StatusBadge status={host.status} />
+                      </td>
+                      <td className="wrap">
+                        {host.os_pretty_name ?? "unknown"}
+                      </td>
+                      <td className="mono">{host.agent_version}</td>
+                      <td>{formatTime(host.last_heartbeat_at)}</td>
+                      <td>{formatTime(host.last_inventory_at)}</td>
+                      <td className="wrap">{list(host.tags)}</td>
+                      <td className="wrap">{list(host.runner_helpers)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="card-foot">
+          <Pager pages={pages} nextCursor={page?.next_cursor ?? null} />
+        </div>
+      </div>
     </main>
   );
 }
