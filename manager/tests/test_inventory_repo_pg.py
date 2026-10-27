@@ -379,14 +379,13 @@ def test_package_page_order_and_keyset(conn: Conn) -> None:
         assert whole == expected
         for n in (1, 2, 4):
             seen: list[tuple[str, str, str]] = []
-            after: tuple[str, str, str] | None = None
+            after: int | None = None  # the last row's package_id (#89)
             while True:
                 page = repo.package_page(a, n, after)
                 seen.extend((r.name, r.architecture, r.version) for r in page)
                 if len(page) < n:
                     break
-                last = page[-1]
-                after = (last.name, last.architecture, last.version)
+                after = page[-1].package_id
             assert seen == expected, n
 
 
@@ -416,14 +415,13 @@ def test_package_page_uses_debian_version_order(conn: Conn) -> None:
         assert whole == DEBIAN_ORDER
         for n in (1, 2, 3):
             seen: list[str] = []
-            after: tuple[str, str, str] | None = None
+            after: int | None = None  # the last row's package_id (#89)
             while True:
                 page = repo.package_page(a, n, after)
                 seen.extend(r.version for r in page)
                 if len(page) < n:
                     break
-                last = page[-1]
-                after = (last.name, last.architecture, last.version)
+                after = page[-1].package_id
             assert seen == DEBIAN_ORDER, n
 
 
@@ -444,13 +442,11 @@ def test_package_page_debian_order_within_name_and_architecture(conn: Conn) -> N
         repo.upsert_agent_packages(
             a, [(i, "install ok installed", None) for i in got.ids.values()], T0
         )
-        seen = [
-            (r.name, r.architecture, r.version) for r in repo.package_page(a, 2, None)
-        ]
-        last = seen[-1]
+        first = repo.package_page(a, 2, None)
+        seen = [(r.name, r.architecture, r.version) for r in first]
         seen += [
             (r.name, r.architecture, r.version)
-            for r in repo.package_page(a, 10, (last[0], last[1], last[2]))
+            for r in repo.package_page(a, 10, first[-1].package_id)
         ]
         assert seen == [
             (p + "a", "amd64", "1.9"),

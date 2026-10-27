@@ -10,7 +10,8 @@ Owner: tester. Per-task verdicts are in `work/reports/TASK-###-test.md`; per-che
 | M3 agent API and scheduler (inventory only) | [m3/report.md](m3/report.md) | in progress (W1): TP-M3-01 fixtures; TASK-048 to TASK-058 TEST PASS (TASK-053 with revision 1); WSL W1 full run 2459 passed, 0 skipped, services 99 % |
 | M4 Go agent and pre-release `.deb` | in the `Bitscan-m4` worktree: `tests/m4/report.md` | in progress |
 | M5 minimal host UI and package search | [m5/report.md](m5/report.md) | TASK-108 to 127 TEST PASS (121, 126, 127 after a revision); TASK-128 and the M5 gate pending |
-| M6 to M11 | not started | |
+| M6 first-release gate | [m6/report.md](m6/report.md) (plan: [m6/test-plan.md](m6/test-plan.md)) | TASK-129 to 138 TEST PASS (TASK-132 and 138 at full rigor). **Gate TP-M6-14: PASS with one named exception** (tester-m6d, 2026-10-27; the "Gate TP-M6-14" section at the end of m6/report.md). G18 **4824/4824 passed, 0 skipped**, services 99.41 % (WSL, `CI=true`, one PostgreSQL container per worker); wheel, install walk, release workflow and cursor plants red; end to end on real Ubuntu 22.04 and 24.04 hosts and on a fresh 24.04 with the final RC `d98ef8c3…` (= the local release build). **Exception (user sign-off, decisions 2026-10-27):** the six VM plants CHK-M6-340..345 are NOT RUN, because the session safety check blocked them; they run before any M7 code. Other NOT RUN: GitHub runs (no push), load/soak/timing tests (deferred), `new_packages_burst` on a real host, the browser approval, Debian 12 and arm64 (dropped) |
+| M7 to M11 | not started | |
 
 ## M0 per task
 

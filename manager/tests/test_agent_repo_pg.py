@@ -481,7 +481,11 @@ def test_list_page_items_and_keyset_paging(conn: Conn) -> None:
         repo.replace_tags(mine[0], ["web", "a-tag"])
         expected = mine + sorted(twin, key=str)
         seen: list[AgentListRow] = []
-        after: tuple[str, UUID] | None = (prefix, UUID(int=0))
+        # The cursor holds only the last row's agent_id (#89, REQ-143). Page
+        # from an anchor agent whose hostname is the bare prefix, which sorts
+        # just before this test's rows.
+        start = add(repo, hostname=prefix)[0]
+        after: UUID | None = start
         while True:
             assert after is not None
             page = repo.list_page(2, after)
@@ -489,7 +493,7 @@ def test_list_page_items_and_keyset_paging(conn: Conn) -> None:
             seen.extend(r for r in page if r.hostname.startswith(prefix))
             if len(page) < 2 or not page[-1].hostname.startswith(prefix):
                 break
-            after = (page[-1].hostname, page[-1].agent_id)
+            after = page[-1].agent_id
         assert [r.agent_id for r in seen] == expected
         first = seen[0]
         assert set(first.__dataclass_fields__) == LIST_FIELDS
