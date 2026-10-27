@@ -13,6 +13,7 @@ path, which takes the catalog lock itself.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -113,8 +114,14 @@ def delete_policy(
 
 def remove_after_commit(bits_dir: Path, paths: Sequence[str]) -> None:
     """Remove committed-away upload copies (`uploaded/policy-<id>.bit` only;
-    any other path is refused). A failure is logged and left to the start-up
-    integrity check (#103): the catalog has already committed."""
+    any other path is refused), through an `uploaded/` handle that follows no
+    link ("Folder guard details" (2)). A failure, or an unreadable `uploaded/`,
+    is logged and the copy left to the start-up integrity check (#103): the
+    catalog has already committed."""
+    # Imported here: uploads imports the pipeline, which imports this module.
+    from bitscan_manager.services.importer.uploads import open_uploaded_dir
+
+    names = []
     for rel in paths:
         name = rel.removeprefix(_UPLOADED)
         digits = name.removeprefix("policy-").removesuffix(".bit")
@@ -126,7 +133,23 @@ def remove_after_commit(bits_dir: Path, paths: Sequence[str]) -> None:
         ):
             log.warning("upload removal skipped: not an upload path")
             continue
-        try:
-            (bits_dir / "uploaded" / name).unlink(missing_ok=True)
-        except OSError as exc:
-            log.warning("upload removal failed: %s", type(exc).__name__)
+        names.append(name)
+    if not names:
+        return
+    try:
+        dir_fd = open_uploaded_dir(bits_dir / "uploaded")
+    except OSError as exc:
+        log.warning(
+            "upload removal skipped: uploaded folder unreadable: %s", type(exc).__name__
+        )
+        return
+    try:
+        for name in names:
+            try:
+                os.unlink(name, dir_fd=dir_fd)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                log.warning("upload removal failed: %s", type(exc).__name__)
+    finally:
+        os.close(dir_fd)

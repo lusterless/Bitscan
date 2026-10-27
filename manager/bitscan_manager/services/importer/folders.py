@@ -107,9 +107,11 @@ def unreadable(bits_dir: Path) -> tuple[str, ...]:
     """The folders (`BITS_ROOT`, `UPLOADED`) that are missing, not a real
     directory, or a symlink (lstat, never followed). Nothing is imported from
     such a folder and none of its policies is deleted; a real empty folder is
-    readable (user, decisions 2026-10-27 "Folder guard")."""
-    folders = ((BITS_ROOT, bits_dir), (UPLOADED, bits_dir / UPLOADED.rstrip("/")))
-    return tuple(label for label, path in folders if not _real_dir(path))
+    readable (user, decisions 2026-10-27 "Folder guard"). An unreadable bits
+    folder makes `uploaded/`, which sits in it, unreadable too ("details")."""
+    if not _real_dir(bits_dir):
+        return (BITS_ROOT, UPLOADED)
+    return () if _real_dir(bits_dir / UPLOADED.rstrip("/")) else (UPLOADED,)
 
 
 def _folder(rel: str) -> str:
@@ -117,7 +119,10 @@ def _folder(rel: str) -> str:
 
 
 def discover(bits_dir: Path) -> list[str]:
-    """The `*.bit` files of both folders, as paths relative to `bits_dir`."""
+    """The `*.bit` files of both folders, as paths relative to `bits_dir`;
+    none at all if the bits folder is not a real directory."""
+    if not _real_dir(bits_dir):  # a symlinked bits folder: uploaded/ too
+        return []
     uploads = [UPLOADED + n for n in _names(bits_dir / UPLOADED.rstrip("/"))]
     return _names(bits_dir) + uploads
 
