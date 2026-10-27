@@ -178,3 +178,21 @@ Audit history: `work/audit/<role>.md` (merged), `work/audit/archive/` (history, 
 7. The VM plants CHK-M6-340..345 must PASS before the M7 gate.
 
 Lead rulings and user decisions from this session are in `work/decisions.md` (2026-10-27 rows).
+
+## Cloud session checks of the released core (2026-10-27, lead)
+
+Run in the claude.ai cloud container (Docker, cgroup v1 host; Docker Hub via mirror.gcr.io; Debian/Ubuntu apt over a local HTTP→HTTPS relay in the scratchpad, signatures still checked). Not gate evidence for VM rows.
+
+| Check | Result |
+| --- | --- |
+| Manager suite with PostgreSQL 16 (`pytest -n 8`, coverage on services) | 8141 passed, 0 skipped, 99.14 %; 2 timing-bound tests failed under load, fixed by tester-m7c (CPU time) |
+| Web build, lint, typecheck, tests | 345/345 |
+| Go: gofmt, `go mod verify`, `CGO_ENABLED=0` build, golangci-lint v2.14.0 | clean, 0 issues |
+| Go tests `-race` | pass; 4 lone-surrogate contract skips by design; the 2 non-root skips PASS as user `bstester`; `TestJobSeenSevenDays` flaked once under load (second pull at 7 d + 59 s, past the boundary), 30/30 on re-runs — for the tester |
+| `systemd-analyze verify deploy/systemd/*` | only "not executable" (allowed locally) |
+| Package build suite (`test_build_deb.sh` repro contents static sbom sha256 flags lintian) | 107/107; both builds = released `d98ef8c3…` |
+| Maintainer scripts (`test_maintainer_scripts.sh all`), u24 and u22 systemd containers | 548/548 each (run with umask 022: `docker exec` there has umask 0000, which made the test's `mkdir /etc/bitscan` world-writable and the agent rightly refused it) |
+| Debconf (`test_debconf.sh`, disposable mode), u24 and u22 | 68/68 each, with the source `deploy/debian/config` given mode 755 as in the `.deb`. Owner note: git stores `deploy/debian/{config,postinst,postrm}` as 100644 (committed from Windows); the `.deb` has 0755 (dh_installdeb), so the package is right, but the test needs the source `config` executable on a Linux checkout |
+| G41 end to end (`e2e/agent_manager.sh`, real serve + PostgreSQL + released `.deb`) | u24 23/23, u22 23/23 |
+| Upgrade from `0.1.0~pre1-1` | NOT RUN: that package was never published; M6 CHK-M6-104 covers it |
+| CHK-M6-340..345, cgroup v2 hosts, arm64, load test | NOT RUN here: no KVM / no arm64 / 4 shared CPUs |
