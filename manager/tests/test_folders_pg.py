@@ -2504,7 +2504,7 @@ def test_req159_3_move_does_not_remove_the_copy_through_a_swapped_bits_folder(
     (evil / "uploaded").mkdir(parents=True)
     put(evil, rel, b"not the manager's file")
     evil_tree = tree(evil)
-    real = pipeline.remove_after_commit
+    real = dl.remove_after_commit
     calls: list[tuple[str, ...]] = []
 
     def hook(bits_dir: Path, paths: Any) -> None:

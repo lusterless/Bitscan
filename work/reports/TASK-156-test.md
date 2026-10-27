@@ -1,4 +1,4 @@
-# TASK-156 TEST: PASS (revisions 1, 2 and 3 included)
+# TASK-156 TEST: PASS (revisions 1 to 4 included)
 
 Tester: tester-m7-156, 2026-10-27. Covers REQ-159 (1), (2), (3), (6), REQ-164 (2), REQ-165 (3), and #15, #102 (b) and #103 (the folder side). Spec: TS §4.1 L515, L524, L526, L528, L532; §4.2; §4.3 L550; §4.6; SR §3.6. Rulings applied (`work/decisions.md`, 2026-10-27):
 - "Crash window": a deleted policy's leftover upload is removed and reported.
@@ -212,3 +212,60 @@ There were two test bugs, both mine and both fixed:
 2. **Leftover misreport.** A leftover discovered before `uploaded/` is swapped for a link is classified from the database alone. `remove_leftover` then calls `remove_after_commit`, which refuses through the unreadable folder (TASK-155 r2 handle, log "upload removal skipped: uploaded folder unreadable"). Nothing in the link target or the real folder was touched (throwaway probe in `scratchpad/t156r3/probe`). But the reconcile still logs "removed a leftover of an interrupted delete: uploaded/policy-<id>.bit" and lists it in `leftovers`, though the file was not removed. Listing it for #103 is fine, because the file really is still there; the "removed" log is not true. This is a narrow race window, and nothing is followed or deleted. It is not asserted.
 3. Plants R1 and S6 first survived because the delete loop marks a folder whenever it still holds a live policy, so the start check and the read check overlap. The two new empty-catalog tests now pin each one separately.
 4. `_state`'s "unreadable on any stat error except ENOENT" path can only be reached by injection here, because the tests run as root.
+
+## Revision 4 (tester-m7-156r2, 2026-10-27): r3 findings fixed; a follow-through-link removal found and fixed in TASK-155 r3: PASS
+
+Source: `work/decisions.md`, "TASK-156 r3 TEST PASS ... revision 4" (my r3 findings 1 and 2) and the row routing TASK-155 r3. Code under test: `folders.py` at 1b0aff3 (r4). The final verdict is on HEAD 1be4769 (TASK-155 r3: `open_uploaded_dir` opens the bits folder no-follow, then `uploaded` relative to it). No product file changed.
+
+File changed: `manager/tests/test_folders_pg.py`. It gains 7 test functions (14 cases), for 61 functions and 144 cases. Folders are swapped at fixed points by wrapping `folders.discover`, `folders.delete_in_tx`, `pipeline.remove_after_commit` and `os.open` / `os.unlink` for one name. There are no sleeps.
+
+### Round 1 (1b0aff3): FAIL, a security defect outside `folders.py`
+
+| Test | Expected | Actual at 1b0aff3 |
+| --- | --- | --- |
+| `test_a_leftover_whose_folder_is_swapped_after_discover_is_not_reported_removed[bits-symlink-with-copy]` | After `discover`, the bits folder becomes a link to `evil/`, which holds `uploaded/policy-<D>.bit`. That file stays | It is deleted. `remove_leftover` → `remove_after_commit` → `open_uploaded_dir(bits_dir / "uploaded")`, and `O_NOFOLLOW` covers only the last component |
+| `test_a_bits_folder_swapped_before_an_upload_copy_is_removed_is_not_followed` | U's file is removed by hand, so U is deleted. The bits folder becomes a link right after U's `delete_in_tx`, and `evil/uploaded/policy-<U>.bit` stays | It is deleted (the same helper, called from `_delete_removed`) |
+| `test_req159_3_move_does_not_remove_the_copy_through_a_swapped_bits_folder` (added at main's request) | In a REQ-159 (3) server-wins move, the bits folder becomes a link just before the pipeline removes the uploaded copy. The link target's file stays, and the real copy is left in place | It is deleted (the same helper, called from `pipeline`) |
+
+Diagnosis: "Folder guard details" (1) says a symlinked bits folder makes `uploaded/` unreadable, because it would be reached through the link. The helper (TASK-155 code) followed it. r4's own `_state` check in `remove_leftover` runs only after the removal, so it reports the leftover correctly (`leftovers == ()`, both folders marked) but cannot prevent the removal. My r3 tests had no case that swaps the bits folder before a removal, so r3 missed this. main routed it as TASK-155 r3, option (a). The failing evidence came from a clean `git archive 1b0aff3` copy (`scratchpad/t156r4/base`): 3 failed, 141 passed.
+
+### Round 2 (HEAD 1be4769, TASK-155 r3 landed)
+
+| Run | Command (from `manager/`) | Count |
+| --- | --- | --- |
+| file | `pytest -n 4 tests/test_folders_pg.py` (twice) | **144/144 passed** both times, 0 failed, 0 errors, 0 skipped |
+| affected set | `pytest -n 4 tests/test_folders_pg.py tests/test_import_pipeline_pg.py tests/test_import_store_pg.py tests/test_policy_delete_pg.py tests/test_catalog_lock_pg.py tests/test_uploads.py tests/test_uploads_pg.py` | **588/588 passed**, 0 failed, 0 errors, 0 skipped |
+| coverage | `--cov=bitscan_manager.services.importer.folders` | 144/144 passed. `folders.py` **223/223 lines (100 %)** |
+| re-run after a test fix | `pytest tests/test_folders_pg.py::test_req159_3_move_does_not_remove_the_copy_through_a_swapped_bits_folder` | 1/1 passed. mypy had flagged `pipeline.remove_after_commit` as not re-exported; the test now takes the real function from `delete` (the same object) |
+| static | `ruff check manager`, `ruff format --check manager`, `mypy --strict --config-file manager/pyproject.toml manager` | clean (291 files) |
+
+### Report rows
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| r4 (1) no per-file line | APP | Linux/PG | `test_a_folder_swapped_after_discover_logs_only_the_guard_line[uploaded, bits × missing, symlink]` | PASS | Setup: 3 changed server files and 3 changed live uploads, all discovered, then one folder goes. The module's only WARNING lines are the guard lines, one per label, and none says "not read". Nothing is deleted. With `uploaded/` gone the 3 server files are imported and the uploads are unchanged; with the bits folder gone there are no rows and all 6 policies are identical | 2026-10-27 |
+| r4 (1) a readable folder still logs | APP | Linux/PG | `test_a_read_error_inside_a_readable_folder_still_logs_its_type` | PASS | `os.open` of `s.bit` raises `PermissionError`. The module's warnings are exactly `["folder file not read: PermissionError"]`. The result is `()`, there is no `s.bit` row, and S is identical | 2026-10-27 |
+| r4 (2) leftover, folder swapped | APP | Linux/PG | `test_a_leftover_whose_folder_is_swapped_after_discover_is_not_reported_removed[missing, symlink-with-copy, symlink-empty, bits-symlink-with-copy]` | PASS (the bits case only after TASK-155 r3) | `leftovers == ()` and the folder is marked, with one guard line per label and no "removed a leftover" line. S, R, U and D are identical, with no audit entry and no delete. The link target is byte-identical, and the real leftover is still there | 2026-10-27 |
+| r4 (2) leftover removal refused | APP | Linux/PG | `test_a_leftover_that_cannot_be_removed_is_retried_and_reported_once_gone[no-op, unlink-raises]` | PASS | Over 2 runs: `leftovers == ()`, `("uploaded/",)`, one guard line, no "removed" line, the file kept, D identical and no row. U's hand-removed file still deletes U, because the folder is real and the mark only reports. Once removal works: the leftover is listed once with one "removed" line and the file is gone; the next run lists nothing | 2026-10-27 |
+| r4 (2) direct call | CODE | Linux | `test_remove_leftover_returns_a_difference_only_when_the_file_is_gone` | PASS | It returns a `Difference` once the file is gone. It returns None when the removal is a no-op (file kept), when `uploaded/` is a symlink (target kept), and when `uploaded/` is missing | 2026-10-27 |
+| no removal through a symlinked bits folder | APP | Linux/PG | `test_a_bits_folder_swapped_before_an_upload_copy_is_removed_is_not_followed`, `test_req159_3_move_does_not_remove_the_copy_through_a_swapped_bits_folder`, leftover `[bits-symlink-with-copy]` | FAIL at 1b0aff3, PASS at 1be4769 | See Round 1. At 1be4769 every link target is byte-identical. The move still commits (`x.bit`, `policy.import` + `policy.move`), the real copy is left for #103, and the result is `("./", "uploaded/")` | 2026-10-27 |
+| regression | APP | Linux/PG | r1 to r3 cases (130) | PASS | unchanged | 2026-10-27 |
+
+### Plants (copy `scratchpad/t156r4/<id>` of `git archive 1b0aff3` plus the final tests; the 3 TASK-155-dependent cases deselected; control 141/141): 27/27 red
+
+The r2 and r3 plants, re-anchored to r4 (S3b's anchor changed with the dropped log line), are all red: R1 6, R2 27, R3 4, R3b 9, R4 36, R5 6, R6 14, R7 2, R8 34, R9 35, S1 4, S2 25, S2b 11, S3 2, S3b 10, S4 14, S4b 10, S5 1, S6 2, S7 5. The new r4 plants:
+
+| Plant | Change | Red |
+| --- | --- | --- |
+| T1 | `remove_leftover`'s `_state` check dropped | 6 |
+| T2 | check by path (`os.path.lexists`) instead of the no-follow handle | 3 |
+| T3 | a refused leftover not marked | 2 |
+| T4 | a refused leftover still listed | 5 |
+| T5 | the per-file "its folder is unreadable" line restored | 4 |
+| T6 | the per-file read-error line in a readable folder dropped | 1 |
+| T7 | "removed a leftover" logged before the check | 9 |
+
+### Findings for the reviewer (none blocking)
+
+1. A real `uploaded/` whose leftover could not be removed is listed in `unreadable_folders`, yet its absent files still delete their policies (the impl report's intent: the mark only reports). This fits the ruling, which defines "unreadable" as missing, a symlink or not a directory. TASK-158's alert text should not suggest the folder is missing.
+2. A regular file replaced by a FIFO or a directory counts as "absent" in `_state`, so after a refused removal of such an entry the leftover would still be reported as removed. Not reachable through the manager. Not tested.

@@ -409,6 +409,7 @@ def test_temp_open_flags_flush_then_commit_then_rename(
     real_open, real_fsync, real_replace = os.open, os.fsync, os.replace
     fds: dict[int, str] = {}
     dir_flags: list[int] = []
+    opened: list[str] = []  # fd numbers are reused after close
 
     def spy_open(path: Any, flags: int, mode: int = 0o777, **kw: Any) -> int:
         fd = real_open(path, flags, mode, **kw)
@@ -419,9 +420,11 @@ def test_temp_open_flags_flush_then_commit_then_rename(
         elif Path(path) == bits:
             dir_flags.append(flags)
             fds[fd] = "bits"
+            opened.append("bits")
         elif str(path) == "uploaded" and fds.get(kw.get("dir_fd", -1)) == "bits":
             dir_flags.append(flags)
             fds[fd] = "dir"
+            opened.append("dir")
         return fd
 
     def spy_fsync(fd: int) -> None:
@@ -455,7 +458,7 @@ def test_temp_open_flags_flush_then_commit_then_rename(
     # to it, each O_DIRECTORY | O_NOFOLLOW; the temp open, the directory fsync
     # and the rename are relative to the uploaded/ fd.
     assert via == "dir"
-    assert "dir" in fds.values() and "bits" in fds.values()
+    assert opened == ["bits", "dir"]
     assert dir_flags and all(
         f & os.O_DIRECTORY and f & os.O_NOFOLLOW for f in dir_flags
     )
