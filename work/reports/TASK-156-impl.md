@@ -78,3 +78,40 @@ All of these run under the catalog lock the caller holds (`catalog_lock(session)
 
 - TASK-157: call `classify_upload` in the rebuild's transaction. Handle `leftover` with `remove_leftover` (after the commit, or before it, since the file is never imported), then list it in `removed_leftovers`. Skip `stray`. `read_input` and `present` can be reused.
 - TASK-158: `ReconcileResult.leftovers` are ready-made `Difference`s. `strays` are paths that the #103 folder-side check already flags (no live `source_file` and no rejected row).
+
+## Revision 1 (impl-manager-156b): a live upload with an edited `<PolicyName>` is skipped
+
+Ruling: `work/decisions.md`, last row, "A live upload file with a hand-edited `<PolicyName>` is skipped and reported like a stray" (user, 2026-10-27). Only `manager/bitscan_manager/services/importer/folders.py` changed. It is now 281 physical lines and 207 code lines (blank lines, comments and docstrings excluded; it was 197).
+
+### What changed
+
+- **`renamed(conn, rel, prepared) -> bool`** (folders.py:178), new and public so that TASK-157's rebuild can use the same rule. A "live" upload is `renamed` when `prepared.rules.policy_name` is not None and differs (exact string comparison, as `decide` matches names) from the current `policy_name` of policy `<id>`, which it reads with `policy_by_id_for_update`. A file with no valid name (`rules` is None, or `policy_name` is None: unparsable, oversize, BIT002, invalid `PolicyName`) is not `renamed`, so it goes through the pipeline and is recorded as `rejected`, as before. A file whose name was edited **and** that has other Reject findings is still `renamed`, so it is skipped and writes no rejected row, because its `<PolicyName>` differs.
+- **`reconcile`** (folders.py:200). Each file read is parsed once (`prepare`, :234). For an `uploaded/` file classified "live", `renamed` runs in its own short transaction (:236–:241). If it is true, the reconcile writes one fixed-words warning, `uploaded file skipped: its policy name was edited` (no name, no path, no content), adds the path to `ReconcileResult.renamed`, and continues. There is no pipeline call, no `bit_import` row, no audit entry, no alert and no catalog change, so the policy keeps its last good rows. Otherwise the parse result goes to `import_one(prepared=prepared)` (:250). Server files also pass their `prepared`.
+- **`ReconcileResult`** (:62). There is a new field, **`renamed: tuple[str, ...]`** (:67): live uploads skipped for an edited name, for the #103 check (TASK-158). I did not reuse `strays`. A renamed file *is* its policy's `source_file`, so TASK-158 should report it with its own check text (its hash also differs from `source_sha256`). **`refused` is removed.** The `except PolicyManagedOnServer` branch is gone too. Under the catalog lock, a live upload can only reach `decide` with its own policy's name, which is never in the server folder, so `refused` would always have been empty. The old refusal (a `policy.import_refused` entry and the path in `refused`) is now this skip. Field order: `outcomes, deleted, leftovers, strays, renamed`.
+- `classify_upload` is unchanged in behaviour. Its docstring now says "live … unless `renamed`".
+
+### Gates (repo root)
+
+- `ruff check manager && ruff format --check manager`: pass (291 files).
+- `mypy --strict --config-file manager/pyproject.toml manager`: product code is clean. There are 17 errors, all in the tester's `manager/tests/test_folders_pg.py`. 13 of them are from the removed `refused` field (`attr-defined`, plus `comparison-overlap` on the chained `res.refused == res.deleted == …` at lines 517 and 560). 4 were already there (lines 1049, 1050, 1061, 1225: `folders.import_one` and `pipeline.store_decide` are not explicitly exported).
+- PG run from `manager/`: `test_folders_pg.py test_import_pipeline_pg.py test_import_store_pg.py test_policy_delete_pg.py` gives **317 passed, 17 failed**. All 17 failures are in `test_folders_pg.py`, and each is `AttributeError: ... no attribute 'refused'`:
+  - 15 only read `res.refused == ()` as part of an assertion: `test_hostile_entries_are_never_imported`, `test_unstorable_names_are_logged_once_and_skipped`, `test_new_server_files_are_imported_in_auto_mode_by_the_system`, `test_an_unchanged_folder_writes_only_skipped_rows`, `test_three_reconciles_and_a_restart_cause_no_churn` (in the `states` tuple, line 605), `test_req159_3_server_file_takes_an_uploaded_policy`, `test_ii_a_leftover_is_removed_never_imported_and_reported[same|other|names-live|garbage]`, `test_c_strays_are_never_imported_and_are_reported[new-name|no-policy|leading-zero|over-bigserial|server-copy|live-name]`. With `refused` dropped from those assertions (throwaway copy, now deleted), all of them pass.
+  - 1 tests the old behaviour: `test_a_live_upload_edited_to_a_server_policys_name_is_refused` (line 1163). Now it should expect: `res.renamed == (first,)`, no `policy.import_refused` entry, rows `[("srv.bit","skipped"), (later,"success")]`, actions `["policy.import"]`, the server policy unchanged, and `first` left in place.
+- Throwaway smoke (a copy of the test file in `manager/tests/`, deleted afterwards). One live upload, `uploaded/policy-<u1>.bit`, rewritten as each case below and then reconciled 3 times in a row. Every case passed all 3 runs.
+
+### Cases for the tester
+
+| Case | Each of 3 reconciles in a row |
+| --- | --- |
+| New name (`<PolicyName>` used by no policy) | `renamed == (rel,)`; no `bit_import` row for it; no audit entry or alert; catalog checksums unchanged; the file left byte-identical; `strays == ()` and `deleted == ()`; one log line containing neither the name nor the path |
+| Another uploaded policy's name | the same as above; that other policy's `source_sha256` and rows unchanged (no flip-flop) |
+| A server-folder policy's name | the same as above; **no** `policy.import_refused` entry; the server policy unchanged |
+| Same name, changed content | 1st: `success` (`policy.import`); 2nd and 3rd: `skipped`, no audit entry; `renamed == ()` |
+| Same name, unchanged | `skipped` every time, no audit entry, `renamed == ()` |
+| Unparsable (`<not xml`) and oversize (> 5 MiB) | `rejected` every time with one `policy.import_rejected` alert (TS §4.1 L532 retry), `renamed == ()` |
+| Also worth covering | Edited name plus another Reject finding (for example a BIT102 `Execute`): skipped as `renamed`, with no rejected row. A spy on `folders.prepare` or `parse_bit` shows each file is parsed once per reconcile. A renamed file's policy is still listed by `integrity_rows` and is not deleted by `delete_removed` (its file is present). |
+
+### For TASK-157 and TASK-158
+
+- TASK-157 (rebuild): after `classify_upload(...) == "live"` and `prepare`, call `renamed(conn, rel, prepared)` in the rebuild transaction. If it is true, skip the file the way a stray is skipped, with no `store_in_savepoint`. The policy keeps its rows only if the rebuild does not otherwise drop them; that is TASK-157's design.
+- TASK-158: report `ReconcileResult.renamed` alongside `strays`. `refused` no longer exists.
