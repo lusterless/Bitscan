@@ -58,14 +58,33 @@ Agents pinned with `bitscan/manager_spki_sha256` accept the new certificate only
 
 ## 3. Replace the OpenBao token
 
-The manager doesn't renew its OpenBao token. Before the old token expires, create a new one with the same policy (encrypt and decrypt with the TOTP key only), then:
+The manager reads its OpenBao token when it starts, and `bitscan-openbao-renew.timer` keeps the token alive (`manager-install.md` section 5). Replace the token if it may have been exposed, or if it expired because renewal stopped. Until a valid token is in place, sign-in for users with TOTP answers 503.
 
-```sh
-sudoedit /etc/bitscan/secrets/vault.token
-sudo systemctl restart bitscan-manager
-```
+1. Note the old token's accessor, which names the token for revocation but grants no access. This works only while the old token is still valid. If curl reports `error: 403` and the block prints `no accessor: the old token is no longer valid`, the token has already expired or been revoked, and there is nothing to revoke:
 
-Then revoke the old token in OpenBao. Until a valid token is in place, sign-in for users with TOTP answers 503.
+   ```sh
+   bao_url="$(sudo sed -n 's/^BITSCAN_VAULT_ADDR=//p' /etc/bitscan/manager.env)"
+   sudo sed -n '1s/^/X-Vault-Token: /p' /etc/bitscan/secrets/vault.token |
+       curl -sS --fail -H @- --data '{}' "${bao_url%/}/v1/auth/token/renew-self" |
+       python3.12 -I -c 'import json, sys; d = sys.stdin.read(); print(json.loads(d)["auth"]["accessor"] if d else "no accessor: the old token is no longer valid")'
+   ```
+
+   If the old token may have been exposed, revoke it now (step 4) rather than after the new token is in place.
+2. As an OpenBao admin, create the new token from the same role and write it over the old one, as in `manager-install.md` section 5 (or paste it with `sudoedit /etc/bitscan/secrets/vault.token`):
+
+   ```sh
+   bao token create -role=bitscan-manager -policy=bitscan-manager -no-default-policy \
+       -display-name=bitscan-manager -field=token | sudo tee /etc/bitscan/secrets/vault.token >/dev/null
+   ```
+
+3. Run the token check of `manager-install.md` section 5, then restart the manager and renew once, so both use the new token:
+
+   ```sh
+   sudo systemctl restart bitscan-manager
+   sudo systemctl start bitscan-openbao-renew.service
+   ```
+
+4. Revoke the old token as an OpenBao admin: `bao token revoke -accessor <accessor>`, with the accessor from step 1.
 
 ## 4. Backups
 
@@ -209,9 +228,11 @@ If it prints `not drained`, start the manager (`sudo systemctl start bitscan-man
 Then disable and remove the service:
 
 ```sh
-sudo systemctl disable --now bitscan-manager.service bitscan-manager-maintain.timer
+sudo systemctl disable --now bitscan-manager.service bitscan-manager-maintain.timer bitscan-openbao-renew.timer
 sudo rm -f /etc/systemd/system/bitscan-manager.service /etc/systemd/system/bitscan-manager-migrate.service \
-    /etc/systemd/system/bitscan-manager-maintain.service /etc/systemd/system/bitscan-manager-maintain.timer
+    /etc/systemd/system/bitscan-manager-maintain.service /etc/systemd/system/bitscan-manager-maintain.timer \
+    /etc/systemd/system/bitscan-openbao-renew.service /etc/systemd/system/bitscan-openbao-renew.timer \
+    /usr/local/sbin/bitscan-openbao-renew
 sudo systemctl daemon-reload
 sudo rm -f /usr/bin/bitscan-manager
 sudo rm -rf /opt/bitscan-manager
