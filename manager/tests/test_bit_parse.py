@@ -225,11 +225,16 @@ def _noop(*_args: Any) -> None:
 
 
 def _measure(data: bytes) -> tuple[ParseResult, int, float]:
+    """Result, peak traced memory and the parse's CPU time in this thread.
+    CPU time, not wall time: the parser is single-threaded, so its own work
+    (expat and the collector) is all counted, while time spent waiting for a
+    core on a loaded runner (pytest -n 8) is not. A planted super-linear
+    parser still exceeds the bound (tester-m7c, 2026-10-27)."""
     tracemalloc.start()
-    start = time.perf_counter()
+    start = time.thread_time()
     try:
         result = parse_bit(data)
-        elapsed = time.perf_counter() - start
+        elapsed = time.thread_time() - start
         peak = tracemalloc.get_traced_memory()[1]
     finally:
         tracemalloc.stop()

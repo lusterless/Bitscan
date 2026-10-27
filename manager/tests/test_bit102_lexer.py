@@ -474,7 +474,8 @@ def _bounded(src: str) -> None:
     other jobs cannot fail it; a super-linear lexer still does."""
     if _lex_once(src) < 0.1:
         return
-    assert min(_lex_once(src) for _ in range(5)) < 0.1, len(src)
+    times = [_lex_once(src) for _ in range(5)]
+    assert min(times) < 0.1, (len(src), [round(t * 1000, 1) for t in times])
 
 
 @settings(
