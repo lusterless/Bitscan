@@ -211,6 +211,45 @@ def test_wrapper_option_clusters_do_not_hide_the_command(cmd: str) -> None:
     assert_rejected(cmd, "rm")
 
 
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        # #108 (d): a long option given its value as the next word (getopt)
+        # must not hide the command either.
+        "sudo --user root rm x",
+        "sudo --group adm rm x",
+        "env --unset HOME rm x",
+        "env --chdir / rm x",
+        "nice --adjustment 5 rm x",
+        "ionice --class 3 rm x",
+        "stdbuf --output L rm x",
+        "timeout --signal KILL 5 rm x",
+        "timeout --kill-after 1 5 rm x",
+        "chroot --userspec a:b / rm x",
+        # env -S as a separate word and inside a short cluster.
+        "env --split-string 'rm x'",
+        "env -iS 'rm x'",
+        "env -iS'rm x'",
+    ],
+)
+def test_wrapper_long_option_values_do_not_hide_the_command(cmd: str) -> None:
+    assert_rejected(cmd, "rm")
+
+
+@pytest.mark.parametrize(
+    ("cmd", "token"),
+    [
+        # SR §4.2 `--in-place`: GNU getopt accepts any unique prefix of it.
+        ("sed --in s/a/b/ f", "--in"),
+        ("sed --in-pl s/a/b/ f", "--in-pl"),
+        ("sed --in-pl=.bak s/a/b/ f", "--in-pl=.bak"),
+        ("sed -n --i p f", "--i"),
+    ],
+)
+def test_sed_in_place_abbreviations(cmd: str, token: str) -> None:
+    assert_rejected(cmd, token)
+
+
 # CHK-M7-118: redirections (#108 (i)) ----------------------------------------
 
 REDIRECT_REJECT = [

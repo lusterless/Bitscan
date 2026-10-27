@@ -415,6 +415,29 @@ def test_mixed_nesting_over_8_refused() -> None:
         lex(src)
 
 
+def _wrapped(levels: int, opener: str, closer: str, core: str) -> str:
+    src = core
+    for _ in range(levels):
+        src = opener + src + closer
+    return "echo " + src
+
+
+@pytest.mark.parametrize(
+    ("opener", "closer"), [("${x:-", "}"), ("$((1+", "))")], ids=["param", "arith"]
+)
+def test_param_and_arith_count_toward_depth_8(opener: str, closer: str) -> None:
+    # REQ-156 "nesting deeper than 8"; impl report TASK-145: ${…} and $((…))
+    # count toward MAX_DEPTH as $( ) does, so no form nests without a bound.
+    script = lex(_wrapped(7, opener, closer, "$(rm x)"))  # 7 + the $( ) = 8
+    # The part keeps its substitutions' scripts joined at one level.
+    assert [c for _, c in walk(script)] == ["echo", "rm"]
+    with pytest.raises(ShellSyntaxError):
+        lex(_wrapped(8, opener, closer, "$(rm x)"))
+    lex(_wrapped(8, opener, closer, "1"))
+    with pytest.raises(ShellSyntaxError):
+        lex(_wrapped(9, opener, closer, "1"))
+
+
 def test_depth_argument_counts() -> None:
     lex("echo $(x)", depth=7)
     with pytest.raises(ShellSyntaxError):

@@ -584,6 +584,28 @@ def test_same_line_findings_keep_rule_order() -> None:
     assert found[0].line == found[1].line
 
 
+@pytest.mark.parametrize(
+    ("element", "code"), [("Operator", Code.BIT010), ("ExpectedResult", Code.BIT011)]
+)
+def test_missing_element_at_the_plugin_line_sorts_before_later_lines(
+    element: str, code: Code
+) -> None:
+    # REQ-155 (5). A missing Operator/ExpectedResult is reported at the
+    # <Plugin> line (#2), which precedes PluginName and PluginId, though the
+    # rule runs after theirs. Red for a validate() that does not sort.
+    data = _drop(sr_example(), element, 1)
+    data = data.replace(b"1.3.1.1 - Ensure", b"Ensure", 1)  # BIT101 at PluginName
+    data = data.replace(b"3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c48", b"BAD", 1)
+    v = run(data)
+    plugin = parsed_of(data).plugins[0]
+    assert [(f.code, f.line) for f in v.findings] == [
+        (code, plugin.line),
+        (Code.BIT101, plugin.plugin_name.line),
+        (Code.BIT004, plugin.plugin_id.line),
+    ]
+    assert plugin.line < plugin.plugin_name.line < plugin.plugin_id.line
+
+
 # CHK-M7-075: warnings (#110) ----------------------------------------------
 
 
