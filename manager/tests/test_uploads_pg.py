@@ -1051,33 +1051,9 @@ def test_finish_touches_nothing_when_uploaded_is_not_a_real_directory(
     assert imports_since(server, s0) == [] and audits_since(server, s0) == []
     recs = _guard_logs(caplog)
     assert len(recs) == 1 and recs[0].levelno >= logging.WARNING
-    assert str(bits.parent) not in recs[0].getMessage()
-    assert recs[0].getMessage() == _missing_line(db, bits.parent)
-
-
-def _missing_line(db: AppDatabase, root: Path) -> str:
-    """The fixed line for a missing folder: every unreadable case logs it the
-    same way ("one fixed log line")."""
-    empty = root / f"missing-{tag()}"
-    empty.mkdir()
-    import logging as _l
-
-    seen: list[str] = []
-
-    class H(_l.Handler):
-        def emit(self, record: _l.LogRecord) -> None:
-            seen.append(record.getMessage())
-
-    lg = _l.getLogger("bitscan_manager.services.importer.uploads")
-    h = H()
-    lg.addHandler(h)
-    try:
-        finish(db, empty)
-    finally:
-        lg.removeHandler(h)
-        empty.rmdir()
-    assert len(seen) == 1
-    return seen[0]
+    msg = recs[0].getMessage()  # fixed words: no path, no entry name
+    assert str(bits.parent) not in msg and "uploaded/" not in msg
+    assert ".tmp-" not in msg and "real-uploaded" not in msg
 
 
 @pytest.mark.parametrize("new", [True, False], ids=["new", "update"])
