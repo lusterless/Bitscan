@@ -948,21 +948,48 @@ def test_finish_on_an_empty_folder_does_nothing(
     assert catalog_now(server) == s0.catalog
 
 
-def test_finish_on_a_missing_folder_creates_nothing_and_changes_nothing(
-    server: PgServer, db: AppDatabase, tmp_path: Path
+def test_finish_on_a_missing_folder_is_empty_logs_one_line_and_creates_nothing(
+    server: PgServer, db: AppDatabase, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The spec is silent on a missing uploaded/ (TS §8.7 says the package
-    creates it). Either answer is safe if it creates and changes nothing."""
+    """Lead ruling "A missing bits/uploaded/ folder": counted as empty, one
+    log line, never created, so start-up goes on to reconcile."""
     bits = tmp_path / "bits"
     bits.mkdir()
     s0 = snap(server)
-    try:
-        got: FinishedUploads | None = finish(db, bits)
-    except FileNotFoundError:
-        got = None
-    assert got in (None, FinishedUploads(0, 0))
+    caplog.set_level("DEBUG", logger="bitscan_manager.services.importer.uploads")
+    assert finish(db, bits) == FinishedUploads(renamed=0, deleted=0)
     assert listing(bits) == []
+    assert not (bits / "uploaded").exists()
     assert catalog_now(server) == s0.catalog
+    assert imports_since(server, s0) == [] and audits_since(server, s0) == []
+    recs = [
+        r for r in caplog.records
+        if r.name == "bitscan_manager.services.importer.uploads"
+    ]  # fmt: skip
+    assert len(recs) == 1 and recs[0].levelno >= 30  # one warning
+    assert str(tmp_path) not in recs[0].getMessage()
+
+
+def test_an_upload_with_no_uploaded_folder_fails_closed_with_no_row(
+    server: PgServer, db: AppDatabase, tmp_path: Path
+) -> None:
+    """Same ruling, #98 (j): an internal disk error, no bit_import row, no
+    catalog change, and the folder is not created."""
+    bits = tmp_path / "bits"
+    bits.mkdir()
+    data, _ = bit(f"NoFolder {tag()}")
+    s0 = snap(server)
+    with pytest.raises(FileNotFoundError):
+        up(db, bits, data, b"../evil.bit")
+    assert listing(bits) == [] and listing(tmp_path) == ["bits"]
+    assert catalog_now(server) == s0.catalog
+    assert imports_since(server, s0) == [] and audits_since(server, s0) == []
+    assert counter_delta(s0) == {}
+    # A rejected upload never reaches the disk: its normal row is written.
+    bad, _ = bit(f"NoFolder {tag()}", status="maybe")
+    assert up(db, bits, bad).outcome == "rejected"
+    assert [r["outcome"] for r in imports_since(server, s0)] == ["rejected"]
+    assert listing(bits) == []
 
 
 def test_finish_leaves_a_directory_named_like_a_temp_and_still_finishes(
