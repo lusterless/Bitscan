@@ -184,9 +184,15 @@ def finish_interrupted_uploads(
     every other `.tmp-*` entry (a symlink is removed, never followed). The
     caller holds the catalog lock and has no transaction open on `session`:
     start-up (TASK-158) and the rebuild before it reads the folders (TASK-157,
-    user ruling "Rebuild finishes interrupted uploads first")."""
+    user ruling "Rebuild finishes interrupted uploads first"). A missing
+    `uploaded/` counts as empty and is logged; it is never created."""
     folder = bits_dir / "uploaded"
-    temps = sorted(e.name for e in os.scandir(folder) if e.name.startswith(_TMP))
+    try:
+        entries = sorted(e.name for e in os.scandir(folder))
+    except FileNotFoundError:  # a broken install; never created here (lead ruling)
+        log.warning("interrupted uploads: uploaded folder missing, nothing to finish")
+        return FinishedUploads(0, 0)
+    temps = [name for name in entries if name.startswith(_TMP)]
     keep: dict[str, int] = {}
     with session.transaction() as tx:
         for name in temps:
