@@ -7,7 +7,8 @@ the lock its caller holds: transaction 1 decides, stores and writes the
 success audit entries; transaction 2 writes the `bit_import` row and, for a
 rejection, its alert and the failure count. A database or disk error is not
 a rejection: it propagates and writes no row (#98 (j)). Nothing here logs
-file content, findings or `Execute` text.
+file content, findings or `Execute` text. The types, audit writers and
+`record` are in pipeline_record (plan §11).
 """
 
 from __future__ import annotations
@@ -15,16 +16,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, fields
-from enum import StrEnum
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
-from bitscan_manager.repositories import catalog, imports
-from bitscan_manager.repositories.audit_log import PgAuditRepo
-from bitscan_manager.repositories.catalog import PolicyRow
-from bitscan_manager.repositories.imports import ImportRecord
+from bitscan_manager.repositories import catalog
 from bitscan_manager.runtime import CatalogSession, Clock, Tx
-from bitscan_manager.services.importer import alerts, bit102, store, store_decide
+from bitscan_manager.services.importer import bit102, store, store_decide
 from bitscan_manager.services.importer.delete import remove_after_commit
 from bitscan_manager.services.importer.model import (
     LENGTH_LIMITS,
@@ -33,38 +30,34 @@ from bitscan_manager.services.importer.model import (
     plugin_path,
 )
 from bitscan_manager.services.importer.parse import parse_bit
-from bitscan_manager.services.importer.store import (
-    Candidate,
-    Decision,
-    RuleKeys,
-    StoreResult,
-    Target,
+from bitscan_manager.services.importer.pipeline_record import (
+    Actor,
+    FileInput,
+    Mode,
+    Pending,
+    audit_refused,
+    audit_success,
+    record,
 )
+from bitscan_manager.services.importer.store import Candidate, RuleKeys
 from bitscan_manager.services.importer.structure import check as check_structure
 from bitscan_manager.services.importer.validate import validate
 from bitscan_manager.services.importer.values import trim_xml
 
+__all__ = [
+    "Actor",
+    "FileInput",
+    "ImportOutcome",
+    "Mode",
+    "Pending",
+    "Prepared",
+    "import_one",
+    "prepare",
+    "record",
+    "store_in_savepoint",
+]
+
 log = logging.getLogger(__name__)
-
-
-class Mode(StrEnum):
-    AUTO = "auto"
-    MANUAL = "manual"
-    REBUILD = "rebuild"
-
-
-@dataclass(frozen=True, slots=True)
-class Actor:
-    audit: str  # "user:<id>", "cli:root" or "system" (#101)
-    user_id: int | None  # bit_import.imported_by
-
-
-@dataclass(frozen=True, slots=True)
-class FileInput:
-    data: bytes | None  # the one read buffer; None for an oversize folder file
-    sha256: str  # of data, or of the streamed oversize file
-    file_name: str  # the relative path, or the #99 (d) client name
-    target: Target
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,19 +65,6 @@ class Prepared:
     findings: tuple[Finding, ...]  # file-local, warnings included
     rules: RuleKeys | None  # None when BIT001 or BIT002 failed
     candidate: Candidate | None  # None when any file-local Reject
-
-
-@dataclass(frozen=True)
-class Pending:
-    outcome: Literal["success", "skipped", "rejected"]
-    policy_id: int | None
-    policy_name: str | None
-    policy_version: int | None
-    plugins_added: int
-    plugins_updated: int
-    plugins_retired: int
-    findings: tuple[Finding, ...]  # everything stored in bit_import.errors
-    store: StoreResult | None  # success only
 
 
 @dataclass(frozen=True)
@@ -162,7 +142,7 @@ def _store(
     if decision.displaced_id is not None:  # already locked by decide
         displaced = catalog.policy_by_id_for_update(tx.conn, decision.displaced_id)
     result = store.apply(tx.conn, decision, prep.candidate, file.target, clock.now())
-    _audit_success(tx, result, decision, displaced, file, mode, actor)
+    audit_success(tx, result, decision, displaced, file, mode, actor)
     return Pending(
         "success",
         result.policy_id,
@@ -174,101 +154,6 @@ def _store(
         findings,
         result,
     )
-
-
-def _audit_success(
-    tx: Tx,
-    r: StoreResult,
-    decision: Decision,
-    displaced: PolicyRow | None,
-    file: FileInput,
-    mode: Mode,
-    actor: Actor,
-) -> None:
-    """Plan §7: the import alert, then the move, displaced delete and
-    re-enable entries, all in the store's transaction or savepoint."""
-    events = [
-        alerts.imported(
-            policy_id=r.policy_id,
-            policy_name=r.policy_name,
-            version=r.version,
-            mode=_lit(mode),
-            file_sha256=file.sha256,
-            source_file=r.source_file,
-            plugins_added=r.plugins_added,
-            plugins_updated=r.plugins_updated,
-            plugins_retired=r.plugins_retired,
-            renamed_from=r.renamed_from,
-            revived=r.revived,
-            changed_executes=r.changed_executes,
-        )
-    ]
-    if r.moved_from is not None:
-        events.append(
-            alerts.moved(
-                policy_id=r.policy_id, from_file=r.moved_from, to_file=r.source_file
-            )
-        )
-    if displaced is not None:
-        events.append(
-            alerts.deleted(
-                policy_id=displaced.policy_id,
-                policy_name=displaced.policy_name,
-                source_file=displaced.source_file,
-                reason="file now holds another policy",
-            )
-        )
-    if r.reenabled and decision.old is not None:
-        events.append(
-            alerts.status_change(
-                policy_id=r.policy_id,
-                policy_name=r.policy_name,
-                before="disabled",
-                after="enabled",
-                status_overridden=decision.old.status_overridden,
-                by="file",
-            )
-        )
-    repo = PgAuditRepo(tx.conn)
-    for event in events:
-        alerts.emit(repo, tx.on_commit, event, actor=actor.audit)
-
-
-def _lit(mode: Mode) -> imports.Mode:
-    return Mode(mode).value
-
-
-def record(
-    tx: Tx, clock: Clock, file: FileInput, mode: Mode, actor: Actor, pending: Pending
-) -> int:
-    """The `bit_import` row; for a rejection also its alert and the failure
-    count on commit (#101). Its own transaction, after the store's."""
-    lit = _lit(mode)
-    row = ImportRecord(
-        file_name=file.file_name,
-        file_sha256=file.sha256,
-        mode=lit,
-        outcome=pending.outcome,
-        policy_version=pending.policy_version,
-        plugins_added=pending.plugins_added,
-        plugins_updated=pending.plugins_updated,
-        plugins_retired=pending.plugins_retired,
-        errors=[f.to_json() for f in pending.findings],
-        imported_by=actor.user_id,
-    )
-    import_id = imports.insert_import(tx.conn, row, clock.now())
-    if pending.outcome == "rejected":
-        event = alerts.rejected(
-            import_id=import_id,
-            mode=lit,
-            file_name=file.file_name,
-            file_sha256=file.sha256,
-            policy_id=pending.policy_id,
-            findings=pending.findings,
-        )
-        alerts.emit(PgAuditRepo(tx.conn), tx.on_commit, event, actor=actor.audit)
-        alerts.count_failure(tx.on_commit, lit)
-    return import_id
 
 
 def store_in_savepoint(
@@ -335,16 +220,7 @@ def import_one(
         pending = stop.pending
     except store.PolicyManagedOnServer as refused:  # #99 (e): no row, no alert
         with session.transaction() as tx:
-            event = alerts.AuditEvent(
-                action="policy.import_refused",
-                target=f"policy:{refused.policy_id}",
-                detail={
-                    "policy_id": refused.policy_id,
-                    "mode": _lit(mode),
-                    "file_sha256": file.sha256,
-                },
-            )
-            alerts.emit(PgAuditRepo(tx.conn), tx.on_commit, event, actor=actor.audit)
+            audit_refused(tx, refused.policy_id, file, mode, actor)
         raise
     import_id: int | None = None
     try:
