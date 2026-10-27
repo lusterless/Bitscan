@@ -3,10 +3,11 @@
 Works on the shlex_posix lexer's output, never on substrings. Every simple
 command is checked wherever it appears: pipelines, lists, subshells, groups,
 compound commands, function bodies, $( ), backticks, <( ), >( ), unquoted
-here-documents, the script of `sh`/`bash`/`dash -c`, of `su`/`runuser`/
-`flock -c` and the action of `trap` (each lexed again). Input the lexer
-cannot handle is BIT102 (fail closed, #108 (j)). In a bash script, words
-are checked after brace expansion (bit102_brace; decision 2026-10-27).
+here-documents, and the script of `sh`/`bash`/`dash -c` and of `su`/
+`runuser`/`flock -c` (each lexed again). Input the lexer cannot handle is
+BIT102 (fail closed, #108 (j)). In a bash script, words are checked after
+brace expansion (bit102_brace). `trap` setting an action, `alias` with a
+definition, `hash -p` and `let` are refused like eval (decisions 2026-10-27).
 
 A command word that is not literal (`"$c" x`, `$(echo rm) x`) is allowed and
 only its nested scripts are checked (user decision 2026-10-27); the runner
@@ -18,7 +19,12 @@ from collections.abc import Iterable, Iterator
 from typing import Final
 
 from bitscan_manager.services.importer.bit102_brace import BraceError, expand_words
-from bitscan_manager.services.importer.bit102_wrap import SPECS, look_through, text_word
+from bitscan_manager.services.importer.bit102_wrap import (
+    SPECS,
+    WRAPPERS,
+    look_through,
+    read_option,
+)
 from bitscan_manager.services.importer.model import Code, Finding, quote
 from bitscan_manager.services.importer.shlex_posix import (
     Redirect,
@@ -50,29 +56,6 @@ SAFE_TARGETS: Final = frozenset({"/dev/null", "/dev/stdout", "/dev/stderr"})
 # A path compared in policy text (SR §4.2); this module never opens it.
 TMP_PREFIX: Final = "/tmp/"  # noqa: S108
 INPUT_OPS: Final = frozenset({"<", "<&", "<<", "<<-", "<<<"})
-
-# #108 (d): wrapper -> (its options that take the next word, positional
-# arguments before the command: timeout's duration, chroot's directory).
-WRAPPERS: Final[dict[str, tuple[frozenset[str], int]]] = {
-    "env": (frozenset({"-u", "--unset", "-C", "--chdir"}), 0),
-    "command": (frozenset(), 0),
-    "builtin": (frozenset(), 0),
-    "nice": (frozenset({"-n", "--adjustment"}), 0),
-    "nohup": (frozenset(), 0),
-    "ionice": (frozenset({"-c", "--class", "-n", "--classdata", "-p", "--pid"}), 0),
-    "setsid": (frozenset(), 0),
-    "stdbuf": (frozenset({"-i", "--input", "-o", "--output", "-e", "--error"}), 0),
-    "timeout": (frozenset({"-s", "--signal", "-k", "--kill-after"}), 1),
-    "chroot": (frozenset({"--userspec", "--groups"}), 1),
-    "sudo": (
-        frozenset({"-u", "--user", "-g", "--group", "-C", "--close-from", "-D"})
-        | frozenset({"--chdir", "-h", "--host", "-p", "--prompt", "-r", "--role"})
-        | frozenset({"-t", "--type", "-U", "--other-user", "-T", "-R", "--chroot"}),
-        0,
-    ),
-    "doas": (frozenset({"-u", "-C"}), 0),
-    "busybox": (frozenset(), 0),
-}
 
 
 def check_execute(execute: str, *, line: int, element: str) -> list[Finding]:
@@ -133,18 +116,21 @@ def _digits(text: str) -> bool:
     return text.isascii() and text.isdigit()
 
 
-def _resolve(words: tuple[Word, ...]) -> tuple[int, list[str], list[Word]] | None:
+def _resolve(
+    words: tuple[Word, ...],
+) -> tuple[int, list[str], list[Word], str | None] | None:
     """#108 (a), (d), (e): the index of the command word after any wrappers,
-    the wrappers' text, and `env -S` strings (command lines themselves).
-    None when nothing runs (`command -v x`); an index past the end when only
+    the wrappers' text, `env -S` strings (command lines themselves) and a
+    finding for an option not in the wrapper's table (fail closed). None
+    when nothing runs (`command -v x`); an index past the end when only
     wrappers are given (a bare `env`, or `env -S '…'`)."""
     i, via, split = 0, list[str](), list[Word]()
     while i < len(words):
         value = words[i].literal()
         name = None if value is None else value.rsplit("/", 1)[-1]
-        if name not in WRAPPERS:
-            return i, via, split
-        with_arg, positional = WRAPPERS[str(name)]
+        if name is None or name not in WRAPPERS:
+            return i, via, split, None
+        spec, seen = WRAPPERS[name], set[str]()
         via.append(words[i].raw)
         i += 1
         while i < len(words):
@@ -152,47 +138,25 @@ def _resolve(words: tuple[Word, ...]) -> tuple[int, list[str], list[Word]] | Non
             if opt is None or opt == "--":
                 i += opt == "--"
                 break
-            if name == "env" and (opt == "-" or words[i].is_assignment()):
+            if (name == "env" and opt == "-") or (
+                name in ("env", "sudo") and words[i].is_assignment()
+            ):
                 i += 1
                 continue
             if not opt.startswith("-") or opt == "-":
                 break
-            taken = _option(str(name), with_arg, words, i, split)
+            num = opt[2:] if opt[1:2] in ("-", "+") else opt[1:]  # nice -5, --5
+            nice = name == "nice" and num.isascii() and num.isdigit()
+            taken = 1 if nice else read_option(spec, words, i, seen, split)
             if taken is None:
-                return None
+                shown = quote(words[i].raw)
+                problem = f"Execute cannot be checked: option {shown} of {quote(name)}."
+                return len(words), via, split, problem
             i += taken
-        i += positional
-    return len(words), via, split  # only wrappers: no command word, but env -S
-
-
-def _option(
-    name: str,
-    with_arg: frozenset[str],
-    words: tuple[Word, ...],
-    i: int,
-    split: list[Word],
-) -> int | None:
-    """How many words the wrapper option at i takes, as getopt reads it: in a
-    short cluster the first letter that takes a value ends the cluster, its
-    value being the rest of the word or, if none, the next word (`-iu root`).
-    `env -S` and `--split-string` values go into split. None for
-    `command -v`/`-V` (nothing runs)."""
-    opt, word = str(words[i].literal()), words[i]
-    if opt.startswith("--"):
-        key, eq, value = opt.partition("=")
-        if name == "env" and key == "--split-string":
-            split += [text_word(value, word)] if eq else list(words[i + 1 : i + 2])
-            return 1 if eq else 2
-        return 2 if key in with_arg and not eq else 1
-    for k, letter in enumerate(opt[1:], start=2):
-        if name == "command" and letter in "vV":
+        if name == "command" and seen & {"-v", "-V"}:
             return None
-        if f"-{letter}" in with_arg or (name == "env" and letter == "S"):
-            rest = opt[k:]
-            if name == "env" and letter == "S":
-                split += [text_word(rest, word)] if rest else list(words[i + 1 : i + 2])
-            return 1 if rest else 2
-    return 1
+        i += spec.positional
+    return len(words), via, split, None  # only wrappers: no command word, but env -S
 
 
 def _command(words: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:
@@ -207,10 +171,12 @@ def _command(words: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:
         resolved = _resolve(words)
         if resolved is None:
             return
-        index, wrappers, split = resolved
+        index, wrappers, split, problem = resolved
         via += wrappers
         for text in split:  # env -S splits a command line; it expands nothing
             yield from _shell_script(text, "env -S", depth, bash, subst=True)
+        if problem is not None:
+            yield problem
         if index >= len(words):
             return
         word, args = words[index], words[index + 1 :]
@@ -231,7 +197,7 @@ def _command(words: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:
     literals = [a.literal() for a in args]
     if name in WRITE_WORDS or name.startswith("mkfs."):
         yield f"Execute runs the write-like command {shown}."
-    elif name in CODE_WORDS:
+    elif name in CODE_WORDS or _defines_code(name, literals):
         yield f"Execute runs other code with {shown}."
     elif name == "sed":
         flag = _sed_in_place(args)
@@ -244,23 +210,37 @@ def _command(words: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:
                 break
     elif name in SHELLS:
         yield from _shell(word, args, shown, depth)
-    elif name == "trap":
-        yield from _trap(args, depth, bash)
 
 
-def _trap(args: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:
-    """trap's action is code run later by this shell (decision 2026-10-27):
-    lexed and checked. `trap - SIG`, `trap -p` and `trap -l` run nothing."""
-    i = 0
-    while i < len(args):
-        opt = args[i].literal()
-        if opt is None or not opt.startswith("-") or opt == "-":
-            break
+def _defines_code(name: str, lits: list[str | None]) -> bool:
+    """Text the shell later runs as code, refused like eval (user rulings
+    2026-10-27): `let`, `hash -p`, `alias` defining one, `trap` setting an
+    action. `alias`, `alias name`, `trap`, `trap -p`, `trap -l`, `trap -
+    SIG` and `trap SIG` (one operand: a reset in dash and bash) pass. A word
+    that is not literal could be anything, so it counts (fail closed)."""
+    if name == "let":
+        return True
+    if name == "alias":
+        return any(lit is None or "=" in lit for lit in lits)
+    if name not in ("hash", "trap"):
+        return False
+    i, letters = 0, ""
+    while i < len(lits):
+        lit = lits[i]
+        if lit is None:
+            return True
         i += 1
-        if opt == "--":
+        if lit == "--":
             break
-    if i < len(args) and args[i].literal() != "-":
-        yield from _shell_script(args[i], "trap", depth, bash, subst=True)
+        if not lit.startswith("-") or lit == "-":
+            i -= 1
+            break
+        letters += lit[1:]
+    if name == "hash":
+        return "p" in letters
+    operands = lits[i:]
+    listing = any(c in letters for c in "lpP")
+    return not listing and len(operands) > 1 and operands[0] != "-"
 
 
 def _bad_argument(name: str, arg: str) -> bool:
@@ -304,20 +284,38 @@ def _sed_in_place(args: tuple[Word, ...]) -> str | None:
     return None
 
 
+# Long options bash takes (exact names only: `--rcf` is an error); dash
+# takes none. Letters of `set` and of the bash and dash command lines.
+SHELL_LONG: Final = frozenset(
+    {"--debug", "--debugger", "--dump-po-strings", "--dump-strings", "--help"}
+    | {"--login", "--noediting", "--noprofile", "--norc", "--posix"}
+    | {"--pretty-print", "--restricted", "--verbose", "--version"}
+)
+SHELL_LETTERS: Final = frozenset("abcefhiklmnoprstuvxBCDEHIOPTV")
+
+
 def _shell(word: Word, args: tuple[Word, ...], shown: str, depth: int) -> Iterator[str]:
     """#108 (f): sh, bash and dash pass only as `-c <script>`; the script
-    may hold no substitution (SR §4.2) and is checked like the Execute."""
+    may hold no substitution (SR §4.2) and is checked like the Execute.
+    Options are read as the shells do: each o or O in a cluster takes the
+    next word in turn (`-co pipefail`), and a lone - or -- ends them."""
     i, has_c = 0, False
     while i < len(args):
-        opt = args[i].literal()
+        opt, raw = args[i].literal(), args[i].raw
         if opt is None or opt[:1] not in ("-", "+") or opt in ("-", "--"):
-            i += opt == "--"
+            i += opt in ("-", "--")
             break
-        if opt in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
-            i += 1
-        elif not opt.startswith("--") and "c" in opt[1:]:
-            has_c = True
         i += 1
+        if opt in ("--rcfile", "--init-file"):
+            i += 1
+        elif opt in SHELL_LONG:
+            pass
+        elif opt.startswith("--") or not set(opt[1:]) <= SHELL_LETTERS:
+            yield f"Execute cannot be checked: option {quote(raw)} of {shown}."
+            return
+        else:
+            i += sum(c in "oO" for c in opt[1:])
+            has_c = has_c or "c" in opt
     if not has_c or i >= len(args):
         yield f"Execute runs a shell without -c: {shown}."
         return

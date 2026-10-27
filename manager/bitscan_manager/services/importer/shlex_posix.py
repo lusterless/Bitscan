@@ -4,7 +4,8 @@ Splits an `Execute` into simple commands (assignments, words, redirections)
 and the scripts nested in substitutions and here-documents, after POSIX XCU
 §2.3 and §2.6.3 plus the bash forms an Ubuntu host runs. It never runs,
 expands or globs anything and decides nothing about BIT102. Input it cannot
-lex raises ShellSyntaxError, which BIT102 rejects (fail closed, #108 (j)).
+lex raises ShellSyntaxError, which BIT102 rejects (fail closed, #108 (j));
+so do bash's ${…@P} and ${…@E}, wherever they appear.
 Python's shlex is not used: it knows neither $( ), backticks nor
 here-documents. No regular expressions.
 
@@ -62,13 +63,13 @@ def lex(source: str, *, depth: int = 0, line: int = 1) -> Script:
             "NUL character", line + source.count("\n", 0, source.index("\x00"))
         )
     try:
-        return _Lexer(source, depth, line).run()
+        return _Lexer(source, depth, line, outer=False).run()
     except RecursionError:  # bounded by MAX_DEPTH; kept as a fail-closed net
         raise ShellSyntaxError("nested too deeply", line) from None
 
 
 class _Lexer(Grammar):
-    def __init__(self, src: str, depth: int, line: int) -> None:
+    def __init__(self, src: str, depth: int, line: int, *, outer: bool) -> None:
         self.src, self.n, self.pos, self.depth, self.base = (
             src,
             len(src),
@@ -78,8 +79,10 @@ class _Lexer(Grammar):
         )
         self.newlines = [i for i, c in enumerate(src) if c == "\n"]
         # Here-documents waiting for the next newline: delimiter, strip tabs,
-        # quoted, and the list their body's scripts go into.
-        self.pending: list[tuple[str, bool, bool, list[Script]]] = []
+        # quoted, the list their body's scripts go into, and the depth that
+        # queued them. outer: one is pending in the enclosing lexer (backticks).
+        self.pending: list[tuple[str, bool, bool, list[Script], int]] = []
+        self.outer = outer
         self.peeked: Tok | None = None
 
     def line(self) -> int:
@@ -119,6 +122,10 @@ class _Lexer(Grammar):
         if self.pos >= self.n:
             return Tok("eof", line)
         if src[self.pos] == "\n":
+            # dash and bash read a here-document's body only after the line
+            # that queued it ends; the lines inside a substitution run first.
+            if self.outer or any(p[4] < self.depth for p in self.pending):
+                raise self.fail("newline in a substitution before a here-document")
             self.pos += 1
             self.heredocs()
             return Tok("nl", line)
@@ -280,7 +287,8 @@ class _Lexer(Grammar):
                 buf.append(c)
                 i += 1
         self.pos = i + 1
-        script = _Lexer("".join(buf), self.depth + 1, line).run()
+        outer = self.outer or bool(self.pending)
+        script = _Lexer("".join(buf), self.depth + 1, line, outer=outer).run()
         return Part("backtick", src[start : self.pos], script)
 
     def scan(self, start: int, skip: int, kind: PartKind, in_dq: bool) -> Part:
@@ -321,12 +329,15 @@ class _Lexer(Grammar):
             level += 1 if c == opener else -1 if c == close else 0
             self.pos += 1
         self.depth -= 1
+        if kind == "param" and src.endswith(("@P}", "@E}"), start, self.pos):
+            # bash turns the value into code: refused like eval (user, 2026-10-27)
+            raise self.fail("${…@P} or ${…@E} runs text as code")
         return Part(kind, src[start : self.pos], join_scripts(scripts))
 
     def heredocs(self) -> None:
         """Read the bodies of the here-documents of the line just ended."""
         src = self.src
-        for delim, strip, quoted, holder in self.pending:
+        for delim, strip, quoted, holder, _ in self.pending:
             line, lines = self.line(), list[str]()
             while True:
                 if self.pos >= self.n:
@@ -339,7 +350,7 @@ class _Lexer(Grammar):
                     break
                 lines.append(text)
             if not quoted and lines:  # a quoted delimiter makes the body data
-                body = _Lexer("\n".join(lines) + "\n", self.depth, line)
+                body = _Lexer("\n".join(lines) + "\n", self.depth, line, outer=False)
                 holder += [p.script for p in body.dq(None) if p.script is not None]
         self.pending.clear()
 

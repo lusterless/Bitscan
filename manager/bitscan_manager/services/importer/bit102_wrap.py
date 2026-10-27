@@ -1,11 +1,13 @@
-"""BIT102 look-through for the wrappers added by TASK-146 r2 (decision
-2026-10-27, amending #108 (d)): external `time`, `nsenter`, `unshare`,
-`flock`, `setpriv`, `taskset`, `chrt`, `su` and `runuser`.
+"""BIT102 option tables of the wrappers: the #108 (d) ones (WRAPPERS) and
+those added by TASK-146 r2 (SPECS; decision 2026-10-27, amending #108
+(d)): external `time`, `nsenter`, `unshare`, `flock`, `setpriv`,
+`taskset`, `chrt`, `su` and `runuser`.
 
-Each wrapper's options are read as its getopt does (util-linux 2.37 to
-2.39, GNU time). An option that is not in the table, a long-option
-abbreviation included, cannot be checked and is BIT102 (fail closed, #108
-(j)); so is an argument whose meaning differs between those versions.
+Each wrapper's options are read as its getopt does (coreutils 9.4,
+util-linux 2.37 to 2.39, sudo 1.9.15, GNU time). An option that is not in
+the table, a long-option abbreviation included (getopt_long would accept
+`env --un`), cannot be checked and is BIT102 (fail closed, #108 (j)); so
+is an argument whose meaning differs between those versions.
 """
 
 from dataclasses import dataclass, field
@@ -23,6 +25,7 @@ class _Spec:
     numeric: frozenset[str] = frozenset()  # nsenter -S/-G: optional in 2.39 only
     scripts: frozenset[str] = frozenset()  # the value is a shell script (-c)
     permute: bool = False  # su and runuser: GNU getopt reorders the words
+    positional: int = 0  # words before the command: timeout's duration, chroot's dir
 
 
 def _o(names: str) -> frozenset[str]:
@@ -36,6 +39,45 @@ _SU: Final = _Spec(
     scripts=_o("-c --command --session-command"),
     permute=True,
 )
+_GNU: Final = "--help --version "
+# #108 (d) wrappers; env -S/--split-string is a command line (a "script").
+WRAPPERS: Final[dict[str, _Spec]] = {
+    "env": _Spec(
+        _o(_GNU + "-i --ignore-environment -0 --null -v --debug")
+        | _o("--list-signal-handling"),
+        _o("-u --unset -C --chdir"),
+        _o("--block-signal --default-signal --ignore-signal"),
+        scripts=_o("-S --split-string"),
+    ),
+    "command": _Spec(_o("-p -v -V")),  # -v and -V run nothing
+    "builtin": _Spec(frozenset()),
+    "nice": _Spec(_o(_GNU), _o("-n --adjustment")),  # and -N, --N, -+N
+    "nohup": _Spec(_o(_GNU)),
+    "ionice": _Spec(
+        _o(_INFO + "-t --ignore"),
+        _o("-c --class -n --classdata -p --pid -P --pgid -u --uid"),
+    ),
+    "setsid": _Spec(_o(_INFO + "-c --ctty -f --fork -w --wait")),
+    "stdbuf": _Spec(_o(_GNU), _o("-i --input -o --output -e --error")),
+    "timeout": _Spec(
+        _o(_GNU + "-v --verbose --preserve-status --foreground"),
+        _o("-k --kill-after -s --signal"),
+        positional=1,
+    ),
+    "chroot": _Spec(_o(_GNU + "--skip-chdir"), _o("--userspec --groups"), positional=1),
+    "sudo": _Spec(
+        _o("-A --askpass -b --background -B --bell -E -e --edit -H --set-home")
+        | _o("--help -i --login -K --remove-timestamp -k --reset-timestamp -l")
+        | _o("--list -n --non-interactive -N --no-update -P --preserve-groups -S")
+        | _o("--stdin -s --shell -V --version -v --validate"),
+        _o("-C --close-from -D --chdir -g --group -h --host -p --prompt -R")
+        | _o("--chroot -r --role -t --type -T --command-timeout -U --other-user")
+        | _o("-u --user"),  # sudo -h WORD takes WORD as the host (1.9.15)
+        _o("--preserve-env"),
+    ),
+    "doas": _Spec(_o("-L -n -s"), _o("-C -u")),
+    "busybox": _Spec(frozenset()),
+}
 _NS: Final = "-m --mount -u --uts -i --ipc -n --net -p --pid -C --cgroup -U --user"
 SPECS: Final[dict[str, _Spec]] = {
     "time": _Spec(
@@ -114,7 +156,7 @@ def look_through(name: str, shown: str, args: tuple[Word, ...]) -> Step:
             operands.append(word)
             i += 1
             continue
-        taken = _option(spec, args, i, seen, step.scripts)
+        taken = read_option(spec, args, i, seen, step.scripts)
         if taken is None:
             step.problem = (
                 f"Execute cannot be checked: option {quote(word.raw)} of {shown}."
@@ -125,7 +167,7 @@ def look_through(name: str, shown: str, args: tuple[Word, ...]) -> Step:
     return step
 
 
-def _option(
+def read_option(
     spec: _Spec, args: tuple[Word, ...], i: int, seen: set[str], scripts: list[Word]
 ) -> int | None:
     """Words taken by the option at i, as getopt reads it; None if unknown."""

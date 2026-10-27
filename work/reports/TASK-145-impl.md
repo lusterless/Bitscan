@@ -50,3 +50,43 @@ These are deliberate. Every one errs toward BIT102 seeing more, never less (acce
 - Import from `bitscan_manager.services.importer.shlex_posix`, which re-exports the model.
 - Line continuation: when building `\` + newline in a test, use `chr(92) + chr(10)` or a Python file. A Git Bash heredoc mangled it in my harness, though the lexer handles it.
 - The plant "drop the `$(` recursion" is in `shlex_posix._Lexer.subst`.
+
+## Revision 1 (2026-10-27): review round 1 (reviewer-m7 CHANGES_REQUESTED)
+
+impl-manager-m7d. The changes are in the working tree and nothing is committed. The files changed are `shlex_posix.py` (361 lines, 27 changed) and `shlex_grammar.py` (267 lines; about 30 of the changed lines are this revision). Both are in `manager/bitscan_manager/services/importer/`. The rest of the `shlex_grammar.py` diff is TASK-146 r2's `Grammar.time()`.
+
+### Finding 1 (blocking): here-document bodies read inside a substitution
+- **Fix.** Each pending here-document now records the depth that queued it (`shlex_grammar.py` `redirect()`, last line). A newline token at a deeper depth while a here-document is pending at an outer one raises `ShellSyntaxError("newline in a substitution before a here-document")` (`shlex_posix.py` L127), giving BIT102, fail closed.
+- **Backticks.** A backtick script is lexed by a child `_Lexer`, so the child gets `outer=True` when its parent has a pending here-document (L290). Any newline inside it then raises the same way.
+- **Side effect at `)`.** The rule at `)` (`shlex_grammar.py` L133) now raises only for a here-document queued *inside* the closing `$( )`, which is its intent. Before, any pending here-document counted. So `cat <<E $(date)` followed by a newline, `body` and `E` no longer gets the false "unexpected )". dash and bash run that form normally.
+- **Checked in this container under dash and bash** (`echo RAN` in place of `rm -rf /x`). The inner line runs in every form: `$( )`, `<<E` (unquoted), `"$( )"`, `cat <<'E'; echo $( )`, `${x:-$( )}`, `$(($( )))`, backticks and `<( )` (bash; dash has no `<(`). Each of them is now BIT102.
+
+### Finding 2 (should-fix): bash `coproc`
+- **Fix.** `coproc` is a reserved word in command position (`_RESERVED`), handled by `Grammar.coproc()` (L180):
+  - With a word followed by `(` or a compound opener (`{`, `if`, `while`, `until`, `for`, `select`, `case`, `function`), that word is NAME and becomes a data word.
+  - Otherwise the next word starts a simple command, as an assignment if it has that form.
+  - A reserved word or a redirection right after `coproc` is handled as usual, so `coproc { rm x; }` and `coproc time rm x` work.
+- **Checked under bash.** `coproc echo RAN >&2`, `coproc N { … }`, `coproc N ( … )`, `coproc { … }`, `coproc a=1 echo …` and `coproc N while …` all run their command.
+- **dash.** `coproc` is not a keyword in dash (dash runs a command named `coproc`). Reading it as one at the Execute level only makes BIT102 see more.
+
+### Finding 3 (nit): function-definition redirections
+`NAME ( )` now raises when redirections are already attached (`>/etc/x f() { :; }`), instead of dropping them (L145). dash and bash reject that form as a syntax error.
+
+### Gates and runs (from the repo root, venv `manager/.venv`)
+- `ruff check manager`: clean. `ruff format --check manager`: 278 files formatted. `mypy --strict --config-file manager/pyproject.toml manager`: no issues.
+- From `manager/`: `pytest -q -p no:cacheprovider tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py tests/test_bit_parse.py tests/test_bit_validate.py` gave **2548 passed**, the same as before the change. No existing test needed changing.
+- A 30,000-input token fuzz raised nothing; the worst input took 0.7 ms.
+
+### Cases for the tester
+- **Must-reject** (each also with `rm -rf /x` in place of `rm x`). These come from the review: `cat <<'E' $(⏎rm -rf /x⏎E⏎)`, `cat <<E $(⏎…⏎E⏎)`, `cat <<'E' "$(⏎…⏎E⏎)"`, `cat <<'E'; echo $(⏎…⏎E⏎)`, `cat <<'E' ${x:-$(⏎…⏎E⏎)}`, `cat <<'E' $(($(⏎…⏎E⏎)))`, `` cat <<'E' `⏎…⏎E⏎` ``, `cat <<'E' <(⏎…⏎E⏎)`, `cat <<'E' >(⏎…⏎E⏎)`, and `x=$(cat <<'E' $(⏎…⏎E⏎)⏎)`. The finding is `Execute cannot be checked: newline in a substitution before a here-document.`
+- **Must-reject coproc:** `coproc rm x`, `bash -c 'coproc rm x'`, `bash -c 'coproc NAME { rm x; }'`, `bash -c 'coproc NAME ( rm x )'`, `bash -c 'coproc { rm x; }'`, `bash -c 'coproc a=1 rm x'` and `bash -c 'coproc NAME while rm x; do :; done'`.
+- **Must-reject nit:** `>/etc/x f() { :; }`.
+- **Must-pass:**
+  - `cat <<E $(date)⏎body⏎E` (was a false positive);
+  - `x=$(cat <<E⏎body⏎E⏎)`, `cat <<E⏎$(⏎date⏎)⏎E`, ``cat <<E⏎`date`⏎E`` and `( cat <<E )⏎body⏎E`;
+  - `bash -c 'coproc cat /etc/x'`, `bash -c 'coproc NAME { cat /etc/x; }'` and `f() { cat /x; }; f`.
+- **Lexer table** (`test_bit102_lexer.py`): `coproc NAME { cat x; }` gives data word `NAME` and command `cat x`; `coproc a=1 cat x` gives assignment `a=1`, command `cat x`.
+- **Plants:**
+  - Ignore the depth in the newline check, i.e. delete the `any(p[4] < self.depth …)` test at L127. The first must-reject row must turn green.
+  - Drop `outer=` for backticks (L290). The backtick row must turn green.
+  - Remove `"coproc"` from `_RESERVED`. The coproc rows must turn green.

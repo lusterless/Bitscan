@@ -36,7 +36,7 @@ _CLOSERS: Final = {"fi": "if", "done": "loop", "}": "{", "esac": "case:body"}
 _RESERVED: Final = (
     frozenset(_OPENERS)
     | frozenset(_CLOSERS)
-    | frozenset({"then", "else", "elif", "do", "!", "time"})
+    | frozenset({"then", "else", "elif", "do", "!", "time", "coproc"})
 )
 
 
@@ -64,8 +64,9 @@ class _Cmd:
 class Grammar:
     """Mixin: the scanner provides token(), fail(), pending and peeked."""
 
-    pending: list[tuple[str, bool, bool, list[Script]]]
+    pending: list[tuple[str, bool, bool, list[Script], int]]
     peeked: Tok | None
+    depth: int
 
     def token(self) -> Tok:
         raise NotImplementedError
@@ -99,6 +100,10 @@ class Grammar:
                 if lead == []:
                     prev = "start"
                     continue
+                if cur is None and lead is None and tok.word.plain() == "coproc":
+                    cur = self.coproc(cmds, data)
+                    prev = "start" if cur is None else "word"
+                    continue
                 if cur is None and lead is None and tok.word.plain() in _RESERVED:
                     prev = self.reserved(str(tok.word.plain()), stack, tok.line)
                     continue
@@ -124,7 +129,9 @@ class Grammar:
             elif tok.kind == "nl":
                 cur, prev = None, "pipe" if prev == "pipe" else "sep"
             elif tok.text == ")":
-                if prev == "pipe" or self.pending and not stack:
+                # a here-document queued in this $( ) must start before its )
+                unread = any(p[4] >= self.depth for p in self.pending)
+                if prev == "pipe" or unread and not stack:
                     raise ShellSyntaxError("unexpected )", tok.line)
                 cur, prev = None, "word"
                 if top == "(":
@@ -135,6 +142,8 @@ class Grammar:
                     raise ShellSyntaxError("unexpected )", tok.line)
             elif tok.text == "(":
                 if cur is not None and len(cur.words) == 1 and not cur.assignments:
+                    if cur.redirects:  # never drop a redirection already seen
+                        raise ShellSyntaxError("unexpected (", tok.line)
                     if self.token().text != ")":  # NAME ( ) is a function definition
                         raise ShellSyntaxError("unexpected (", tok.line)
                     data.append(cur.words[0])
@@ -167,6 +176,26 @@ class Grammar:
         elif word != "!":
             raise ShellSyntaxError("unexpected " + word, line)
         return "start"
+
+    def coproc(self, cmds: list[_Cmd], data: list[Word]) -> _Cmd | None:
+        """bash `coproc [NAME] command`: NAME (a data word) only before a
+        compound command; otherwise the next word starts a simple command."""
+        name = self.token()
+        if name.word is None or name.word.plain() in _RESERVED:
+            self.peeked = name
+            return None
+        nxt = self.peeked = self.token()
+        if (
+            nxt.kind == "op"
+            and nxt.text == "("
+            or (nxt.word is not None and nxt.word.plain() in _OPENERS)
+        ):
+            data.append(name.word)
+            return None
+        cur = _Cmd(name.line)
+        cmds.append(cur)
+        (cur.assignments if name.word.is_assignment() else cur.words).append(name.word)
+        return cur
 
     def time(self, word: Word) -> list[Word] | None:
         """None unless word is the reserved word `time`. bash reads `time
@@ -234,5 +263,5 @@ class Grammar:
             raise ShellSyntaxError("here-document delimiter expands", op.line)
         quoted = any(p.kind != "lit" for p in target.word.parts)
         body: list[Script] = []
-        self.pending.append((delim, op.text == "<<-", quoted, body))
+        self.pending.append((delim, op.text == "<<-", quoted, body, self.depth))
         cur.redirects.append((fd, op.text, None, body))
