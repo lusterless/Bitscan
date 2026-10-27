@@ -5,6 +5,12 @@ Exit 0 when every selected file is byte-identical to its spec block with the
 fence lines removed (LF endings, one final newline), units have no end-of-line
 comment, and the set of files in each checked folder is exact. `agent` and
 `all` also check the D-Bus policy (TS §3.7, M4 TP-M4-07).
+
+One documented exception (DEVIATIONS below): bitscan-capread.socket must be its
+spec block plus exactly one added line, `RemoveOnStop=yes`, right after
+`SocketMode=0660` (user decision 2026-10-26, TASK-138; a recorded deviation
+from the verbatim TS §3.7 unit). Any other difference in that unit, the line
+anywhere else, or the unit without it, still fails.
 """
 
 from __future__ import annotations
@@ -33,6 +39,30 @@ MANAGER: dict[str, tuple[int, int]] = {
 DBUS: dict[str, tuple[int, int]] = {
     "bitscan-runner.conf": (412, 431),
 }
+
+# Recorded deviations from the verbatim TS blocks: file name -> (the spec line
+# the added line follows, the added line). Only these exact bytes, only there.
+# bitscan-capread.socket: user decision 2026-10-26 (TASK-138), so systemd
+# removes /run/bitscan/capread.sock on stop and the heartbeat reports [] again.
+DEVIATIONS: dict[str, tuple[bytes, bytes]] = {
+    "bitscan-capread.socket": (b"SocketMode=0660\n", b"RemoveOnStop=yes\n"),
+}
+
+
+def apply_deviation(name: str, want: bytes) -> bytes:
+    """The spec block with the file's one recorded added line, if it has one."""
+    if name not in DEVIATIONS:
+        return want
+    anchor, added = DEVIATIONS[name]
+    lines = want.splitlines(keepends=True)
+    if lines.count(anchor) != 1 or added in lines:
+        raise SystemExit(
+            f"{name}: spec block has not exactly one {anchor!r}, or already has"
+            f" {added!r}; review the recorded deviation"
+        )
+    i = lines.index(anchor) + 1
+    print(f"DEVIATION {name}: +{added.rstrip().decode()} after spec line {i}")
+    return b"".join([*lines[:i], added, *lines[i:]])
 
 
 def spec_block(lines: list[bytes], start: int, end: int, lang: bytes = b"ini") -> bytes:
@@ -120,7 +150,7 @@ def main() -> int:
     dbus_dir = root / "deploy" / "dbus"
     failures = 0
     for name, (start, end) in units.items():
-        want = spec_block(spec_lines, start, end)
+        want = apply_deviation(name, spec_block(spec_lines, start, end))
         failures += check_file(unit_dir / name, name, want, start, end, unit=True)
     for name, (start, end) in policies.items():
         want = spec_block(spec_lines, start, end, b"xml")

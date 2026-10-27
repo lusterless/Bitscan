@@ -2,8 +2,9 @@
 
 Usage: python deploy/tests/check_debian_meta.py [--root DIR]
 Exit 0 when every check passes. Expected values come from TS §3.1 (L158-L159),
-PD-26 (a) (debhelper compat 13, version 0.1.0~preN-1, amd64 only) and the
-decisions of 2026-10-24 (arm64 dropped from v1), not from the files.
+PD-26 (a) (debhelper compat 13, amd64 only), #90 (M6: the first supported
+release is 0.1.0, package 0.1.0-1, so the first entry has no pre-release "~")
+and the decisions of 2026-10-24 (arm64 dropped from v1), not from the files.
 
 Checks:
 - rules: dh_installsystemd is called so that bitscan-agent.service and
@@ -16,8 +17,10 @@ Checks:
 - control: source and package bitscan-agent, Architecture amd64 only,
   debhelper-compat (= 13), Rules-Requires-Root: no, Depends with adduser and
   ${misc:Depends}.
-- changelog: first entry bitscan-agent (0.1.0~preN-1), a parseable RFC 2822
-  trailer date (the SOURCE_DATE_EPOCH source).
+- changelog: first entry bitscan-agent (X.Y.Z-R), a release version with no
+  "~" (#90), and a parseable RFC 2822 trailer date (the SOURCE_DATE_EPOCH
+  source); every trailer's weekday matches its date, and the dates strictly
+  decrease down the file (lintian's new-date rules).
 - copyright: DEP-5 1.0; every Files stanza has Copyright and License; every
   short licence name has its text (inline or a standalone License stanza).
 - bitscan-agent.install (TASK-096, CHK-M4-122): exactly the three binaries to
@@ -53,7 +56,7 @@ EXPECTED_FLAGS: dict[str, frozenset[str]] = {
     "bitscan-capread.socket": frozenset({"--no-enable", "--no-start"}),
     "bitscan-capread.service": frozenset({"--no-enable", "--no-start"}),
 }
-VERSION_RE = re.compile(r"^0\.\d+\.\d+~pre\d+-\d+$")
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+-[1-9]\d*$")
 
 
 class Report:
@@ -233,7 +236,7 @@ def check_changelog(debian: Path, r: Report) -> None:
     if m:
         r.ok(
             bool(VERSION_RE.match(m.group(1))),
-            f"changelog: version {m.group(1)} matches 0.x.y~preN-R",
+            f"changelog: version {m.group(1)} is a release X.Y.Z-R (no ~)",
         )
     trailers = [ln for ln in lines if ln.startswith(" -- ")]
     r.ok(len(trailers) >= 1, "changelog: has a trailer line")
@@ -249,6 +252,26 @@ def check_changelog(debian: Path, r: Report) -> None:
                 )
             except (TypeError, ValueError):
                 r.ok(False, f"changelog: trailer date parses ({t.group(2)!r})")
+    dates = []
+    for ln in trailers:
+        w = re.match(r"^ -- .+ <[^>]+>  (\w{3}), (.+)$", ln)
+        if not w:
+            r.ok(False, f"changelog: trailer has a weekday ({ln!r})")
+            continue
+        try:
+            dt = parsedate_to_datetime(f"{w.group(1)}, {w.group(2)}")
+        except (TypeError, ValueError):
+            r.ok(False, f"changelog: trailer date parses ({ln!r})")
+            continue
+        r.ok(
+            dt.strftime("%a") == w.group(1),
+            f"changelog: weekday {w.group(1)} matches {dt.date().isoformat()}",
+        )
+        dates.append(dt)
+    r.ok(
+        all(a > b for a, b in zip(dates, dates[1:])),
+        f"changelog: {len(dates)} trailer dates strictly decrease down the file",
+    )
     r.ok(
         text.endswith("\n") and "\r" not in text,
         "changelog: LF endings and final newline",
