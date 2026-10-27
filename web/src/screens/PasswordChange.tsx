@@ -87,11 +87,19 @@ export function PasswordChange({ onChanged }: PasswordChangeProps) {
   }
 
   return (
-    <main>
+    <main className="page page-narrow">
       <h1>Change password</h1>
-      {note !== null && <p role="alert">{note}</p>}
+      <p className="page-subtitle">
+        At least 12 characters. Every session of yours ends after the change.
+      </p>
+      {note !== null && (
+        <p role="alert" className="callout callout-danger">
+          {note}
+        </p>
+      )}
       <ProblemBanner problem={problem} />
       <form
+        className="card form"
         onSubmit={(event) => {
           void submit(event);
         }}
@@ -99,9 +107,11 @@ export function PasswordChange({ onChanged }: PasswordChangeProps) {
         {field("Current password", current, setCurrent, "current-password")}
         {field("New password", next, setNext, "new-password")}
         {field("Repeat new password", repeat, setRepeat, "new-password")}
-        <button type="submit" disabled={busy}>
-          Change password
-        </button>
+        <div className="form-actions">
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            Change password
+          </button>
+        </div>
       </form>
     </main>
   );

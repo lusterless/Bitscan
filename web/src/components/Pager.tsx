@@ -8,6 +8,8 @@ import { useCallback, useMemo, useState } from "react";
 export interface CursorPages {
   readonly cursor: string | null;
   readonly hasPrevious: boolean;
+  /** 1 on the first page; absent when the caller does not track it. */
+  readonly page?: number;
   readonly next: (cursor: string) => void;
   readonly previous: () => void;
   readonly reset: () => void;
@@ -29,6 +31,7 @@ export function useCursorPages(): CursorPages {
     () => ({
       cursor: stack.length === 0 ? null : (stack[stack.length - 1] ?? null),
       hasPrevious: stack.length > 0,
+      page: stack.length + 1,
       next,
       previous,
       reset,
@@ -46,9 +49,13 @@ export interface PagerProps {
 
 export function Pager({ pages, nextCursor, disabled = false }: PagerProps) {
   return (
-    <nav aria-label="Pages">
+    <nav aria-label="Pages" className="pager">
+      {pages.page !== undefined && (
+        <span className="pager-info">Page {pages.page}</span>
+      )}
       <button
         type="button"
+        className="btn btn-sm"
         disabled={disabled || !pages.hasPrevious}
         onClick={pages.previous}
       >
@@ -56,6 +63,7 @@ export function Pager({ pages, nextCursor, disabled = false }: PagerProps) {
       </button>
       <button
         type="button"
+        className="btn btn-sm"
         disabled={disabled || nextCursor === null}
         onClick={() => {
           if (nextCursor !== null) {

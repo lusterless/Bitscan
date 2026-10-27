@@ -22,10 +22,6 @@ bitscan-agent: no-manual-page [usr/sbin/bitscan-capread]
 # reads the package list only through dpkg-query.
 bitscan-agent: uses-dpkg-database-directly [usr/sbin/bitscan-agent]
 
-# The package is shipped directly as a .deb (TS 3.1), never uploaded to the
-# Debian archive, so its changelog has no Debian bug to close.
-bitscan-agent: initial-upload-closes-no-bugs [usr/share/doc/bitscan-agent/changelog.Debian.gz:1]
-
 # Policy text fixed verbatim by TS 3.7 (decisions 2026-10-25); it applies
 # only to bitscan-runner's own user. Properties Get and GetAll are read-only
 # calls that systemctl is-active, is-enabled and list-units need on any

@@ -2,7 +2,7 @@
 
 The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-runner`, and the optional `bitscan-capread` helper (installed but disabled). The agent opens every connection to the manager; the host needs no inbound port.
 
-**0.x is a pre-release** (for example `0.1.0~pre1-1`). Enrolment, heartbeat, job pull and the mandatory inventory work. The runner and the helper are idle: a compliance scan on a 0.x host reports every check as `runner_unavailable`.
+**Release 0.1.0** (package `0.1.0-1`) is the first supported release. It supports enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list), which the manager shows on its host pages and in package search. Compliance scans are not in 0.1.0: the runner and the helper are installed but idle, no check command runs, and the agent reports every check of a compliance job as `runner_unavailable`. The earlier pre-release builds (`0.1.0~preN-1`) are not supported; upgrade them as in section 6.
 
 ## 1. Before you start
 
@@ -39,13 +39,15 @@ The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-
 
 ## 2. Check the package
 
-Download `bitscan-agent_<version>_amd64.deb`. Copy its SHA-256 line from the release page, which is served from a different origin than the download, into `bitscan-agent_<version>_amd64.deb.sha256` next to the file. Never use a checksum file fetched from the same host as the package.
+Download `bitscan-agent_<version>_amd64.deb` (for 0.1.0, `bitscan-agent_0.1.0-1_amd64.deb`). The release page, which is served from a different origin than the download, shows the release's `SHA256SUMS` text in its notes. Copy that text from the release page into a file named `SHA256SUMS` next to the package. Never use a checksum file fetched from the same host as the package, including the `SHA256SUMS` file attached to the release.
+
+`SHA256SUMS` lists every file of the release, so check only the files you downloaded:
 
 ```sh
-sha256sum -c bitscan-agent_<version>_amd64.deb.sha256
+sha256sum -c --ignore-missing SHA256SUMS
 ```
 
-It must print `bitscan-agent_<version>_amd64.deb: OK`. Stop if it does not. Each release also ships CycloneDX SBOMs, one per binary.
+It must print `bitscan-agent_<version>_amd64.deb: OK`. Stop if it does not, if any line says `FAILED`, or if it reports that no file was verified. Each release also ships CycloneDX SBOMs, one per binary, listed in the same `SHA256SUMS`.
 
 ## 3. Install
 
@@ -160,13 +162,26 @@ For the interactive route, `dpkg --configure` asks again for a required answer t
 
 ## 6. Upgrade
 
-Upgrade the manager first: it supports agents of its own version and the one before. Check the new package as in section 2, then:
+**Order:** upgrade the manager first (migrate, then restart, as the manager operations runbook `manager-operations.md` describes), then the agents.
+
+**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. 0.1.0 is the first supported release, so no earlier supported version exists yet. The pre-release builds `0.1.0~preN-1` are not supported by any manager; upgrade every such host to 0.1.0-1.
+
+Check the new package as in section 2, then:
 
 ```sh
 sudo apt install ./bitscan-agent_<new version>_amd64.deb
 ```
 
-An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services.
+An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A pre-release host upgrades in place the same way: `0.1.0~pre1-1` sorts below `0.1.0-1`.
+
+Check the result:
+
+```sh
+dpkg-query -W -f='${Version}\n' bitscan-agent
+sudo journalctl -u bitscan-agent -n 20
+```
+
+The first command prints the new package version. On an enrolled host the log shows `bitscan-agent started` with that version, and the host does not need to be re-enrolled.
 
 ## 7. Re-enrol a host
 

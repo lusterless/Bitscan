@@ -6,6 +6,7 @@ ListenStream=/run/bitscan/capread.sock
 SocketUser=root
 SocketGroup=bitscan-runner
 SocketMode=0660
+RemoveOnStop=yes
 
 [Install]
 WantedBy=sockets.target

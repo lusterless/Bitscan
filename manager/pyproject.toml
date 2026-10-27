@@ -53,6 +53,15 @@ dev = [
 [project.scripts]
 bitscan-manager = "bitscan_manager.cli:main"
 
+# REQ-137 (#6, PD-28 (b)): the wheel holds only the bitscan_manager package
+# (every migration file included; tests/ sits outside it). Vite writes the UI
+# build into bitscan_manager/webui/, which git ignores, so it is packed as an
+# artifact. Without a UI build the wheel still builds and serve runs the API
+# only.
+[tool.hatch.build.targets.wheel]
+packages = ["bitscan_manager"]
+artifacts = ["/bitscan_manager/webui/**"]
+
 [tool.ruff]
 target-version = "py312"
 

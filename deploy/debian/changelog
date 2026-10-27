@@ -1,3 +1,14 @@
+bitscan-agent (0.1.0-1) unstable; urgency=medium
+
+  * First supported release of the Bitscan agent: enrolment, heartbeat,
+    job pull and mandatory inventory. Compliance scans are not in 0.1.0:
+    the runner and the capread helper stay idle, and every check of a
+    compliance job is reported as runner_unavailable.
+  * Upgrades the 0.1.0~pre1-1 pre-release in place and keeps its
+    configuration, agent token and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Mon, 26 Oct 2026 00:00:00 +0000
+
 bitscan-agent (0.1.0~pre1-1) unstable; urgency=medium
 
   * First pre-release package of the Bitscan agent: enrolment, heartbeat,

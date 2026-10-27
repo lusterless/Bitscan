@@ -32,6 +32,7 @@ from bitscan_manager.repositories.inventory import (
     OsInfoRow,
     SnapshotRow,
 )
+from bitscan_manager.repositories.packages import AnchorGone
 from bitscan_manager.runtime import Runtime, get_runtime
 from bitscan_manager.services.agents import admin
 from bitscan_manager.services.agents import fleet as service
@@ -43,6 +44,8 @@ RUNTIME = Annotated[Runtime, Depends(get_runtime)]
 PAGE = Annotated[PageParams, Depends(page_params)]
 _BASE = (401, 403, 429, 503)
 SCOPE = "agents"
+_BAD_CURSOR = "Invalid request: query.cursor"
+_MAX_ID = 2**63 - 1  # package_id is a bigint
 # The agent_status enum (TS §5.2 L710), in the contract (REQ-117, PD-29).
 AgentStatus = Literal[
     "awaiting_approval", "enrolled", "online", "stale", "offline", "decommissioned"
@@ -159,27 +162,48 @@ def _agent_id(value: str) -> UUID:
         raise Problem(404, "not_found", "No such agent.") from None
 
 
-def _cursor(scope: str, cursor: str | None, size: int) -> list[str] | None:
+# Cursors hold only the last row's id, [agent_id] or [package_id]; the
+# repository reads its sort values (#89, REQ-143).
+def _agent_cursor(cursor: str | None) -> UUID | None:
+    """[agent_id] in the form str(UUID) writes, or 400."""
+    if cursor is None:
+        return None
+    key = decode_cursor(SCOPE, cursor)
+    if isinstance(key, list) and len(key) == 1 and isinstance(key[0], str):
+        try:
+            agent_id = uuid.UUID(key[0])
+        except ValueError:
+            agent_id = None
+        if agent_id is not None and str(agent_id) == key[0]:
+            return agent_id
+    raise Problem(400, "invalid_request", _BAD_CURSOR)
+
+
+def _package_cursor(scope: str, cursor: str | None) -> int | None:
+    """[package_id] as a non-negative JSON integer (not a boolean), or 400."""
     if cursor is None:
         return None
     key = decode_cursor(scope, cursor)
-    if (
-        not isinstance(key, list)
-        or len(key) != size
-        or not all(isinstance(k, str) for k in key)
-    ):
-        raise Problem(400, "invalid_request", "Invalid request: query.cursor")
-    return [str(k) for k in key]
+    if isinstance(key, list) and len(key) == 1:
+        package_id = key[0]
+        if type(package_id) is int and 0 <= package_id <= _MAX_ID:
+            return package_id
+    raise Problem(400, "invalid_request", _BAD_CURSOR)
 
 
 @router.get("", responses=problem_responses(_BASE))
 def list_agents(principal: VIEWER, runtime: RUNTIME, page: PAGE) -> Page[AgentItem]:
-    key = _cursor(SCOPE, page.cursor, 2)
-    after = None if key is None else (key[0], _agent_id(key[1]))
-    with runtime.db.transaction() as tx:
-        rows = service.list_agents(AgentRepo(tx.conn), page.limit + 1, after)
-    items = [_list_item(r) for r in rows]
-    return page_of(items, page.limit, SCOPE, lambda a: [a.hostname, str(a.agent_id)])
+    after_id = _agent_cursor(page.cursor)
+    try:
+        with runtime.db.transaction() as tx:
+            rows = service.list_agents(AgentRepo(tx.conn), page.limit + 1, after_id)
+    except AnchorGone:
+        raise Problem(400, "invalid_request", _BAD_CURSOR) from None
+    # The cursor comes from the last row, so no item field is added for it.
+    found = page_of(rows, page.limit, SCOPE, lambda r: [str(r.agent_id)])
+    return Page[AgentItem](
+        items=[_list_item(r) for r in found.items], next_cursor=found.next_cursor
+    )
 
 
 @router.get("/{id}", responses=problem_responses((*_BASE, 404)))
@@ -223,17 +247,23 @@ def list_packages(
 ) -> Page[AgentPackageItem]:
     agent_id = _agent_id(id)
     scope = f"agent_packages:{agent_id}"  # a cursor is valid for its agent only
-    key = _cursor(scope, page.cursor, 3)
-    after = None if key is None else (key[0], key[1], key[2])
-    with runtime.db.transaction() as tx:
-        rows = service.agent_packages(
-            AgentRepo(tx.conn), InventoryRepo(tx.conn), agent_id, page.limit + 1, after
-        )
+    after_id = _package_cursor(scope, page.cursor)
+    try:
+        with runtime.db.transaction() as tx:
+            rows = service.agent_packages(
+                AgentRepo(tx.conn),
+                InventoryRepo(tx.conn),
+                agent_id,
+                page.limit + 1,
+                after_id,
+            )
+    except AnchorGone:
+        raise Problem(400, "invalid_request", _BAD_CURSOR) from None
     if rows is None:
         raise Problem(404, "not_found", "No such agent.")
-    items = [_package(p) for p in rows]
-    return page_of(
-        items, page.limit, scope, lambda p: [p.name, p.architecture, p.version]
+    found = page_of(rows, page.limit, scope, lambda r: [r.package_id])
+    return Page[AgentPackageItem](
+        items=[_package(p) for p in found.items], next_cursor=found.next_cursor
     )
 
 
