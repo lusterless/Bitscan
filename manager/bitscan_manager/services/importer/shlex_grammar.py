@@ -147,7 +147,9 @@ class Grammar:
                     if self.token().text != ")":  # NAME ( ) is a function definition
                         raise ShellSyntaxError("unexpected (", tok.line)
                     data.append(cur.words[0])
-                    cmds.remove(cur)
+                    if cmds[-1] is not cur:  # pop by identity: O(1), not ==
+                        raise ShellSyntaxError("unexpected (", tok.line)
+                    cmds.pop()
                 elif cur is not None:
                     raise ShellSyntaxError("unexpected (", tok.line)
                 else:

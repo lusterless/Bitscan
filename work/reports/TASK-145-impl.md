@@ -90,3 +90,17 @@ impl-manager-m7d. The changes are in the working tree and nothing is committed. 
   - Ignore the depth in the newline check, i.e. delete the `any(p[4] < self.depth …)` test at L127. The first must-reject row must turn green.
   - Drop `outer=` for backticks (L290). The backtick row must turn green.
   - Remove `"coproc"` from `_RESERVED`. The coproc rows must turn green.
+
+### Revision 1b (2026-10-27): quadratic function definitions (tester-m7d, REQ-156 (4))
+- **The bug.** In `shlex_grammar.py`, the `NAME ( )` branch dropped the command with `cmds.remove(cur)`. That compares the dataclass with `==` against every earlier command, so a script of many function definitions lexed in quadratic time. The bug predates r1.
+- **The fix.** `cur` is always the last command appended, so it is now removed with `cmds.pop()`, after an identity check that raises `ShellSyntaxError` if it fails (fail closed). The branch is now O(1).
+- **Timing.** Best-of-3 thread CPU time for `check_execute` on 16,384-character inputs:
+
+  | Repeated unit | Before | After |
+  | --- | --- | --- |
+  | `x;f(){ :;};` | 774 ms | 48 ms |
+  | `a⏎f()⏎:⏎` | 533 ms | 51 ms |
+  | `true⏎f() { :; }⏎` | 140 ms | 32 ms |
+  | `{{⏎rm()` | 326 ms | 35 ms |
+
+- **Checks.** Gates are clean. The six-file set gives 2981 passed, with tester-m7d's new rows in the tree.

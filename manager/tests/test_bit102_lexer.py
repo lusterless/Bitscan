@@ -517,6 +517,12 @@ def test_long_inputs_up_to_16384_chars(unit: str) -> None:
         ("( " * 4_000) + "x" + (" )" * 4_000),
         "if x; then " * 1_000 + "y;" + " fi;" * 1_000,
         "x=" + "$x" * 5_400,
+        # Function definitions (tester-m7d, 2026-10-27): each NAME ( ) once
+        # cost O(commands so far), 774 ms for the first form at 16 KB.
+        "x;f(){ :;};" * (16_384 // 11),
+        ("a" + NL + "f()" + NL + ":" + NL) * (16_384 // 9),
+        ("true" + NL + "f() { :; }" + NL) * (16_384 // 16),
+        ("{{" + NL + "rm()") * (16_384 // 7),
     ],
     ids=[
         "seps",
@@ -529,6 +535,10 @@ def test_long_inputs_up_to_16384_chars(unit: str) -> None:
         "parens",
         "ifs",
         "params",
+        "fndefs",
+        "fndefs-nl",
+        "fndefs-true",
+        "fndefs-hypothesis",
     ],  # fmt: skip
 )
 def test_pathological_inputs_bounded(src: str) -> None:
