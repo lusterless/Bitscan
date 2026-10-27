@@ -22,6 +22,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import inspect
+import logging
 import os
 import stat
 import threading
@@ -990,6 +991,170 @@ def test_an_upload_with_no_uploaded_folder_fails_closed_with_no_row(
     assert up(db, bits, bad).outcome == "rejected"
     assert [r["outcome"] for r in imports_since(server, s0)] == ["rejected"]
     assert listing(bits) == []
+
+
+# Folder guard on the upload path (lead ruling, decisions 2026-10-27, TASK-155 r2)
+
+GUARD_KINDS = ["file", "dir-link", "file-link", "dangling-link"]
+
+
+def _break_folder(server: PgServer, db: AppDatabase, bits: Path, kind: str) -> Path:
+    """A live upload whose interrupted rename would be finished, then
+    ``uploaded/`` replaced by ``kind``. Returns the directory that holds the
+    real files (the symlink's target for "dir-link")."""
+    name, pid, v1 = seed(db, bits)
+    v2, _ = bit(name, status="disabled")
+    with owner(server) as c:
+        c.execute(
+            "UPDATE policy SET source_sha256 = %s WHERE policy_id = %s", (sha(v2), pid)
+        )
+    folder = bits / "uploaded"
+    (folder / tmp_name(pid, v2)).write_bytes(v2)  # would be renamed if followed
+    (folder / ".tmp-x").write_bytes(b"junk")  # would be deleted if followed
+    real = bits.parent / "real-uploaded"
+    folder.rename(real)
+    if kind == "file":
+        folder.write_bytes(b"not a directory")
+    elif kind == "dir-link":
+        folder.symlink_to(real, target_is_directory=True)
+    elif kind == "file-link":
+        (bits.parent / "plain").write_bytes(b"plain")
+        folder.symlink_to(bits.parent / "plain")
+    else:
+        folder.symlink_to(bits.parent / "nowhere")
+    return real
+
+
+def _guard_logs(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [
+        r for r in caplog.records
+        if r.name == "bitscan_manager.services.importer.uploads"
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize("kind", GUARD_KINDS)
+def test_finish_touches_nothing_when_uploaded_is_not_a_real_directory(
+    server: PgServer,
+    db: AppDatabase,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+    kind: str,
+) -> None:
+    _break_folder(server, db, bits, kind)
+    disk0 = tree(bits.parent)
+    s0 = snap(server)
+    caplog.set_level("DEBUG", logger="bitscan_manager.services.importer.uploads")
+    assert finish(db, bits) == FinishedUploads(renamed=0, deleted=0)
+    assert tree(bits.parent) == disk0  # nothing renamed or deleted in the target
+    assert not (bits.parent / "nowhere").exists()
+    assert catalog_now(server) == s0.catalog
+    assert imports_since(server, s0) == [] and audits_since(server, s0) == []
+    recs = _guard_logs(caplog)
+    assert len(recs) == 1 and recs[0].levelno >= logging.WARNING
+    assert str(bits.parent) not in recs[0].getMessage()
+    assert recs[0].getMessage() == _missing_line(db, bits.parent)
+
+
+def _missing_line(db: AppDatabase, root: Path) -> str:
+    """The fixed line for a missing folder: every unreadable case logs it the
+    same way ("one fixed log line")."""
+    empty = root / f"missing-{tag()}"
+    empty.mkdir()
+    import logging as _l
+
+    seen: list[str] = []
+
+    class H(_l.Handler):
+        def emit(self, record: _l.LogRecord) -> None:
+            seen.append(record.getMessage())
+
+    lg = _l.getLogger("bitscan_manager.services.importer.uploads")
+    h = H()
+    lg.addHandler(h)
+    try:
+        finish(db, empty)
+    finally:
+        lg.removeHandler(h)
+        empty.rmdir()
+    assert len(seen) == 1
+    return seen[0]
+
+
+@pytest.mark.parametrize("new", [True, False], ids=["new", "update"])
+@pytest.mark.parametrize("kind", GUARD_KINDS)
+def test_an_upload_writes_nothing_when_uploaded_is_not_a_real_directory(
+    server: PgServer,
+    db: AppDatabase,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+    kind: str,
+    new: bool,
+) -> None:
+    real = _break_folder(server, db, bits, kind)
+    if new:
+        data, _ = bit(f"Guard {tag()}")
+    else:
+        pid = int(next(iter(_live_upload_ids(real))))
+        data, _ = bit(policy_row_name(db, pid))
+    disk0 = tree(bits.parent)
+    s0 = snap(server)
+    canary = f"client-canary-{tag()}"
+    caplog.set_level("DEBUG")
+    with pytest.raises(OSError):
+        up(db, bits, data, canary.encode())
+    assert tree(bits.parent) == disk0  # nothing written through the link
+    assert not (bits.parent / "nowhere").exists()
+    assert catalog_now(server) == s0.catalog
+    assert imports_since(server, s0) == []  # #98 (j): an internal error, no row
+    assert audits_since(server, s0) == []
+    assert counter_delta(s0) == {}
+    text = " ".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records)
+    assert canary not in text
+
+
+def _live_upload_ids(real: Path) -> list[str]:
+    return [
+        n.removeprefix("policy-").removesuffix(".bit")
+        for n in sorted(os.listdir(real))
+        if n.startswith("policy-")
+    ]
+
+
+@pytest.mark.parametrize("kind", GUARD_KINDS)
+def test_a_rejected_upload_still_gets_its_row_with_a_broken_folder(
+    server: PgServer, db: AppDatabase, bits: Path, kind: str
+) -> None:
+    """A rejection never reaches the disk, so the guard does not change it."""
+    _break_folder(server, db, bits, kind)
+    disk0 = tree(bits.parent)
+    s0 = snap(server)
+    bad, _ = bit(f"Guard {tag()}", status="maybe")
+    assert up(db, bits, bad).outcome == "rejected"
+    assert [r["outcome"] for r in imports_since(server, s0)] == ["rejected"]
+    assert tree(bits.parent) == disk0
+
+
+def test_the_folder_is_checked_at_each_call_not_cached(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    """Swapped to a symlink after a good upload, the next upload still refuses;
+    restored, uploads work again."""
+    _, pid, _ = seed(db, bits)
+    real = bits.parent / "real-uploaded"
+    (bits / "uploaded").rename(real)
+    (bits / "uploaded").symlink_to(real, target_is_directory=True)
+    data, _ = bit(f"Swap {tag()}")
+    before = tree(real)
+    with pytest.raises(OSError):
+        up(db, bits, data)
+    assert tree(real) == before
+    (bits / "uploaded").unlink()
+    real.rename(bits / "uploaded")
+    out = up(db, bits, data)
+    assert out.outcome == "success"
+    assert listing(bits / "uploaded") == sorted(
+        [f"policy-{pid}.bit", f"policy-{out.policy_id}.bit"]
+    )
 
 
 def test_finish_leaves_a_directory_named_like_a_temp_and_still_finishes(
