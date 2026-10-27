@@ -3,8 +3,10 @@
 Works on the shlex_posix lexer's output, never on substrings. Every simple
 command is checked wherever it appears: pipelines, lists, subshells, groups,
 compound commands, function bodies, $( ), backticks, <( ), >( ), unquoted
-here-documents, and the script of `sh`/`bash`/`dash -c` (lexed again). Input
-the lexer cannot handle is BIT102 (fail closed, #108 (j)).
+here-documents, the script of `sh`/`bash`/`dash -c`, of `su`/`runuser`/
+`flock -c` and the action of `trap` (each lexed again). Input the lexer
+cannot handle is BIT102 (fail closed, #108 (j)). In a bash script, words
+are checked after brace expansion (bit102_brace; decision 2026-10-27).
 
 A command word that is not literal (`"$c" x`, `$(echo rm) x`) is allowed and
 only its nested scripts are checked (user decision 2026-10-27); the runner
@@ -15,10 +17,10 @@ nothing is added to the SR §4.2 lists (#108 (k)).
 from collections.abc import Iterable, Iterator
 from typing import Final
 
+from bitscan_manager.services.importer.bit102_brace import BraceError, expand_words
+from bitscan_manager.services.importer.bit102_wrap import SPECS, look_through, text_word
 from bitscan_manager.services.importer.model import Code, Finding, quote
 from bitscan_manager.services.importer.shlex_posix import (
-    Command,
-    Part,
     Redirect,
     Script,
     ShellSyntaxError,
@@ -80,7 +82,7 @@ def check_execute(execute: str, *, line: int, element: str) -> list[Finding]:
         script = lex(execute)
     except ShellSyntaxError as exc:  # exc.reason is fixed text, never input
         return [_finding(line, element, f"Execute cannot be checked: {exc.reason}.")]
-    messages = dict.fromkeys(_script(script, 0))
+    messages = dict.fromkeys(_script(script, 0, bash=False))  # /bin/sh is dash
     return [_finding(line, element, m) for m in messages]
 
 
@@ -88,22 +90,23 @@ def _finding(line: int, element: str, message: str) -> Finding:
     return Finding(line, element, Code.BIT102, message)
 
 
-def _script(script: Script, depth: int) -> Iterator[str]:
+def _script(script: Script, depth: int, *, bash: bool) -> Iterator[str]:
+    """bash: the script runs under bash, so its words brace-expand."""
     for cmd in script.commands:
         for redirect in cmd.redirects:
             yield from _redirect(redirect)
             scripts = redirect.target.scripts() if redirect.target else ()
-            yield from _nested(scripts + redirect.heredoc_scripts, depth)
+            yield from _nested(scripts + redirect.heredoc_scripts, depth, bash)
         for word in cmd.assignments + cmd.words:
-            yield from _nested(word.scripts(), depth)
-        yield from _command(cmd, depth)
+            yield from _nested(word.scripts(), depth, bash)
+        yield from _command(cmd.words, depth, bash)
     for word in script.data_words:
-        yield from _nested(word.scripts(), depth)
+        yield from _nested(word.scripts(), depth, bash)
 
 
-def _nested(scripts: Iterable[Script], depth: int) -> Iterator[str]:
+def _nested(scripts: Iterable[Script], depth: int, bash: bool) -> Iterator[str]:
     for nested in scripts:
-        yield from _script(nested, depth + 1)
+        yield from _script(nested, depth + 1, bash=bash)
 
 
 def _redirect(r: Redirect) -> Iterator[str]:
@@ -178,7 +181,7 @@ def _option(
     if opt.startswith("--"):
         key, eq, value = opt.partition("=")
         if name == "env" and key == "--split-string":
-            split += [_text_word(value, word)] if eq else list(words[i + 1 : i + 2])
+            split += [text_word(value, word)] if eq else list(words[i + 1 : i + 2])
             return 1 if eq else 2
         return 2 if key in with_arg and not eq else 1
     for k, letter in enumerate(opt[1:], start=2):
@@ -187,33 +190,44 @@ def _option(
         if f"-{letter}" in with_arg or (name == "env" and letter == "S"):
             rest = opt[k:]
             if name == "env" and letter == "S":
-                split += (
-                    [_text_word(rest, word)] if rest else list(words[i + 1 : i + 2])
-                )
+                split += [text_word(rest, word)] if rest else list(words[i + 1 : i + 2])
             return 1 if rest else 2
     return 1
 
 
-def _text_word(text: str, origin: Word) -> Word:
-    """A literal word for an option value that was attached in `origin`."""
-    return Word((Part("sq", text),), origin.line, origin.raw)
-
-
-def _command(cmd: Command, depth: int) -> Iterator[str]:
-    resolved = _resolve(cmd.words)
-    if resolved is None:
-        return
-    index, via, split = resolved
-    for text in split:  # env -S splits a command line; it expands nothing
-        yield from _shell_script(text, "env -S", depth, allow_substitutions=True)
-    if index >= len(cmd.words):
-        return
-    word, args = cmd.words[index], cmd.words[index + 1 :]
-    value = word.literal()
-    if value is None:  # not literal: allowed, nested scripts already checked
-        return
-    name = value.rsplit("/", 1)[-1]
-    shown = quote(word.raw) + (f" (via {quote(' '.join(via))})" if via else "")
+def _command(words: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:
+    if bash:
+        try:
+            words = expand_words(words)
+        except BraceError as exc:
+            yield f"Execute cannot be checked: {exc.reason} in a bash script."
+            return
+    via: list[str] = []
+    while True:  # each pass looks through one wrapper; words get shorter
+        resolved = _resolve(words)
+        if resolved is None:
+            return
+        index, wrappers, split = resolved
+        via += wrappers
+        for text in split:  # env -S splits a command line; it expands nothing
+            yield from _shell_script(text, "env -S", depth, bash, subst=True)
+        if index >= len(words):
+            return
+        word, args = words[index], words[index + 1 :]
+        value = word.literal()
+        if value is None:  # not literal: allowed, nested scripts already checked
+            return
+        name = value.rsplit("/", 1)[-1]
+        shown = quote(word.raw) + (f" (via {quote(' '.join(via))})" if via else "")
+        if name not in SPECS:
+            break
+        step = look_through(name, shown, args)
+        for script in step.scripts:  # run by the user's shell: may be bash
+            yield from _shell_script(script, f"{name} -c", depth, True, subst=True)
+        if step.problem is not None:
+            yield step.problem
+        via.append(word.raw)
+        words = step.words
     literals = [a.literal() for a in args]
     if name in WRITE_WORDS or name.startswith("mkfs."):
         yield f"Execute runs the write-like command {shown}."
@@ -230,6 +244,23 @@ def _command(cmd: Command, depth: int) -> Iterator[str]:
                 break
     elif name in SHELLS:
         yield from _shell(word, args, shown, depth)
+    elif name == "trap":
+        yield from _trap(args, depth, bash)
+
+
+def _trap(args: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:
+    """trap's action is code run later by this shell (decision 2026-10-27):
+    lexed and checked. `trap - SIG`, `trap -p` and `trap -l` run nothing."""
+    i = 0
+    while i < len(args):
+        opt = args[i].literal()
+        if opt is None or not opt.startswith("-") or opt == "-":
+            break
+        i += 1
+        if opt == "--":
+            break
+    if i < len(args) and args[i].literal() != "-":
+        yield from _shell_script(args[i], "trap", depth, bash, subst=True)
 
 
 def _bad_argument(name: str, arg: str) -> bool:
@@ -295,16 +326,15 @@ def _shell(word: Word, args: tuple[Word, ...], shown: str, depth: int) -> Iterat
     if inner is not None:
         yield f"Execute passes a substitution to {shown} -c: {quote(inner)}."
     else:  # not literal and no substitution: allowed (user decision 2026-10-27)
-        yield from _shell_script(
-            script, word.raw + " -c", depth, allow_substitutions=False
-        )
+        bash = str(word.literal()).rsplit("/", 1)[-1] == "bash"
+        yield from _shell_script(script, word.raw + " -c", depth, bash, subst=False)
 
 
 def _shell_script(
-    script: Word, shown: str, depth: int, *, allow_substitutions: bool
+    script: Word, shown: str, depth: int, bash: bool, *, subst: bool
 ) -> Iterator[str]:
     """Lex a command-line argument and check it like the Execute; with
-    allow_substitutions False, any $( ), backtick or <( ) in it is refused too."""
+    subst False, any $( ), backtick or <( ) in it is refused too."""
     text = script.literal()
     if text is None:
         return
@@ -313,10 +343,10 @@ def _shell_script(
     except ShellSyntaxError as exc:
         yield f"Execute cannot be checked: {exc.reason} in a {quote(shown)} script."
         return
-    found = None if allow_substitutions else _substitution(lexed)
+    found = None if subst else _substitution(lexed)
     if found is not None:
         yield f"Execute passes a substitution to {quote(shown)}: {quote(found)}."
-    yield from _script(lexed, depth + 1)
+    yield from _script(lexed, depth + 1, bash=bash)
 
 
 def _substitution(script: Script) -> str | None:

@@ -105,3 +105,101 @@ This one parameter is unresolved. The discussion stopped here at the lead's drai
 - **impl-manager-m7b's view.** GNU stdbuf documents `-i, --input=MODE`. getopt therefore reads `-io` as `-i` with value `o` (the rule the tester stated: the first value-taking letter ends the cluster, and the rest of the word is its value). stdbuf then runs `L`, with `rm` and `x` as its arguments; in practice it refuses mode `o` and runs nothing. `rm` never runs, so flagging it would make BIT102 disagree with the real binary. `stdbuf -oL rm x` and `stdbuf -i0 -oL rm x` do get BIT102.
 - **State.** `bit102.py` revision 1 leaves the case unflagged. The other 8 parameters pass, and the corpus results are unchanged.
 - **To resume.** The lead decides. Either tester-m7b drops or changes the parameter, or `_option()` gets a rule that treats this form as hiding a command. The most likely shape: when a value-taking letter has its value attached, also check the next word as a command, which errs toward rejecting.
+
+## Revision 2 (2026-10-27): BIT102 gaps closed (decision 2026-10-27, amends #108 (d) and (k))
+
+impl-manager-m7. The work is in the working tree and nothing is committed. There are two new files and two changed files, all in `manager/bitscan_manager/services/importer/`:
+
+| File | Lines (total) | What |
+| --- | --- | --- |
+| `bit102_wrap.py` (new) | 188 | the option tables of the new wrappers (`SPECS` L40), `look_through()` L101, the getopt reader `_option()` L128, operand rules `_operands()` L159; `text_word()` moved here from `bit102.py` |
+| `bit102_brace.py` (new) | 130 | `expand_words()` L30, `_expand()` L56, sequences `_sequence()` L92 |
+| `bit102.py` | 367 (was 337) | `bash` flag threaded through `_script` L93 / `_nested` / `_shell_script`; `_command()` L198 now takes the words, brace-expands them in bash mode (L201) and loops through the new wrappers (L224); `_trap()` L251; `_shell` sets bash mode only for `bash` (L329) |
+| `shlex_grammar.py` | 238 (was 220) | `time` handling moved from `reserved()` into `Grammar.time()` L171, called at L98 |
+
+**Size: over the micro-task limit.** About 390 changed lines, of which roughly 60 are option tables and 70 are docstrings and comments. If main wants it split, the natural seams are: r2a wrappers and `time` (`bit102_wrap.py`, the `_command` loop, grammar), r2b brace expansion (`bit102_brace.py`, the `bash` flag), and r2c trap (`_trap`, about 15 lines).
+
+### (1) Wrappers (`bit102_wrap.py`)
+
+Each wrapper's options are read the way its getopt reads them. The tables come from util-linux 2.39 `--help` on this container, checked against what 2.37 (Ubuntu 22.04) and 2.38 (Debian 12) accept, plus GNU time. Everything except su/runuser stops at the first non-option, because their optstrings start with `+`. su and runuser permute (no `+`), so options after the user count too. `--` ends options. Option clusters, attached values (`-t1`, `--target=1`) and optional-argument letters work as getopt does: `-m/proc/1/ns/mnt` and `-mU` use up the rest of the word. The wrapped command is checked as a command word, and wrappers nest in any order with the #108 (d) ones (`nice time nsenter … flock /tmp/l rm x` → `"rm" (via "nice time nsenter chrt taskset setpriv unshare flock")`).
+
+| Wrapper | Form → checked command | Example (BIT102) |
+| --- | --- | --- |
+| `time` (external: `/usr/bin/time`, `\time`, `command time`, `sudo time`) | after `-f`/`-o` values and flags | `/usr/bin/time -f %e rm x` |
+| `time` at the start of a command | `time` and `time -p` stay bash's keyword (lexer table unchanged). If any other option follows, the words become an ordinary `time …` command (L171), because `/bin/sh` is dash (TS §3.5 L249), which runs the external time | `time -o /tmp/t rm x`, `time -p -o x rm x`, `time -- rm x` |
+| `nsenter` | `-t`/`-W` take a value; namespace letters, `-r` and `-w` take one only when attached | `nsenter -t 1 -m rm x`, `nsenter -m/proc/1/ns/mnt rm x` |
+| `unshare` | `-R -w -S -G --propagation --setgroups --map-*…` take a value; namespace letters, `--kill-child` and `--mount-proc` take an attached one only | `unshare -mU rm x`, `unshare -fr --propagation private rm x` |
+| `flock` | `FILE CMD…`, `FILE -c CMD`/`--command CMD`, and `-c CMD` before FILE; the `-c` script is lexed and checked | `flock -n /tmp/l -c 'rm x'`, `flock -w 5 /tmp/l rm x` |
+| `setpriv` | all value options are long (`--reuid=0`, `--reuid 0`) | `setpriv --reuid 0 --init-groups rm x` |
+| `taskset` | `MASK CMD` (`-c` is a flag here, a cpu-list format, not a value) | `taskset -c 0-3 rm x` |
+| `chrt` | `[policy] PRIO CMD`; `-T -P -D` take a value | `chrt -f 10 rm x` |
+| `su` | every `-c`/`--command`/`--session-command` script is lexed and checked (in bash mode, see (3)); `-`, `-l`, user before or after `-c` | `su - root -c 'rm x'`, `su -lc 'rm x' root`, `su --command='rm x' root` |
+| `runuser` | as su; with `-u USER` the operands are the command, run directly | `runuser -u nobody -- rm x`, `runuser -l nobody -c 'rm x'` |
+
+In each of these cases nothing runs, so nothing is checked: `flock 9`, `taskset -p 1`, `chrt -m`, `chrt -p 1`, `setpriv -d`.
+
+**Where I fail closed (#108 (j)): each case gives one BIT102 finding.**
+- An option that is not in the table, a long-option abbreviation included: `nsenter --targ 1 rm x` and `setpriv --reu 0 rm x` give `Execute cannot be checked: option "--targ" of "nsenter".` An unlisted option from a newer util-linux (for example 2.40 `nsenter -c`) is refused the same way. A `--flag=value` on a flag is refused too (it is a getopt error).
+- A `chrt` priority that is not a literal decimal: `chrt -o rm x` and `chrt -f "$p" ls` give `Execute cannot be checked: "rm" after "chrt".` util-linux 2.41 lets SCHED_OTHER/BATCH/IDLE leave out the priority, and then that word is the command.
+- `su`/`runuser` that would start the user's shell without `-c` give `Execute runs a shell without -c: "su".`, by analogy with #108 (f). This covers `su root`, `su - root`, `… | su root`, `su root /tmp/script`, `su root -- -c 'rm x'`, `runuser nobody`, and `runuser -u nobody` with no command.
+- Words after the user when there is a `-c` (`su -c id root x`) are passed to the shell as its arguments. They are refused as "cannot be checked".
+- **Not a fail-closed case:** `nsenter -S`/`-G` (and `--setuid`/`--setgid`) take a value in 2.37 but only an attached one in 2.39. The next word is taken as the value only when it is a decimal uid or gid. Otherwise, under the 2.39 reading, it is the command: `nsenter -S rm x` → `rm`. Under the 2.37 reading that same form fails at run time, so this is exact rather than fail-closed.
+
+`su`/`runuser`/`flock -c` scripts are lexed with `$( )` allowed (like `env -S`), because SR §4.2's substitution ban names only `sh`/`bash`/`dash -c`. Their substitutions are still walked and checked.
+
+### (3) Brace expansion (`bit102_brace.py`)
+
+- **Where brace expansion is applied.** Only in bash mode: inside a `bash -c` script, an `su`/`runuser`/`flock -c` script (the user's login shell or `$SHELL`, often bash, so I fail closed), and every script nested in one of those (`$( )`, trap actions).
+- **Where it is not.** The `Execute` itself and `sh`/`dash -c` scripts are left alone, because dash has no brace expansion. `{rm,x}` and `sh -c '{rm,x}'` still pass.
+- **How words are expanded.** Each command's words are expanded the way bash does it, and the resolver and every rule then see the expanded words. Only unquoted text expands. Quoted text and expansions (`$x`, `$( )`) stay whole, and a word that expands to nothing is dropped.
+- **Examples that now get BIT102:**
+  - `bash -c '{rm,-rf,/x}'`, `bash -c 'r{m,}  -rf /'`, `bash -c '{,}rm x'`, `bash -c '{,} rm x'`
+  - `bash -c 'r{m..m} x'` (a sequence), `bash -c 'ls; {ls,x} | {r,}m x'`
+  - `bash -c 'sed -{i,n} s/a/b/ f'`, `bash -c 'systemctl {stop,status} ssh'`, `bash -c 'sudo {rm,ls} x'`
+  - `bash -c '{rm,"$x"} y'`, `su -c '{rm,x} y'`, `su -c "bash -c '{rm,-rf,/x}'"`
+- **Cases I refuse as "cannot be checked"**, where bash's reading is unclear or the expansion is too large:
+  - an unmatched `{` with a comma after it (`{{rm,x}`), message `unmatched brace in a bash script`;
+  - a brace pair whose only commas are inside nested braces (`{a{rm,x}b}`), message `nested braces …`;
+  - more than 256 words for one command, message `brace expansion makes too many words …`;
+  - more than 64 brace levels in one word, message `too many braces …`.
+- **Known false positive:** `bash -c 'echo {1..1000}'` is refused because it expands to more than 256 words. It is rare in CIS commands.
+- **Cases that still pass:** `bash -c 'ls /etc/{passwd,group}'`, `echo {1..5}`, `{}` and `{x}` as literals, quoted awk programs, and `for i in {1..3}` (a `for` list is data words).
+- **Timing.** The worst pathological 16 KB input I timed (`{a..a}` × 2000) took 113 ms.
+
+### (2) trap: PENDING the user's answer (asked by main)
+
+`_trap()` (`bit102.py` L251, called at L247) currently uses the lexed-and-checked reading:
+- the action, which is the first operand after `-p`/`-l`/`--`, is lexed and checked in the current shell's mode;
+- `trap - SIG`, `trap -p` and `trap -l` pass;
+- a non-literal action (`trap "$a" EXIT`) passes, the same as `sh -c "$s"`.
+
+So `trap 'rm x' EXIT` is refused and `trap 'echo done' EXIT` passes. The other reading, refusing every trap that has an action the way `eval` is refused, is a one-line change. This section will be finalised when main sends the answer.
+
+### Gaps I left alone (#108 (k): nothing added to the SR §4.2 lists). For main to rule on.
+
+- **Write-like options of the new wrappers.** `time -o /etc/x ls` writes to a file. `flock /etc/x ls` creates the lock file if it is missing (it opens with `O_CREAT`). BIT102 does not refuse either one; the sandbox (TS §3.7) blocks the writes.
+- **Existing bypass in the #108 (d) wrappers (not in this task's scope).** Long-option abbreviations hide the command. `sudo --us root rm x`, `env --unse X rm x` and `timeout --sig KILL 5 rm x` all pass, because getopt_long accepts the abbreviation as a value-taking option, while `_option()` treats an unknown long option as a flag. The likely fix is to give the old wrappers the same fail-closed table as the new ones. That is a separate task.
+- `stdbuf -io L rm x` is unchanged from revision 1 (still open with the lead).
+
+### Gates and runs (from the repo root, venv `manager/.venv`)
+
+- `ruff check manager`: clean. `ruff format --check manager`: 278 files formatted. `mypy --strict --config-file manager/pyproject.toml manager`: no issues in 278 files.
+- `pytest -q -p no:cacheprovider tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py` (from `manager/`, run in this Linux container): **1583 passed**. That includes the must-pass corpus, the samples in `bits/samples/` and the lexer table (`time rm x` and `time -p rm x` still lex as `rm`).
+- Scratch probe, outside the tree: 88 must-reject inputs, all refused; 39 must-pass inputs, all with no finding. A random fuzz of 20,000 inputs built from wrapper, brace and quote tokens raised nothing.
+
+### Cases I recommend the tester add
+
+- **Must-reject:** each Example in the wrapper table above. Also `\time -o /tmp/y rm x`, `command time rm x`, `sudo time -v rm x`, `nsenter -S rm x`, `nsenter --setuid rm x`, `nsenter -a -t 1 -- rm x`, `unshare --kill-child=KILL -f rm x`, `flock /tmp/l --command 'rm x'`, `flock -c 'rm x' /tmp/l`, `flock -E 3 -xn /tmp/l rm x`, `taskset -ac 1 rm x`, `chrt -T 1 -P 2 -D 3 -d 0 rm x`, `su -c 'rm x'`, `su root -c 'rm x'`, `su --session-command 'rm x'`, `su -s /bin/bash -c 'rm x' root`, `runuser -u nobody rm x` and `sudo nsenter -t 1 -m su -c 'rm x'`.
+- **Fail-closed rows:** `nsenter --targ 1 rm x`, `nsenter -X rm x`, `setpriv --reu 0 rm x`, `chrt -o rm x`, `su root`, `su - root`, `echo 'rm x' | su root`, `su root /tmp/script`, `su root -- -c 'rm x'`, `runuser nobody` and `runuser -u nobody`.
+- **Brace must-reject:** every Example in (3), plus `bash -c '{{rm,x}'`, `bash -c '{a{rm,x}b} y'`, `bash -c 'x{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}'`, `bash -c 'echo $({rm,x} y)'` and `trap 'bash -c "{rm,x} y"' EXIT`.
+- **Must-pass:**
+  - wrappers: `time ls`, `time -p ls`, `/usr/bin/time -f %e ls`, `time -o /tmp/t ls`, `nsenter -t 1 -m cat /etc/fstab`, `nsenter --target 1 --mount findmnt`, `nsenter -S 0 -t 1 cat /x`, `unshare -r id`, `flock /tmp/l cat /etc/x`, `flock -n /tmp/l -c 'cat /etc/x'`, `flock 9`, `setpriv --nnp cat /etc/x`, `setpriv -d`, `taskset -c 0 cat /etc/x`, `taskset -p 1`, `chrt -m`, `chrt -p 1`, `chrt -o 0 cat /x`, `su -c 'id' nobody`, `su - nobody -c 'cat /etc/x'`, `runuser -u nobody -- id`, `runuser -l nobody -c 'id'`;
+  - braces: `bash -c 'ls /etc/{passwd,group}'`, `bash -c 'echo {1..5}'`, `bash -c "awk '{print \$1,\$2}' f"`, `bash -c 'find / -name {} -print'`, `bash -c 'for i in {1..3}; do echo $i; done'`, `bash -c 'x={a,b}; echo $x'`, `sh -c '{rm,x}'`, `{rm,x}`, `echo {rm,-rf,/x}`, `bash -c 'echo ${x:-{a,b}}'`.
+- **Trap rows:** wait for the ruling. Under the current reading, must-reject `trap 'rm x' EXIT`, `trap -- 'rm x' EXIT`, `command trap 'rm x' INT`, `bash -c "trap 'rm x' EXIT"`; must-pass `trap - EXIT`, `trap -p`, `trap -l`, `trap 'echo done' EXIT`, `trap "$a" EXIT`, `trap '' INT`.
+- **Plants:**
+  - empty `SPECS`;
+  - `_option` returning 1 for unknown options (`nsenter --targ`);
+  - optional letters treated as value-taking (`nsenter -m/proc/1/ns/mnt rm x`);
+  - `bash=False` everywhere (brace rows);
+  - bash mode on for dash (`sh -c '{rm,x}'` must still pass);
+  - `Grammar.time()` always returning `[]` (`time -o /tmp/t rm x`).

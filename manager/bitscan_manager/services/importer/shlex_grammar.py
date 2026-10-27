@@ -95,13 +95,19 @@ class Grammar:
             ):
                 prev = self.header(tok, stack, data)
             elif tok.kind == "word" and tok.word is not None:
-                if cur is None and tok.word.plain() in _RESERVED:
+                lead = self.time(tok.word) if cur is None else None
+                if lead == []:
+                    prev = "start"
+                    continue
+                if cur is None and lead is None and tok.word.plain() in _RESERVED:
                     prev = self.reserved(str(tok.word.plain()), stack, tok.line)
                     continue
                 if cur is None:
                     cur = _Cmd(tok.line)
                     cmds.append(cur)
-                if not cur.words and tok.word.is_assignment():
+                if lead:
+                    cur.words += lead
+                elif not cur.words and tok.word.is_assignment():
                     cur.assignments.append(tok.word)
                 else:
                     cur.words.append(tok.word)
@@ -158,13 +164,25 @@ class Grammar:
         elif word in _CLOSERS and top == _CLOSERS[word]:
             stack.pop()
             return "word"
-        elif word == "time":  # bash's pipeline keyword, with its -p
-            nxt = self.token()
-            if nxt.word is None or nxt.word.plain() != "-p":
-                self.peeked = nxt
         elif word != "!":
             raise ShellSyntaxError("unexpected " + word, line)
         return "start"
+
+    def time(self, word: Word) -> list[Word] | None:
+        """None unless word is the reserved word `time`. bash reads `time
+        [-p]` as a keyword, but /bin/sh is dash, which runs the external
+        time (TS §3.5): if another option follows, return the words so far
+        as an ordinary command, for BIT102 to read time's options; else []
+        (the keyword and its -p are skipped)."""
+        if word.plain() != "time":
+            return None
+        lead, nxt = [word], self.token()
+        if nxt.word is not None and nxt.word.plain() == "-p":
+            lead.append(nxt.word)
+            nxt = self.token()
+        self.peeked = nxt
+        opt = nxt.word.literal() if nxt.word is not None else None
+        return lead if opt is not None and opt.startswith("-") else []
 
     def header(self, tok: Tok, stack: list[str], data: list[Word]) -> str:
         """The parts of for, case and function that are not commands."""
