@@ -49,7 +49,7 @@ from bitscan_manager.services.importer.store import (
 log = logging.getLogger(__name__)
 UPLOADED = "uploaded/"
 LEFTOVER_CHECK = "leftover of an interrupted delete"
-type UploadKind = Literal["live", "leftover", "other"]
+type UploadKind = Literal["live", "leftover", "stray"]
 _SYSTEM = Actor("system", None)
 _MAX_ID = 2**63 - 1  # policy_id is BIGSERIAL
 _OPEN = (
@@ -63,9 +63,10 @@ _OPEN = (
 @dataclass(frozen=True, slots=True)
 class ReconcileResult:
     outcomes: tuple[ImportOutcome, ...]  # one per file that reached the pipeline
-    refused: tuple[str, ...]  # uploaded/ copies of server-folder policies (#99 (e))
+    refused: tuple[str, ...]  # a live upload now naming a server policy (#99 (e))
     deleted: tuple[DeleteResult, ...]  # policies whose files disappeared
     leftovers: tuple[Difference, ...]  # #103 differences, for TASK-158's alert
+    strays: tuple[str, ...]  # skipped uploaded/ files, for the #103 check
 
 
 def _wanted(name: str) -> bool:
@@ -161,17 +162,18 @@ def classify_upload(conn: Conn, rel: str) -> UploadKind:
     and the rebuild (TASK-157), run in the caller's transaction under the
     catalog lock. "live": a live policy's own `source_file`, imported as an
     upload target (in `auto` mode skipped when unchanged). "leftover": the file
-    of a deleted policy, never imported (`remove_leftover`). "other": any other
-    file, imported as an upload target so the usual answers apply."""
+    of a deleted policy, never imported (`remove_leftover`). "stray": any other
+    file (no such policy, or not its source_file), never imported: logged,
+    skipped, no row, left for the #103 check (user, decisions 2026-10-27)."""
     policy_id = upload_policy_id(rel)
     row = (
         None if policy_id is None else catalog.policy_by_id_for_update(conn, policy_id)
     )
     if row is None:
-        return "other"
+        return "stray"
     if row.deleted_at is not None:
         return "leftover"
-    return "live" if row.source_file == rel else "other"
+    return "live" if row.source_file == rel else "stray"
 
 
 def remove_leftover(bits_dir: Path, rel: str) -> Difference:
@@ -199,6 +201,7 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
     outcomes: list[ImportOutcome] = []
     refused: list[str] = []
     leftovers: list[Difference] = []
+    strays: list[str] = []
     exists = partial(present, bits_dir)
     for rel in server + uploads:
         if rel.startswith(UPLOADED):
@@ -206,6 +209,10 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
                 kind = classify_upload(tx.conn, rel)
             if kind == "leftover":
                 leftovers.append(remove_leftover(bits_dir, rel))
+                continue
+            if kind == "stray":
+                log.warning("uploaded file skipped: not a live policy's file")
+                strays.append(rel)
                 continue
         file = read_input(bits_dir, rel)
         if file is None:
@@ -220,13 +227,15 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
                 actor=_SYSTEM,
                 file_exists=exists,
             )
-        except PolicyManagedOnServer:  # audit-logged by import_one
+        except PolicyManagedOnServer:  # a live upload edited to a server name
             log.warning("uploaded file refused: its policy is in the server folder")
             refused.append(rel)
             continue
         outcomes.append(outcome)
     deleted = delete_removed(session, clock, bits_dir)
-    return ReconcileResult(tuple(outcomes), tuple(refused), deleted, tuple(leftovers))
+    return ReconcileResult(
+        tuple(outcomes), tuple(refused), deleted, tuple(leftovers), tuple(strays)
+    )
 
 
 def delete_removed(
