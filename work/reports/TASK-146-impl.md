@@ -106,18 +106,30 @@ This one parameter is unresolved. The discussion stopped here at the lead's drai
 - **State.** `bit102.py` revision 1 leaves the case unflagged. The other 8 parameters pass, and the corpus results are unchanged.
 - **To resume.** The lead decides. Either tester-m7b drops or changes the parameter, or `_option()` gets a rule that treats this form as hiding a command. The most likely shape: when a value-taking letter has its value attached, also check the next word as a command, which errs toward rejecting.
 
+**Closed** (`work/status.md`, M7 drain item 3): the builder's reading stands, and the test now uses `stdbuf -i0 -oL`.
+
 ## Revision 2 (2026-10-27): BIT102 gaps closed (decision 2026-10-27, amends #108 (d) and (k))
 
-impl-manager-m7. The work is in the working tree and nothing is committed. There are two new files and two changed files, all in `manager/bitscan_manager/services/importer/`:
+impl-manager-m7 built (1) and (3); impl-manager-m7d finished it: the trap ruling, the alias/hash/let/`@P` ruling and the two r1 blockers. The lead's WIP snapshot is `50d3ec9`; the rest is in the working tree and nothing more is committed. There are two new files and two changed files, all in `manager/bitscan_manager/services/importer/`:
 
 | File | Lines (total) | What |
 | --- | --- | --- |
-| `bit102_wrap.py` (new) | 188 | the option tables of the new wrappers (`SPECS` L40), `look_through()` L101, the getopt reader `_option()` L128, operand rules `_operands()` L159; `text_word()` moved here from `bit102.py` |
+| `bit102_wrap.py` (new) | 230 | the option tables: the #108 (d) wrappers (`WRAPPERS` L44, new in this round) and the r2 ones (`SPECS`); `look_through()`; the getopt reader `read_option()` L170, now shared by both tables; operand rules `_operands()`; `text_word()` |
 | `bit102_brace.py` (new) | 130 | `expand_words()` L30, `_expand()` L56, sequences `_sequence()` L92 |
-| `bit102.py` | 367 (was 337) | `bash` flag threaded through `_script` L93 / `_nested` / `_shell_script`; `_command()` L198 now takes the words, brace-expands them in bash mode (L201) and loops through the new wrappers (L224); `_trap()` L251; `_shell` sets bash mode only for `bash` (L329) |
-| `shlex_grammar.py` | 238 (was 220) | `time` handling moved from `reserved()` into `Grammar.time()` L171, called at L98 |
+| `bit102.py` | 365 (was 337 at r1) | `bash` flag threaded through `_script` / `_nested` / `_shell_script`; `_resolve()` L119 reads the #108 (d) wrappers through `read_option()`; `_command()` L162 brace-expands in bash mode and loops through the r2 wrappers; `_defines_code()` L215 (trap, alias, hash, let); `_shell()` L297 with `SHELL_LONG`/`SHELL_LETTERS` L289 |
+| `shlex_grammar.py` | 267 (was 220 at r1) | `time` handling moved from `reserved()` into `Grammar.time()` L200. The rest of its diff is TASK-145 r1 |
+| `shlex_posix.py` | 361 | `${…@P}`/`${…@E}` refused in `scan()` L334. The rest of its diff is TASK-145 r1 |
 
-**Size: over the micro-task limit.** About 390 changed lines, of which roughly 60 are option tables and 70 are docstrings and comments. If main wants it split, the natural seams are: r2a wrappers and `time` (`bit102_wrap.py`, the `_command` loop, grammar), r2b brace expansion (`bit102_brace.py`, the `bash` flag), and r2c trap (`_trap`, about 15 lines).
+**Size: over what the lead accepted.** Against the r1 base `150bcd3`, TASK-146 r2 is about 640 changed lines: about 525 added and 118 removed, counting blank lines. The lead accepted about 390.
+- **Where the rest comes from.** This round added about 240 changed lines (about 140 added, 100 removed) on top of the snapshot:
+  - the #108 (d) wrapper tables, moved into `bit102_wrap.py` and completed with every flag (about 45 lines), plus `_resolve()` reworked onto the shared reader, replacing the old `_option()`;
+  - `_defines_code()` (30 lines, replacing the 14-line `_trap()`);
+  - the shell option tables in `_shell()` (about 15 lines).
+- **Tables and docstrings.** About 110 of all the lines are option tables and about 80 are docstrings and comments.
+- **Seams, if main wants it split:**
+  - r2a: wrappers, `time` and the old-wrapper tables (`bit102_wrap.py`, `_resolve`/`_command`, grammar);
+  - r2b: brace expansion (`bit102_brace.py`, the `bash` flag);
+  - r2c: the rulings (`_defines_code`, `@P`/`@E` in `shlex_posix.scan`) and the `_shell` option parsing.
 
 ### (1) Wrappers (`bit102_wrap.py`)
 
@@ -166,25 +178,57 @@ In each of these cases nothing runs, so nothing is checked: `flock 9`, `taskset 
 - **Cases that still pass:** `bash -c 'ls /etc/{passwd,group}'`, `echo {1..5}`, `{}` and `{x}` as literals, quoted awk programs, and `for i in {1..3}` (a `for` list is data words).
 - **Timing.** The worst pathological 16 KB input I timed (`{a..a}` × 2000) took 113 ms.
 
-### (2) trap: PENDING the user's answer (asked by main)
+### (2) trap, alias, hash, let, `${…@P}`/`${…@E}`: refused like eval (user rulings 2026-10-27)
 
-`_trap()` (`bit102.py` L251, called at L247) currently uses the lexed-and-checked reading:
-- the action, which is the first operand after `-p`/`-l`/`--`, is lexed and checked in the current shell's mode;
-- `trap - SIG`, `trap -p` and `trap -l` pass;
-- a non-literal action (`trap "$a" EXIT`) passes, the same as `sh -c "$s"`.
+`_defines_code()` (`bit102.py` L215) gives `Execute runs other code with "<name>".`, the eval message. It works wherever the command word resolves, through wrappers (`command trap …`) and in `-c` scripts. A word in option or operand position that is not literal counts as setting code, because it could be anything (fail closed).
+- **trap.** It is refused when it sets an action: two or more operands after its options, the first of which is not `-`.
+  - These pass: `trap`, `trap -p [SIG]`, `trap -l`, `trap -P …` (any `l`, `p` or `P` letter lists), `trap - SIG…` and `trap -- - SIG…`.
+  - `trap SIG` (one operand) also passes. Checked here: dash says "bad trap" or resets, and bash prints usage or resets. Neither sets an action, so it is no exception to the ruling.
+  - `trap '' INT` is refused, because it sets an (empty) action. `trap "$a" EXIT` is refused too (fail closed).
+  - The lexed-and-checked `_trap()` of the snapshot is gone.
+- **alias.** Refused when any argument holds `=` or is not literal. `alias`, `alias ll` and `alias -p` pass.
+- **hash.** Refused when a letter `p` appears in its options (`hash -p /bin/rm ls`, `hash -rp …`), or when an option-position word is not literal. `hash`, `hash -r`, `hash -t ls` and `hash ls` pass.
+- **let.** Always refused.
+- **`${…@P}` and `${…@E}`.** These are refused in the lexer (`shlex_posix.py` `scan()` L334), so they are caught wherever a `${…}` is lexed:
+  - words, double quotes and nested `${}`;
+  - `$(( ))`;
+  - unquoted here-document bodies, which keep only their scripts, so the BIT102 walk could not see them;
+  - re-lexed `-c` scripts.
 
-So `trap 'rm x' EXIT` is refused and `trap 'echo done' EXIT` passes. The other reading, refusing every trap that has an action the way `eval` is refused, is a one-line change. This section will be finalised when main sends the answer.
+  The finding is `Execute cannot be checked: ${…@P} or ${…@E} runs text as code.`. Single-quoted text and quoted here-document bodies are data and pass (`echo '${x@P}'`). `${x@Q}` and other transformations are not refused (not in the ruling).
+- **Checked here.** dash runs `alias r=echo` and then `r RAN`. bash runs `hash -p /bin/echo ls; ls RAN`, `let 'a[$(echo RAN)]=1'`, `: ${x@P}` and `${x@P}` in an unquoted here-document, each with `x='$(echo RAN)'` where needed.
 
-### Gaps I left alone (#108 (k): nothing added to the SR §4.2 lists). For main to rule on.
+### (4) r1 blocking 1: the shell's own option parsing (`_shell`, `bit102.py` L297)
+- **How options are read now.** In a short cluster (`-…` or `+…`), each `o` or `O` letter takes one following word, in order. So `-co pipefail`, `-oc pipefail`, `-Oc extglob`, `+oc errexit` and `-oO pipefail extglob` all work, and `c` is noted wherever it is in the cluster. A lone `-` or `--` ends the options and is consumed.
+- **Long options.** `--rcfile` and `--init-file` take a word. The bash long options in `SHELL_LONG` are flags.
+- **Fail closed.** Any other long option is refused with `Execute cannot be checked: option "…" of "bash".`. That includes abbreviations (`--rcf`, which bash itself rejects) and every long option of dash, which has none. A letter outside `SHELL_LETTERS`, the union of the bash and dash invocation and `set` letters, is refused the same way (`sh -q`).
+- **Checked here under dash and bash.** `bash -co pipefail 'echo RAN'`, `-oc`, `-Oc extglob`, `sh -co errexit`, `sh -c - 'echo RAN'` and `bash -c - …` all print RAN. `sh - -c X` runs the file `-c`, and BIT102 reports it as a shell without `-c`.
 
-- **Write-like options of the new wrappers.** `time -o /etc/x ls` writes to a file. `flock /etc/x ls` creates the lock file if it is missing (it opens with `O_CREAT`). BIT102 does not refuse either one; the sandbox (TS §3.7) blocks the writes.
-- **Existing bypass in the #108 (d) wrappers (not in this task's scope).** Long-option abbreviations hide the command. `sudo --us root rm x`, `env --unse X rm x` and `timeout --sig KILL 5 rm x` all pass, because getopt_long accepts the abbreviation as a value-taking option, while `_option()` treats an unknown long option as a flag. The likely fix is to give the old wrappers the same fail-closed table as the new ones. That is a separate task.
-- `stdbuf -io L rm x` is unchanged from revision 1 (still open with the lead).
+### (5) r1 blocking 2: long-option abbreviations of the #108 (d) wrappers
+- **The fix.** `env`, `command`, `builtin`, `nice`, `nohup`, `ionice`, `setsid`, `stdbuf`, `timeout`, `chroot`, `sudo`, `doas` and `busybox` now have full tables (`WRAPPERS` in `bit102_wrap.py`), read by the same `read_option()` as the r2 wrappers.
+- **Where the tables come from.** Every flag, value and optional-value option is taken from `--help` of coreutils 9.4, util-linux 2.39 and sudo 1.9.15 in this container.
+- **Fail closed.** An option not in the table, an abbreviation included, gives `Execute cannot be checked: option "--un" of "env".`. So does an unknown short letter (`sudo -X`) and a `--flag=value` on a flag.
+- **Special forms kept:**
+  - `env -S`/`--split-string` (as `scripts`, lexed as before);
+  - `env -` and `env NAME=v`;
+  - `command -v`/`-V`, which run nothing;
+  - the timeout duration and the chroot directory (`positional`);
+  - `nice -N`, `--N` and `-+N` (the coreutils legacy adjustment, checked here).
+- **Added: `sudo NAME=value`.** Like env, it is skipped. sudo 1.9.15 runs `sudo FOO=1 echo RAN`, so before this round `sudo FOO=1 rm x` hid `rm`. That is the same #108 (d) "skip its options" class, and it was found while building the table.
+- **`sudo -h WORD`.** WORD is the host here (sudo 1.9.15 says "unable to resolve host echo"), so `-h` takes a value, as before.
+- **Checked here.** `env --un HOME`, `--ch /` and `--sp '…'`, `nice --adj 5`, `timeout --sig KILL 5`, `stdbuf --out L`, `sudo --us root`, `sudo --gr root`, `chroot --sk /` and `timeout --pres 5` all run the command under the real binaries. All of them are now refused.
+- **stdbuf.** `stdbuf -io L rm x` still passes: getopt reads `-io` as `-i o`, so stdbuf runs `L`. The dispute is closed (the builder's reading, `work/status.md`).
+
+### Gaps and residuals
+
+- **Accepted residual (lead, review round 1 routing, 2026-10-27; #108 (k) stands).** `time -o FILE` and `flock FILE` can create a file through a program option, not a redirection. BIT102 checks redirections only. The M10 sandbox (read-only file system) is the control. The residual is recorded for the M7 PR.
+- **Not refused (not in the rulings).** `${x@Q}`/`@A`/`@K`, `declare`/`printf -v`/`[[ -v a[$(…)] ]]` arithmetic-subscript forms and `(( a[$(…)] ))` stay unrefused. For main, if wanted.
 
 ### Gates and runs (from the repo root, venv `manager/.venv`)
 
 - `ruff check manager`: clean. `ruff format --check manager`: 278 files formatted. `mypy --strict --config-file manager/pyproject.toml manager`: no issues in 278 files.
-- `pytest -q -p no:cacheprovider tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py` (from `manager/`, run in this Linux container): **1583 passed**. That includes the must-pass corpus, the samples in `bits/samples/` and the lexer table (`time rm x` and `time -p rm x` still lex as `rm`).
+- Final run, with TASK-145 r1 in the tree, from `manager/`: `pytest -q -p no:cacheprovider tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py tests/test_bit_parse.py tests/test_bit_validate.py` gave **2548 passed**. No existing test needed changing: the corpus has no trap, alias, hash or let row. The final probe is 85 must-reject and 59 must-pass rows, all as expected. A 30,000-input fuzz with the new tokens raised nothing (worst 0.7 ms).
+- The snapshot's own run (before this round): `pytest … tests/test_bit_fuzz.py` gave **1583 passed**. That includes the must-pass corpus, the samples in `bits/samples/` and the lexer table (`time rm x` and `time -p rm x` still lex as `rm`).
 - Scratch probe, outside the tree: 88 must-reject inputs, all refused; 39 must-pass inputs, all with no finding. A random fuzz of 20,000 inputs built from wrapper, brace and quote tokens raised nothing.
 
 ### Cases I recommend the tester add
@@ -195,10 +239,32 @@ So `trap 'rm x' EXIT` is refused and `trap 'echo done' EXIT` passes. The other r
 - **Must-pass:**
   - wrappers: `time ls`, `time -p ls`, `/usr/bin/time -f %e ls`, `time -o /tmp/t ls`, `nsenter -t 1 -m cat /etc/fstab`, `nsenter --target 1 --mount findmnt`, `nsenter -S 0 -t 1 cat /x`, `unshare -r id`, `flock /tmp/l cat /etc/x`, `flock -n /tmp/l -c 'cat /etc/x'`, `flock 9`, `setpriv --nnp cat /etc/x`, `setpriv -d`, `taskset -c 0 cat /etc/x`, `taskset -p 1`, `chrt -m`, `chrt -p 1`, `chrt -o 0 cat /x`, `su -c 'id' nobody`, `su - nobody -c 'cat /etc/x'`, `runuser -u nobody -- id`, `runuser -l nobody -c 'id'`;
   - braces: `bash -c 'ls /etc/{passwd,group}'`, `bash -c 'echo {1..5}'`, `bash -c "awk '{print \$1,\$2}' f"`, `bash -c 'find / -name {} -print'`, `bash -c 'for i in {1..3}; do echo $i; done'`, `bash -c 'x={a,b}; echo $x'`, `sh -c '{rm,x}'`, `{rm,x}`, `echo {rm,-rf,/x}`, `bash -c 'echo ${x:-{a,b}}'`.
-- **Trap rows:** wait for the ruling. Under the current reading, must-reject `trap 'rm x' EXIT`, `trap -- 'rm x' EXIT`, `command trap 'rm x' INT`, `bash -c "trap 'rm x' EXIT"`; must-pass `trap - EXIT`, `trap -p`, `trap -l`, `trap 'echo done' EXIT`, `trap "$a" EXIT`, `trap '' INT`.
+- **Must-reject, rulings:**
+  - trap: `trap 'rm x' EXIT`, `trap 'echo done' EXIT`, `trap -- 'echo done' EXIT`, `trap '' INT`, `trap "$a" EXIT`, `trap 0 'ls' EXIT`, `command trap 'ls' INT`, `bash -c "trap 'ls' EXIT"`;
+  - alias: `alias r=rm`, `alias r=rm` + newline + `r -rf /x`, `alias -p r=rm`, `alias "$x"`;
+  - hash: `bash -c 'hash -p /bin/rm ls; ls -rf /x'`, `hash -rp /bin/rm ls`;
+  - let: `let 'a[$(rm x)]=1'`, `bash -c 'let x=1'`;
+  - `@P`/`@E`: `x='$(rm x)'; : ${x@P}`, `echo "${x@P}"`, `bash -c ': ${x@E}'`, `echo ${y:-${x@P}}`, `echo $(( ${x@P} ))`, `cat <<E` + newline + `${x@P}` + newline + `E`, `echo ${arr[@]@P}`.
+- **Must-pass, rulings:** `trap`, `trap -p`, `trap -l`, `trap -p EXIT`, `trap - EXIT`, `trap -- - INT TERM`, `trap INT`, `alias`, `alias ll`, `alias -p`, `hash`, `hash -r`, `hash -t ls`, `hash ls`, `echo '${x@P}'`, `echo ${x@Q}`.
+- **Must-reject, r1 blocking 1** (`rm` found in the script):
+  - `bash -co pipefail 'rm x'`, `bash -oc pipefail 'rm x'`, `bash -Oc extglob 'rm x'`, `sh -co errexit 'rm x'`;
+  - `sh -c - 'rm x'`, `bash -c - 'rm x'`, `dash -c -- 'rm x'`;
+  - `bash -oO pipefail extglob -c 'rm x'`, `bash +oc errexit 'rm x'`, `bash -c -o errexit 'rm x'`, `bash --rcfile /dev/null -c 'rm x'`.
+- **Fail-closed rows, r1 blocking 1:** `bash --rcf /dev/null -c 'rm x'`, `bash --foo -c 'ls'` and `sh -q -c 'rm x'`.
+- **Must-reject, r1 blocking 2** (each gives `cannot be checked: option …`): `env --un HOME rm x`, `env --ch / rm x`, `env --sp 'rm x'`, `nice --adj 5 rm x`, `timeout --sig KILL 5 rm x`, `stdbuf --out L rm x`, `sudo --us root rm x`, `sudo --gr root rm x`, `chroot --sk / rm x`, `timeout --pres 5 rm x`, `env --bl INT rm x`, `sudo -X rm x`, `env -X rm x`.
+- **Must-reject, still naming `rm`:** `nice -5 rm x`, `nice --5 rm x`, `nice -+5 rm x`, `sudo FOO=1 rm x`, `sudo -u root FOO=1 rm x`, `env --block-signal=INT rm x`, `sudo --preserve-env=HOME rm x`, `sudo -h host rm x`.
+- **Must-pass, shells and wrappers:**
+  - shells: `bash -co pipefail 'ls'`, `sh -c - 'ls'`, `bash --norc -c 'ls'`, `bash -O extglob -c 'ls'`;
+  - env: `env --unset HOME ls`, `env --block-signal ls`, `env - ls`;
+  - nice, timeout, chroot: `nice -5 ls`, `timeout --signal KILL 5 ls`, `chroot --skip-chdir / ls`;
+  - sudo, command, others: `sudo --user=root ls`, `sudo FOO=1 ls`, `command -pv rm`, `ionice -c 3 ls`, `setsid -f ls`, `doas -u root ls`.
+- **Existing rows that need a decision:** none failed. `B-sed-skip-value` and the sed attached-value rows (review finding 3) are unchanged by this round.
 - **Plants:**
   - empty `SPECS`;
-  - `_option` returning 1 for unknown options (`nsenter --targ`);
+  - `read_option` returning 1 for unknown options (`nsenter --targ`, `env --un`);
+  - `_defines_code` returning False (the ruling rows), and dropping the `@P`/`@E` check in `shlex_posix.scan`;
+  - `_shell` taking no word for `o`/`O` (`bash -co pipefail 'rm x'`), and not consuming a lone `-` (`sh -c - 'rm x'`);
+  - an empty `WRAPPERS` table, or the env/sudo assignment skip dropped (`sudo FOO=1 rm x`);
   - optional letters treated as value-taking (`nsenter -m/proc/1/ns/mnt rm x`);
   - `bash=False` everywhere (brace rows);
   - bash mode on for dash (`sh -c '{rm,x}'` must still pass);
