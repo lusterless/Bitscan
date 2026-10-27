@@ -57,6 +57,8 @@ _OPEN = (
     | getattr(os, "O_NONBLOCK", 0)  # a FIFO swapped in never blocks the open
     | getattr(os, "O_CLOEXEC", 0)
 )
+_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+type FileState = Literal["present", "absent", "unreadable"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,13 +111,60 @@ def unreadable(bits_dir: Path) -> tuple[str, ...]:
     such a folder and none of its policies is deleted; a real empty folder is
     readable (user, decisions 2026-10-27 "Folder guard"). An unreadable bits
     folder makes `uploaded/`, which sits in it, unreadable too ("details")."""
-    if not _real_dir(bits_dir):
-        return (BITS_ROOT, UPLOADED)
-    return () if _real_dir(bits_dir / UPLOADED.rstrip("/")) else (UPLOADED,)
+    found: list[str] = []
+    for label in (BITS_ROOT, UPLOADED):
+        try:
+            os.close(_open_folder(bits_dir, label))
+        except OSError:
+            found.append(label)
+    return tuple(found)
+
+
+def _mark(blind: list[str], bits_dir: Path, label: str) -> None:
+    """Add `label` (and, if the bits folder itself went, both) to `blind`,
+    with one constant log line per folder."""
+    for name in (label, *unreadable(bits_dir)):
+        if name not in blind:
+            log.warning("folder unreadable, not reconciled: %s", name)
+            blind.append(name)
 
 
 def _folder(rel: str) -> str:
     return UPLOADED if rel.startswith(UPLOADED) else BITS_ROOT
+
+
+def _open_folder(bits_dir: Path, label: str) -> int:
+    """A directory fd of the folder `label`, never through a link: the bits
+    folder with O_NOFOLLOW, then `uploaded` relative to it. Raises OSError if
+    either is missing, a symlink or not a directory (an unreadable folder)."""
+    root = os.open(bits_dir, _DIR)
+    if label == BITS_ROOT:
+        return root
+    try:
+        return os.open(UPLOADED.rstrip("/"), _DIR, dir_fd=root)
+    finally:
+        os.close(root)
+
+
+def _state(bits_dir: Path, rel: str) -> FileState:
+    """Three-way absence test (review TASK-156 finding 1): "absent" is only
+    ever decided inside a real directory opened without following links."""
+    folder, _, name = rel.rpartition("/")
+    if folder not in ("", UPLOADED.rstrip("/")) or not _wanted(name):
+        return "absent"
+    try:
+        dir_fd = _open_folder(bits_dir, _folder(rel))
+    except OSError:
+        return "unreadable"
+    try:
+        mode = os.stat(name, dir_fd=dir_fd, follow_symlinks=False).st_mode
+    except FileNotFoundError:
+        return "absent"
+    except OSError:
+        return "unreadable"
+    finally:
+        os.close(dir_fd)
+    return "present" if stat.S_ISREG(mode) else "absent"
 
 
 def discover(bits_dir: Path) -> list[str]:
@@ -129,26 +178,26 @@ def discover(bits_dir: Path) -> list[str]:
 
 def present(bits_dir: Path, rel: str) -> bool:
     """Whether `rel` is a file `discover` would find (the `file_exists` of
-    `decide`, and the test for a disappeared file)."""
-    folder, _, name = rel.rpartition("/")
-    if folder not in ("", UPLOADED.rstrip("/")) or not _wanted(name):
-        return False
-    if folder and not _real_dir(bits_dir / folder):
-        return False
-    try:
-        return stat.S_ISREG(os.lstat(bits_dir / rel).st_mode)
-    except OSError:
-        return False
+    `decide`, and the stray check); False too if its folder is unreadable."""
+    return _state(bits_dir, rel) == "present"
 
 
 def read_input(bits_dir: Path, rel: str) -> FileInput | None:
     """Read `rel` once into a `FileInput`: a server target for a file in the
     bits folder, an upload target for `uploaded/`. Over 5 MiB, `data` is None
     and the hash covers the whole file (#99 (b)). None if it is gone or is
-    not a regular file."""
+    not a regular file, or if its folder is unreadable: the file is opened
+    relative to a no-follow handle of its folder, so a folder swapped for a
+    link after `discover` is never read through."""
     digest = hashlib.sha256()
     try:
-        with os.fdopen(os.open(bits_dir / rel, _OPEN), "rb") as fh:
+        dir_fd = _open_folder(bits_dir, _folder(rel))
+    except OSError:
+        log.warning("folder file not read: its folder is unreadable")
+        return None
+    try:
+        fd = os.open(rel.rpartition("/")[2], _OPEN, dir_fd=dir_fd)
+        with os.fdopen(fd, "rb") as fh:
             if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
                 return None
             head = fh.read(MAX_BIT_BYTES + 1)
@@ -159,6 +208,8 @@ def read_input(bits_dir: Path, rel: str) -> FileInput | None:
     except OSError as exc:
         log.warning("folder file not read: %s", type(exc).__name__)
         return None
+    finally:
+        os.close(dir_fd)
     sha = digest.hexdigest()
     if rel.startswith(UPLOADED):  # never a server target (r3)
         return FileInput(data, sha, rel, Target("upload", None, sha))
@@ -220,9 +271,9 @@ def remove_leftover(bits_dir: Path, rel: str) -> Difference:
 def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> ReconcileResult:
     """TS §4.1 L528 in `auto` mode, under the caller's catalog lock: import new
     or changed files, then delete the policies whose files disappeared."""
-    blind = unreadable(bits_dir)
-    for label in blind:
-        log.warning("folder unreadable, not reconciled: %s", label)  # a constant
+    blind: list[str] = []
+    for label in unreadable(bits_dir):
+        _mark(blind, bits_dir, label)
     files = discover(bits_dir)  # finds nothing in an unreadable folder
     with session.transaction() as tx:
         live = {r.source_file for r in integrity_rows(tx.conn)}
@@ -253,6 +304,8 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
                 continue
         file = read_input(bits_dir, rel)
         if file is None:
+            if _folder(rel) in unreadable(bits_dir):  # swapped after discover
+                _mark(blind, bits_dir, _folder(rel))
             continue
         prepared = prepare(file.data)  # parsed once, passed to import_one
         if rel.startswith(UPLOADED):
@@ -273,14 +326,14 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
             prepared=prepared,
         )
         outcomes.append(outcome)
-    deleted = delete_removed(session, clock, bits_dir)
+    deleted = _delete_removed(session, clock, bits_dir, blind)
     return ReconcileResult(
         tuple(outcomes),
         deleted,
         tuple(leftovers),
         tuple(strays),
         tuple(edited),
-        blind,
+        tuple(f for f in (BITS_ROOT, UPLOADED) if f in blind),
     )
 
 
@@ -291,12 +344,23 @@ def delete_removed(
     longer present, one transaction each. Runs after the imports, so a file
     renamed in the server folder moves its policy instead (REQ-159 (2)).
     A policy whose folder is `unreadable` is never deleted ("Folder guard")."""
-    blind = unreadable(bits_dir)
+    return _delete_removed(session, clock, bits_dir, [])
+
+
+def _delete_removed(
+    session: CatalogSession, clock: Clock, bits_dir: Path, blind: list[str]
+) -> tuple[DeleteResult, ...]:
+    """`delete_removed`, adding to `blind` each folder found unreadable. The
+    three-way test runs again right before each delete (review finding 1),
+    so a folder that goes away mid-loop deletes none of its policies."""
     with session.transaction() as tx:
         rows = integrity_rows(tx.conn)
     results: list[DeleteResult] = []
     for row in rows:
-        if _folder(row.source_file) in blind or present(bits_dir, row.source_file):
+        state = _state(bits_dir, row.source_file)
+        if state == "unreadable":
+            _mark(blind, bits_dir, _folder(row.source_file))
+        if state != "absent":
             continue
         with session.transaction() as tx:
             result = delete_in_tx(

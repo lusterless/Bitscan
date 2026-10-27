@@ -168,3 +168,59 @@ Ruling: `work/decisions.md`, last row, "Folder guard" (user, 2026-10-27). Also t
 
 - TASK-157 (rebuild): call `unreadable(bits_dir)` before reading the folders. Read no files from an unreadable folder, and do not retire or delete its policies.
 - TASK-158: raise `catalog_integrity_failed` listing each label in `ReconcileResult.unreadable_folders`, together with `strays`, `renamed` and `leftovers`.
+
+## Revision 3 (impl-manager-156b): three-way absence test and no-follow reads
+
+Source: review `work/reviews/TASK-156.md`, finding 1 (should-fix) and nit 2, as routed by the last row of `work/decisions.md`. Only `manager/bitscan_manager/services/importer/folders.py` changed. It is now 375 lines in total, of which 270 are code (226 in r2); the r3 helpers and their split calls account for about 44.
+
+### What changed
+
+- `_DIR = O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC` (folders.py:60). This is the same flag set as `uploads._DIR_FLAGS`. I did not reuse `uploads.open_uploaded_dir`, because it applies no-follow to `uploaded` only, while the bits folder needs it too.
+- `_open_folder(bits_dir, label)` (:136) opens the bits folder with `_DIR`. For `UPLOADED` it then opens `uploaded` relative to that fd, also with `_DIR`. Neither component is ever followed through a link. If either is missing, a symlink or not a directory, it raises `OSError`.
+- `unreadable()` (:108) is now built on `_open_folder`. The results are unchanged: a bad bits folder gives both labels.
+- `_state(bits_dir, rel) -> "present" | "absent" | "unreadable"` (:149) is the three-way check:
+  - "unreadable" if the folder cannot be opened, or if the `stat` has any error other than `FileNotFoundError`.
+  - "absent" only if the folder is a real directory, opened without following a link, and the name is missing or is not a regular file. An unwanted or unstorable path is "absent", as before.
+  - `present()` (:179) is now `_state(...) == "present"`. It no longer resolves a symlinked bits folder for server rows (tester finding 4).
+- `delete_removed` (:340) keeps its signature and return type. It calls `_delete_removed(..., blind)` (:350), which runs `_state` again for each row just before that row's `delete_in_tx` (:360):
+  - "unreadable": the row is skipped and its folder is marked.
+  - "present": the row is skipped.
+  - "absent": the row is deleted.
+  - The start-of-call `blind` snapshot from r2 is gone, so a folder that disappears or is swapped for a link during the loop deletes none of its remaining policies.
+- `_mark(blind, bits_dir, label)` (:123) adds a folder to `blind` and logs the constant line `folder unreadable, not reconciled: <label>` once per folder. If the bits folder itself has gone, it adds both labels.
+- `reconcile` (:271) collects `blind` from three places: its start (as in r2), `read_input` failures, and the delete loop. `ReconcileResult.unreadable_folders` keeps the fixed order `("./", "uploaded/")`.
+- `read_input` (:185) opens the file by name relative to `_open_folder`'s fd, with `_OPEN`, and closes the folder fd in `finally`. If the folder cannot be opened, it returns None with the fixed log line `folder file not read: its folder is unreadable`. `reconcile` then checks `unreadable()` and marks that folder (:307), so a folder swapped between `discover` and the read is reported. Nothing in it is read through the link, and no policy in it is deleted.
+- Not changed: `_names` (scandir by path after `_real_dir`), `discover`, the classification, `renamed`, the order, and everything else.
+
+### Gates (repo root)
+
+- `ruff check manager && ruff format --check manager`: pass (291 files).
+- `mypy --strict --config-file manager/pyproject.toml manager`: no issues (291 files).
+- PostgreSQL suites, run from `manager/`: `test_folders_pg.py test_import_pipeline_pg.py test_import_store_pg.py test_policy_delete_pg.py test_catalog_lock_pg.py test_uploads.py test_uploads_pg.py` gives **543 passed**, with no failures.
+- Throwaway smoke test, a copy of the test file that has since been deleted. All 6 passed:
+  - **Folder broken after the first deletion.** Setup: 3 server and 3 uploaded policies, one file removed in the folder under test. The first `delete_in_tx` is wrapped so that after it commits, the folder is removed or swapped for a symlink to a copy. Cases: `uploaded/` missing, `uploaded/` symlink, bits folder missing, bits folder symlink. In every case exactly 1 policy was deleted, the other 2 in that folder stayed live, and `unreadable_folders` was `("uploaded/",)` or `("./","uploaded/")`.
+  - **Folder swapped for a symlink after `discover`** (wrapped `discover`). With `uploaded/` swapped, the server files were imported (`a` skipped, `b` success), there was no row for the changed upload, `unreadable_folders == ("uploaded/",)` and nothing was deleted. With the bits folder swapped, there were no rows, `("./","uploaded/")`, and nothing was deleted.
+
+### Cases for the tester
+
+1. Mid-loop, `uploaded/`: there are two or more live uploaded policies and one of their files is removed. After the first deletion commits (for example by wrapping `folders.delete_in_tx`), `uploaded/` is removed, or swapped for a symlink to a copy holding the same files. Expect:
+   - one deletion only;
+   - the remaining uploaded policies have `deleted_at` NULL and no `policy.delete` entry;
+   - `unreadable_folders == ("uploaded/",)`;
+   - one log line for the folder;
+   - server policies are unaffected.
+2. The same as case 1 for the bits folder (missing, or a symlink to a copy). The remaining server and uploaded policies all stay live, and `unreadable_folders == ("./", "uploaded/")`.
+3. A folder swapped for a symlink, or removed, between `discover` and `read_input`, for each folder. Expect:
+   - no `bit_import` row for any of its files;
+   - nothing is read through the link (spy on `os.open`, or check that the link target was never opened);
+   - the folder is listed in `unreadable_folders`;
+   - no deletion in it;
+   - the other folder is still reconciled when only `uploaded/` was swapped.
+4. Tester finding 4: when the bits folder is a symlink to a real folder, `present(bits, "a.bit")` is False and `read_input(bits, "a.bit")` is None. `delete_removed` deletes nothing.
+5. `delete_removed` called directly: same signature and return type. With `uploaded/` missing it returns `()` for the uploaded policies. With a real folder where a file was removed, it deletes that policy once.
+6. Regression: the r2 table (missing, symlink or file, for each folder; a real empty folder; both folders unreadable) stays the same.
+
+### For TASK-157
+
+- Use `present` / `_state` semantics for every deletion, and run the check for each row just before its delete: never decide "absent" from a snapshot.
+- Read files through `read_input`, which opens them relative to the folder fd.
