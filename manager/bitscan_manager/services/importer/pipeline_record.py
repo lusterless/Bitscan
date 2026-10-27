@@ -6,6 +6,7 @@ by plan §11). Every writer runs in the caller's transaction or savepoint.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
@@ -38,6 +39,15 @@ class FileInput:
     sha256: str  # of data, or of the streamed oversize file
     file_name: str  # the relative path, or the #99 (d) client name
     target: Target
+
+    def __post_init__(self) -> None:
+        # Fail closed: the recorded hash, the stored hash and the bytes agree.
+        if self.sha256 != self.target.file_sha256:
+            raise ValueError("FileInput.sha256 differs from target.file_sha256")
+        if self.data is not None and hashlib.sha256(self.data).hexdigest() != (
+            self.sha256
+        ):
+            raise ValueError("FileInput.sha256 is not the hash of data")
 
 
 @dataclass(frozen=True)
