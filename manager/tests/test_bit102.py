@@ -79,8 +79,8 @@ SAMPLE_EXECUTES = sample_executes()
 
 def test_corpora_sizes() -> None:
     # Guards on the oracle (tester-m7's corpora): CHK-M7-004 sizes.
-    assert len(REJECT) >= 149
-    assert len(PASS) >= 96
+    assert len(REJECT) >= 350  # 149 at r1; +201 for TASK-145 r1 / TASK-146 r2
+    assert len(PASS) >= 177  # 96 at r1; +81
     assert len(SAMPLE_EXECUTES) >= 30
 
 
@@ -248,6 +248,38 @@ def test_wrapper_long_option_values_do_not_hide_the_command(cmd: str) -> None:
 )
 def test_sed_in_place_abbreviations(cmd: str, token: str) -> None:
     assert_rejected(cmd, token)
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        # Review finding 3 (TASK-146 r1): a value attached to -e, -f or -l
+        # (or given with =) does not use up the next word, so the -i after
+        # it is still the in-place flag (GNU sed 4.9 edits f in each case).
+        "sed -es/a/b/ -i f",
+        "sed -l5 -i f",
+        "sed -nfx -i f",
+        "sed -l5 -i p f",
+        "sed -fx -i f",
+        "sed --line-length=5 -i p f",
+        "sed --expression=p -i f",
+    ],
+)
+def test_sed_attached_value_does_not_take_the_next_word(cmd: str) -> None:
+    assert_rejected(cmd, '"-i"')
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        # Without an attached value, -e/-f/-l take the next word (the
+        # opposite pin): these are not in-place edits.
+        "sed -e -i f",
+        "sed -l 5 p f",
+    ],
+)
+def test_sed_separate_value_is_taken(cmd: str) -> None:
+    assert_passes(cmd)
 
 
 # CHK-M7-118: redirections (#108 (i)) ----------------------------------------
@@ -471,3 +503,86 @@ def test_check_execute_never_raises(src: str) -> None:
     assert time.thread_time() - start < 1.0
     for f in found:
         assert f.code is Code.BIT102 and f.rejects
+
+
+# TASK-146 r2: brace expansion bounds in bash mode (impl report r2 (3)) ------
+
+
+def test_brace_expansion_word_limit_256() -> None:
+    # 2**8 = 256 words pass (none is a listed command); echo + 256 = 257
+    # words for one command are refused as "cannot be checked".
+    assert_passes("bash -c '" + "{a,b}" * 8 + "'")
+    (f,) = assert_rejected("bash -c 'echo " + "{a,b}" * 8 + "'")
+    assert "too many words" in f.message
+
+
+def test_brace_nesting_limit_64() -> None:
+    assert_passes("bash -c 'echo " + "{a," * 64 + "b" + "}" * 64 + "'")
+    (f,) = assert_rejected("bash -c 'echo " + "{a," * 65 + "b" + "}" * 65 + "'")
+    assert "too many braces" in f.message
+
+
+def test_brace_expansion_only_in_bash_mode() -> None:
+    # dash has no brace expansion: the Execute and sh/dash -c stay literal.
+    for cmd in ("{rm,x}", "sh -c '{rm,x}'", "dash -c '{rm,x}'", "echo {rm,-rf,/x}"):
+        assert_passes(cmd)
+    for cmd in ("bash -c '{rm,x}'", "su -c '{rm,x}'", "sh -c \"bash -c '{rm,x}'\""):
+        assert_rejected(cmd, '"rm"')
+
+
+# TASK-146 r2: the shells' own option parsing (r1 blocking 1) ----------------
+
+
+@pytest.mark.parametrize(
+    ("cmd", "script_word"),
+    [
+        # The script the shell really runs is checked, not the o/O value.
+        ("bash -co pipefail 'rm x'", "rm"),
+        ("bash -oc pipefail 'rm x'", "rm"),
+        ("bash -Oc extglob 'rm x'", "rm"),
+        ("sh -co errexit 'rm x'", "rm"),
+        ("sh -c - 'rm x'", "rm"),
+        ("bash -c - 'rm x'", "rm"),
+        ("bash -oO pipefail extglob -c 'rm x'", "rm"),
+    ],
+)
+def test_shell_option_values_are_not_the_script(cmd: str, script_word: str) -> None:
+    found = assert_rejected(cmd, f'"{script_word}"')
+    assert all("without -c" not in f.message for f in found)
+
+
+@pytest.mark.parametrize(
+    "cmd", ["bash -co pipefail 'ls'", "sh -c - 'ls'", "bash -O extglob -c 'ls'"]
+)
+def test_shell_option_values_with_read_only_script_pass(cmd: str) -> None:
+    assert_passes(cmd)
+
+
+# TASK-146 r2: rulings (trap, alias, hash, let, @P/@E) -----------------------
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    ["trap 'echo done' EXIT", "trap '' INT", 'trap "$a" EXIT', "alias r=rm",
+     "hash -p /bin/rm ls", "let x=1", "command trap 'ls' INT", "builtin alias r=rm"],
+)  # fmt: skip
+def test_code_defining_builtins_use_the_eval_message(cmd: str) -> None:
+    (f,) = assert_rejected(cmd)
+    assert "runs other code with" in f.message
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    ["trap", "trap -p", "trap -l", "trap -p EXIT", "trap - EXIT", "trap -- - INT TERM",
+     "trap INT", "trap -p 'rm x' EXIT", "alias", "alias ll", "alias -p", "hash",
+     "hash -r", "hash -t ls", "hash ls", "hash -- -p"],
+)  # fmt: skip
+def test_listing_and_reset_forms_pass(cmd: str) -> None:
+    assert_passes(cmd)
+
+
+def test_at_p_message_is_the_fail_closed_one() -> None:
+    (f,) = assert_rejected('echo "${x@P}"')
+    assert "cannot be checked" in f.message and "runs text as code" in f.message
+    assert_passes("echo '${x@P}'")
+    assert_passes("echo ${x@Q} ${x@A} ${x@K}")

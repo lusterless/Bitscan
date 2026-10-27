@@ -24,6 +24,7 @@ from bitscan_manager.services.importer.bit102_wrap import (
     WRAPPERS,
     look_through,
     read_option,
+    text_word,
 )
 from bitscan_manager.services.importer.model import Code, Finding, quote
 from bitscan_manager.services.importer.shlex_posix import (
@@ -116,20 +117,23 @@ def _digits(text: str) -> bool:
     return text.isascii() and text.isdigit()
 
 
-def _resolve(
-    words: tuple[Word, ...],
-) -> tuple[int, list[str], list[Word], str | None] | None:
+type _Resolved = tuple[int, list[str], list[Word], list[Word], str | None]
+
+
+def _resolve(words: tuple[Word, ...]) -> _Resolved | None:
     """#108 (a), (d), (e): the index of the command word after any wrappers,
     the wrappers' text, `env -S` strings (command lines themselves) and a
     finding for an option not in the wrapper's table (fail closed). None
     when nothing runs (`command -v x`); an index past the end when only
-    wrappers are given (a bare `env`, or `env -S '…'`)."""
-    i, via, split = 0, list[str](), list[Word]()
+    wrappers are given (a bare `env`, or `env -S '…'`). `sudo -s`/`-i` and
+    `doas -s` give their command as a shell script (lead ruling 2026-10-27,
+    #108 (f)): the fourth item."""
+    i, via, split, shell = 0, list[str](), list[Word](), list[Word]()
     while i < len(words):
         value = words[i].literal()
         name = None if value is None else value.rsplit("/", 1)[-1]
         if name is None or name not in WRAPPERS:
-            return i, via, split, None
+            return i, via, split, shell, None
         spec, seen = WRAPPERS[name], set[str]()
         via.append(words[i].raw)
         i += 1
@@ -155,12 +159,26 @@ def _resolve(
             if taken is None:
                 shown = quote(words[i].raw)
                 problem = f"Execute cannot be checked: option {shown} of {quote(name)}."
-                return len(words), via, split, problem
+                return len(words), via, split, shell, problem
             i += taken
         if name == "command" and seen & {"-v", "-V"}:
             return None
         i += spec.positional
-    return len(words), via, split, None  # only wrappers: no command word, but env -S
+        if name in ("sudo", "doas") and seen & {"-s", "--shell", "-i", "--login"}:
+            return len(words), via, split, shell, _sudo_shell(name, words[i:], shell)
+    return len(words), via, split, shell, None  # only wrappers, or env -S
+
+
+def _sudo_shell(name: str, rest: tuple[Word, ...], shell: list[Word]) -> str | None:
+    """sudo -s/-i and doas -s: no command starts a shell reading stdin; a
+    command is run by the target shell, so its words are a script."""
+    texts = [w.literal() for w in rest]
+    if not rest:
+        return f"Execute runs a shell without -c: {quote(name)}."
+    if any(t is None for t in texts):
+        return f"Execute cannot be checked: {quote(rest[0].raw)} after {quote(name)}."
+    shell.append(text_word(" ".join(str(t) for t in texts), rest[0]))
+    return None
 
 
 def _sets_var(word: Word) -> bool:
@@ -185,10 +203,14 @@ def _command(words: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:
         resolved = _resolve(words)
         if resolved is None:
             return
-        index, wrappers, split, problem = resolved
+        index, wrappers, split, shell, problem = resolved
         via += wrappers
         for text in split:  # env -S splits a command line; it expands nothing
             yield from _shell_script(text, "env -S", depth, bash, subst=True)
+        for text in shell:  # the target user's shell: may be bash
+            yield from _shell_script(
+                text, f"{wrappers[-1]} -s", depth, True, subst=True
+            )
         if problem is not None:
             yield problem
         if index >= len(words):

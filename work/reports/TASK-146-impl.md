@@ -116,11 +116,11 @@ impl-manager-m7 built (1) and (3); impl-manager-m7d finished it: the trap ruling
 | --- | --- | --- |
 | `bit102_wrap.py` (new) | 230 | the option tables: the #108 (d) wrappers (`WRAPPERS` L44, new in this round) and the r2 ones (`SPECS`); `look_through()`; the getopt reader `read_option()` L170, now shared by both tables; operand rules `_operands()`; `text_word()` |
 | `bit102_brace.py` (new) | 130 | `expand_words()` L30, `_expand()` L56, sequences `_sequence()` L92 |
-| `bit102.py` | 365 (was 337 at r1) | `bash` flag threaded through `_script` / `_nested` / `_shell_script`; `_resolve()` L119 reads the #108 (d) wrappers through `read_option()`; `_command()` L162 brace-expands in bash mode and loops through the r2 wrappers; `_defines_code()` L215 (trap, alias, hash, let); `_shell()` L297 with `SHELL_LONG`/`SHELL_LETTERS` L289 |
+| `bit102.py` | 401 (was 337 at r1) | `bash` flag threaded through `_script` / `_nested` / `_shell_script`; `_resolve()` L123 reads the #108 (d) wrappers through `read_option()`; `_command()` L194 brace-expands in bash mode and loops through the r2 wrappers; `_defines_code()` L251 (trap, alias, hash, let); `_shell()` L333 with `SHELL_LONG`/`SHELL_LETTERS` L325 |
 | `shlex_grammar.py` | 267 (was 220 at r1) | `time` handling moved from `reserved()` into `Grammar.time()` L200. The rest of its diff is TASK-145 r1 |
 | `shlex_posix.py` | 361 | `${…@P}`/`${…@E}` refused in `scan()` L334. The rest of its diff is TASK-145 r1 |
 
-**Size: over what the lead accepted.** Against the r1 base `150bcd3`, TASK-146 r2 is about 640 changed lines: about 525 added and 118 removed, counting blank lines. The lead accepted about 390.
+**Size (final, with (6)).** Against the r1 base `150bcd3`, TASK-146 r2 is about 680 changed lines: about 565 added and 120 removed, counting blank lines. The lead accepted the ~640-line version (decisions.md, 2026-10-27); (6) adds about 40 more.
 - **Where the rest comes from.** This round added about 240 changed lines (about 140 added, 100 removed) on top of the snapshot:
   - the #108 (d) wrapper tables, moved into `bit102_wrap.py` and completed with every flag (about 45 lines), plus `_resolve()` reworked onto the shared reader, replacing the old `_option()`;
   - `_defines_code()` (30 lines, replacing the 14-line `_trap()`);
@@ -155,7 +155,7 @@ In each of these cases nothing runs, so nothing is checked: `flock 9`, `taskset 
 - A `chrt` priority that is not a literal decimal: `chrt -o rm x` and `chrt -f "$p" ls` give `Execute cannot be checked: "rm" after "chrt".` util-linux 2.41 lets SCHED_OTHER/BATCH/IDLE leave out the priority, and then that word is the command.
 - `su`/`runuser` that would start the user's shell without `-c` give `Execute runs a shell without -c: "su".`, by analogy with #108 (f). This covers `su root`, `su - root`, `… | su root`, `su root /tmp/script`, `su root -- -c 'rm x'`, `runuser nobody`, and `runuser -u nobody` with no command.
 - Words after the user when there is a `-c` (`su -c id root x`) are passed to the shell as its arguments. They are refused as "cannot be checked".
-- **Not a fail-closed case:** `nsenter -S`/`-G` (and `--setuid`/`--setgid`) take a value in 2.37 but only an attached one in 2.39. The next word is taken as the value only when it is a decimal uid or gid. Otherwise, under the 2.39 reading, it is the command: `nsenter -S rm x` → `rm`. Under the 2.37 reading that same form fails at run time, so this is exact rather than fail-closed.
+- **`nsenter -S`/`-G`** (and `--setuid`/`--setgid`) with a separate word take it only when it is a decimal uid or gid; any other word is "cannot be checked" (corrected in (6): the earlier "only attached in 2.39" premise was wrong).
 
 `su`/`runuser`/`flock -c` scripts are lexed with `$( )` allowed (like `env -S`), because SR §4.2's substitution ban names only `sh`/`bash`/`dash -c`. Their substitutions are still walked and checked.
 
@@ -180,7 +180,7 @@ In each of these cases nothing runs, so nothing is checked: `flock 9`, `taskset 
 
 ### (2) trap, alias, hash, let, `${…@P}`/`${…@E}`: refused like eval (user rulings 2026-10-27)
 
-`_defines_code()` (`bit102.py` L215) gives `Execute runs other code with "<name>".`, the eval message. It works wherever the command word resolves, through wrappers (`command trap …`) and in `-c` scripts. A word in option or operand position that is not literal counts as setting code, because it could be anything (fail closed).
+`_defines_code()` (`bit102.py` L251) gives `Execute runs other code with "<name>".`, the eval message. It works wherever the command word resolves, through wrappers (`command trap …`) and in `-c` scripts. A word in option or operand position that is not literal counts as setting code, because it could be anything (fail closed).
 - **trap.** It is refused when it sets an action: two or more operands after its options, the first of which is not `-`.
   - These pass: `trap`, `trap -p [SIG]`, `trap -l`, `trap -P …` (any `l`, `p` or `P` letter lists), `trap - SIG…` and `trap -- - SIG…`.
   - `trap SIG` (one operand) also passes. Checked here: dash says "bad trap" or resets, and bash prints usage or resets. Neither sets an action, so it is no exception to the ruling.
@@ -198,7 +198,7 @@ In each of these cases nothing runs, so nothing is checked: `flock 9`, `taskset 
   The finding is `Execute cannot be checked: ${…@P} or ${…@E} runs text as code.`. Single-quoted text and quoted here-document bodies are data and pass (`echo '${x@P}'`). `${x@Q}` and other transformations are not refused (not in the ruling).
 - **Checked here.** dash runs `alias r=echo` and then `r RAN`. bash runs `hash -p /bin/echo ls; ls RAN`, `let 'a[$(echo RAN)]=1'`, `: ${x@P}` and `${x@P}` in an unquoted here-document, each with `x='$(echo RAN)'` where needed.
 
-### (4) r1 blocking 1: the shell's own option parsing (`_shell`, `bit102.py` L297)
+### (4) r1 blocking 1: the shell's own option parsing (`_shell`, `bit102.py` L333)
 - **How options are read now.** In a short cluster (`-…` or `+…`), each `o` or `O` letter takes one following word, in order. So `-co pipefail`, `-oc pipefail`, `-Oc extglob`, `+oc errexit` and `-oO pipefail extglob` all work, and `c` is noted wherever it is in the cluster. A lone `-` or `--` ends the options and is consumed.
 - **Long options.** `--rcfile` and `--init-file` take a word. The bash long options in `SHELL_LONG` are flags.
 - **Fail closed.** Any other long option is refused with `Execute cannot be checked: option "…" of "bash".`. That includes abbreviations (`--rcf`, which bash itself rejects) and every long option of dash, which has none. A letter outside `SHELL_LETTERS`, the union of the bash and dash invocation and `set` letters, is refused the same way (`sh -q`).
@@ -219,15 +219,35 @@ In each of these cases nothing runs, so nothing is checked: `flock 9`, `taskset 
 - **Checked here.** `env --un HOME`, `--ch /` and `--sp '…'`, `nice --adj 5`, `timeout --sig KILL 5`, `stdbuf --out L`, `sudo --us root`, `sudo --gr root`, `chroot --sk /` and `timeout --pres 5` all run the command under the real binaries. All of them are now refused.
 - **stdbuf.** `stdbuf -io L rm x` still passes: getopt reads `-io` as `-i o`, so stdbuf runs `L`. The dispute is closed (the builder's reading, `work/status.md`).
 
+### (6) Three more fail-open forms (tester-m7d; decisions.md 2026-10-27, last TASK-146 row)
+
+All three were checked in this container: coreutils 9.4, util-linux 2.39.3, sudo 1.9.15, dash and bash, with `echo` in place of `rm`.
+1. **env `-` and `NAME=value` after `--`.** coreutils env.c reads them after getopt, so `--` makes no difference: `env -- FOO=1 echo RAN` and `env -- - echo RAN` both run.
+   - While fixing this I found that env and sudo take *any* operand holding `=` as an assignment, not only `NAME=…`: `env a-b=1 echo RAN`, `env 1=2 echo RAN`, `sudo a-b=1 echo RAN` and `env "$x"=1 echo RAN` all run.
+   - So `_sets_var()` (`bit102.py` L184) now skips any env or sudo word with `=` in a literal part, unless the word starts with `-`, which makes it an option.
+   - After `--`, env also skips one `-` and the assignments (in `_resolve()`).
+   - sudo is not widened past `--`: `sudo -- FOO=1 echo RAN` gives "command not found".
+2. **nsenter `-S`/`-G`/`--setuid`/`--setgid`.** In 2.39.3 these take the next word as a required uid or gid. `+0` and `' 0'` both parse as uid 0, and `-S echo` gives "failed to parse uid".
+   - `read_option` (`bit102_wrap.py` L192) now takes the next word only when it is decimal digits. Any other word is "cannot be checked" (`option "-S" of "nsenter"`). An attached value (`-S0`, `--setuid=0`) is unchanged.
+3. **`sudo -s`/`-i`/`--shell`/`--login` and `doas -s`** (lead ruling, #108 (f)). Handled by `_sudo_shell()` (L172):
+   - With no command, they start a shell that reads stdin. The finding is `Execute runs a shell without -c: "sudo".`.
+   - With a command, the literal words are joined with spaces and checked as a bash-mode script (`"sudo -s"`; `$( )` allowed, as for `su -c`).
+   - A word that is not literal gives "cannot be checked".
+   - This is stricter than sudo itself, which backslash-escapes the words: `sudo -s 'echo RAN-2; echo RAN-3'` runs one command named `echo RAN-2; echo RAN-3`. Erring toward rejecting is what the ruling asks.
+   - Checked here: `echo 'echo RAN' | sudo -s` and `| sudo -i` run their input; `sudo -s echo RAN`, `sudo -i …`, `--shell` and `--login` run the command.
+   - doas is not installed in this container, so `doas -s` follows the ruling unprobed.
+
 ### Gaps and residuals
 
 - **Accepted residual (lead, review round 1 routing, 2026-10-27; #108 (k) stands).** `time -o FILE` and `flock FILE` can create a file through a program option, not a redirection. BIT102 checks redirections only. The M10 sandbox (read-only file system) is the control. The residual is recorded for the M7 PR.
+- **Accepted residual (lead, 2026-10-27):** `sudo -e FILE` (sudoedit) writes FILE through the editor; the M10 sandbox is the control.
 - **Not refused (not in the rulings).** `${x@Q}`/`@A`/`@K`, `declare`/`printf -v`/`[[ -v a[$(…)] ]]` arithmetic-subscript forms and `(( a[$(…)] ))` stay unrefused. For main, if wanted.
 
 ### Gates and runs (from the repo root, venv `manager/.venv`)
 
 - `ruff check manager`: clean. `ruff format --check manager`: 278 files formatted. `mypy --strict --config-file manager/pyproject.toml manager`: no issues in 278 files.
-- Final run, with TASK-145 r1 in the tree, from `manager/`: `pytest -q -p no:cacheprovider tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py tests/test_bit_parse.py tests/test_bit_validate.py` gave **2548 passed**. No existing test needed changing: the corpus has no trap, alias, hash or let row. The final probe is 85 must-reject and 59 must-pass rows, all as expected. A 30,000-input fuzz with the new tokens raised nothing (worst 0.7 ms).
+- Final run, with TASK-145 r1 in the tree, from `manager/`: `pytest -q -p no:cacheprovider tests/test_bit102.py tests/test_bit102_lexer.py tests/test_bit_fixtures.py tests/test_bit_fuzz.py tests/test_bit_parse.py tests/test_bit_validate.py` gave **2548 passed** (then **2877 passed** once tester-m7d's new rows, including the (6) rows, were in the tree). No existing test needed changing: the corpus has no trap, alias, hash or let row. No existing test failed after (6) either; tester-m7d's new rows live in its own tree. The final probe is 85 must-reject and 59 must-pass rows, plus 33 rows for (6), all as expected. A 30,000-input fuzz raised nothing (worst 0.7 ms).
+- **Probe caveat.** Outside `manager/`, the venv imports `bitscan_manager` from another worktree (`/root/m4a-g41.lP0csJ/manager`), so scratch probes need `PYTHONPATH=/home/user/Bitscan/manager`. Every probe above was re-run that way.
 - The snapshot's own run (before this round): `pytest … tests/test_bit_fuzz.py` gave **1583 passed**. That includes the must-pass corpus, the samples in `bits/samples/` and the lexer table (`time rm x` and `time -p rm x` still lex as `rm`).
 - Scratch probe, outside the tree: 88 must-reject inputs, all refused; 39 must-pass inputs, all with no finding. A random fuzz of 20,000 inputs built from wrapper, brace and quote tokens raised nothing.
 
@@ -258,6 +278,18 @@ In each of these cases nothing runs, so nothing is checked: `flock 9`, `taskset 
   - env: `env --unset HOME ls`, `env --block-signal ls`, `env - ls`;
   - nice, timeout, chroot: `nice -5 ls`, `timeout --signal KILL 5 ls`, `chroot --skip-chdir / ls`;
   - sudo, command, others: `sudo --user=root ls`, `sudo FOO=1 ls`, `command -pv rm`, `ionice -c 3 ls`, `setsid -f ls`, `doas -u root ls`.
+- **(6) must-reject:**
+  - env: `env -- FOO=1 rm x`, `env -- - rm x`, `env -i -- FOO=1 rm x`, `env -u HOME -- FOO=1 rm x`, `env a-b=1 rm x`, `env 1=2 rm x`, `env "$x"=1 rm x`, `env -- - FOO=1 a-b=2 rm x`;
+  - sudo assignment: `sudo a-b=1 rm x`;
+  - nsenter (cannot be checked): `nsenter -S +0 rm x`, `nsenter -S ' 0' rm x`, `nsenter --setuid +0 rm x`, `nsenter -G +0 rm x`, `nsenter -S rm x`, `nsenter --setuid rm x`;
+  - nsenter naming `rm`: `nsenter -S 0 -t 1 rm x`, `nsenter -S0 rm x`;
+  - shell without -c: `sudo -s`, `sudo -i`, `sudo --shell`, `sudo --login`, `sudo -u root -s`, `sudo -iu root`, `echo 'rm x' | sudo -s`, `doas -s`;
+  - command checked: `sudo -s rm x`, `sudo -i rm x`, `sudo -s 'ls; rm x'`, `sudo --login rm x`, `doas -s rm x`, `sudo -s FOO=1 rm x`, `sudo -s bash -c '{rm,x}'`;
+  - cannot be checked: `sudo -s "$c"`.
+- **(6) must-pass:**
+  - env and sudo: `env -- FOO=1 ls`, `env a-b=1 ls`, `env --unset=HOME ls`, `sudo FOO=1 ls`;
+  - nsenter: `nsenter -S 0 -t 1 cat /x`, `nsenter --setuid=0 -t 1 cat /x`, `nsenter -S0 cat /x`;
+  - sudo shells: `sudo -s ls /etc`, `sudo -i id`, `sudo -s cat /etc/x`, `sudo -s 'echo $(id)'`.
 - **Existing rows that need a decision:** none failed. `B-sed-skip-value` and the sed attached-value rows (review finding 3) are unchanged by this round.
 - **Plants:**
   - empty `SPECS`;
@@ -265,6 +297,7 @@ In each of these cases nothing runs, so nothing is checked: `flock 9`, `taskset 
   - `_defines_code` returning False (the ruling rows), and dropping the `@P`/`@E` check in `shlex_posix.scan`;
   - `_shell` taking no word for `o`/`O` (`bash -co pipefail 'rm x'`), and not consuming a lone `-` (`sh -c - 'rm x'`);
   - an empty `WRAPPERS` table, or the env/sudo assignment skip dropped (`sudo FOO=1 rm x`);
+  - `_sets_var` reverted to `is_assignment` (`env a-b=1 rm x`), the env skip after `--` removed (`env -- FOO=1 rm x`), the nsenter numeric rule back to `else 1` (`nsenter -S +0 rm x`), `_sudo_shell` returning None (`sudo -s`);
   - optional letters treated as value-taking (`nsenter -m/proc/1/ns/mnt rm x`);
   - `bash=False` everywhere (brace rows);
   - bash mode on for dash (`sh -c '{rm,x}'` must still pass);

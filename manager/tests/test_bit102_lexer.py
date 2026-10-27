@@ -558,3 +558,133 @@ def test_lexer_modules_import_nothing_that_executes(path: Path) -> None:
             assert node.func.id not in ("eval", "exec", "compile", "__import__", "open")
         elif isinstance(node, ast.Attribute):
             assert node.attr not in ("system", "popen", "execv", "execve", "spawn")
+
+
+# TASK-145 r1: here-documents pending across a newline in a substitution ----
+# (review finding 1). dash and bash read the body only after the outer line
+# ends and run the lines inside the substitution as commands (checked with
+# echo in place of rm), so the lexer must fail closed.
+
+_HD_BODY = NL + "rm -rf /x" + NL + "E" + NL
+HEREDOC_ACROSS = [
+    "cat <<'E' $(" + _HD_BODY + ")",
+    "cat <<E $(" + _HD_BODY + ")",
+    "cat <<'E' \"$(" + _HD_BODY + ")\"",
+    "cat <<'E'; echo $(" + _HD_BODY + ")",
+    "cat <<'E' ${x:-$(" + _HD_BODY + ")}",
+    "cat <<'E' $(($(" + _HD_BODY + ")))",
+    "cat <<'E' `" + _HD_BODY + "`",
+    "cat <<'E' <(" + _HD_BODY + ")",
+    "cat <<'E' >(" + _HD_BODY + ")",
+    "x=$(cat <<'E' $(" + _HD_BODY + ")" + NL + ")",
+    "cat <<'E' $(echo $(" + _HD_BODY + "))",
+    "cat <<'E' $(echo `" + _HD_BODY + "`)",
+    "cat <<-'E' $(" + NL + "\trm x" + NL + "\tE" + NL + ")",
+]
+
+
+@pytest.mark.parametrize("src", HEREDOC_ACROSS)
+def test_heredoc_pending_across_a_substitution_newline_fails_closed(src: str) -> None:
+    with pytest.raises(ShellSyntaxError) as info:
+        lex(src)
+    assert info.value.reason == "newline in a substitution before a here-document"
+
+
+@pytest.mark.parametrize(
+    ("src", "expected"),
+    [
+        # A here-document queued inside the $( ) itself, or no newline inside
+        # the substitution, is read as the shells do.
+        ("cat <<E $(date)" + NL + "body" + NL + "E", ["cat", "date"]),
+        ("cat <<'E' $(rm x)" + NL + "body" + NL + "E", ["cat", "rm"]),
+        ("x=$(cat <<E" + NL + "body" + NL + "E" + NL + ")", ["", "cat"]),
+        ("cat <<E" + NL + "$(" + NL + "date" + NL + ")" + NL + "E", ["cat", "date"]),
+        ("cat <<E" + NL + "`date`" + NL + "E", ["cat", "date"]),
+        ("( cat <<E )" + NL + "body" + NL + "E", ["cat"]),
+        ("cat <<'E'; {" + NL + "rm x" + NL + "E" + NL + ":; }", ["cat", ":"]),
+    ],
+)
+def test_heredoc_forms_the_shells_read_normally(src: str, expected: list[str]) -> None:
+    assert words(src) == expected
+
+
+# TASK-145 r1: bash coproc (review finding 2) --------------------------------
+
+
+@pytest.mark.parametrize(
+    ("src", "expected"),
+    [
+        ("coproc rm x", ["rm"]),
+        ("coproc NAME { rm x; }", ["rm"]),
+        ("coproc NAME ( rm x )", ["rm"]),
+        ("coproc { rm x; }", ["rm"]),
+        ("coproc a=1 rm x", ["rm"]),
+        ("coproc time rm x", ["rm"]),
+        ("coproc NAME while rm x; do :; done", ["rm", ":"]),
+        ("coproc NAME if rm x; then :; fi", ["rm", ":"]),
+        ("coproc NAME rm x", ["NAME"]),  # bash runs NAME: not a compound
+        ("echo coproc rm", ["echo"]),
+    ],
+)
+def test_coproc_command_words(src: str, expected: list[str]) -> None:
+    assert words(src) == expected
+
+
+def test_coproc_name_is_a_data_word_and_assignment_kept() -> None:
+    script = lex("coproc NAME { cat x; }")
+    assert [lit(w) for w in script.data_words] == ["NAME"]
+    assert [lit(c.words[0]) for c in script.commands] == ["cat"]
+    (cmd,) = top("coproc a=1 cat x")
+    assert [lit(w) for w in cmd.assignments] == ["a=1"]
+    assert [lit(w) for w in cmd.words] == ["cat", "x"]
+
+
+# TASK-145 r1 nit 3: a redirection before NAME ( ) is never dropped ---------
+
+
+def test_redirection_before_a_function_definition_fails_closed() -> None:
+    with pytest.raises(ShellSyntaxError):
+        lex(">/etc/x f() { :; }")
+    assert words("f() { cat /x; }; f") == ["cat", "f"]
+
+
+# TASK-146 r2: ${…@P} / ${…@E} run text as code (user ruling 2026-10-27) ----
+
+
+@pytest.mark.parametrize(
+    "src",
+    ["echo ${x@P}", 'echo "${x@P}"', "echo ${x@E}", "echo ${y:-${x@P}}",
+     "echo $(( ${x@P} ))", "cat <<E" + NL + "${x@P}" + NL + "E", "echo ${arr[@]@P}",
+     "echo $(echo ${x@E})"],
+)  # fmt: skip
+def test_prompt_and_escape_transforms_fail_closed(src: str) -> None:
+    with pytest.raises(ShellSyntaxError) as info:
+        lex(src)
+    assert "runs text as code" in info.value.reason
+
+
+@pytest.mark.parametrize(
+    "src",
+    ["echo '${x@P}'", "cat <<'E'" + NL + "${x@P}" + NL + "E", "echo ${x@Q}",
+     "echo ${x@A} ${x@K} ${x@a} ${x@U}", 'echo "' + BS + '${x@P}"'],
+)  # fmt: skip
+def test_quoted_or_other_transforms_lex(src: str) -> None:
+    lex(src)
+
+
+# TASK-146 r2: time [-p] stays the keyword; other options make it a command --
+
+
+@pytest.mark.parametrize(
+    ("src", "expected"),
+    [
+        ("time rm x", ["rm"]),
+        ("time -p rm x", ["rm"]),
+        ("time -o /tmp/t rm x", ["time"]),
+        ("time -p -o x rm x", ["time"]),
+        ("time -- rm x", ["time"]),
+        ("time", []),
+    ],
+)
+def test_time_keyword_or_command(src: str, expected: list[str]) -> None:
+    assert words(src) == expected
