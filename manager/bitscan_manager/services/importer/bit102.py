@@ -135,14 +135,18 @@ def _resolve(
         i += 1
         while i < len(words):
             opt = words[i].literal()
-            if opt is None or opt == "--":
-                i += opt == "--"
-                break
             if (name == "env" and opt == "-") or (
-                name in ("env", "sudo") and words[i].is_assignment()
+                name in ("env", "sudo") and _sets_var(words[i])
             ):
                 i += 1
                 continue
+            if opt is None or opt == "--":
+                i += opt == "--"
+                if opt == "--" and name == "env":  # env.c reads - and NAME=v after --
+                    i += i < len(words) and words[i].literal() == "-"
+                    while i < len(words) and _sets_var(words[i]):
+                        i += 1
+                break
             if not opt.startswith("-") or opt == "-":
                 break
             num = opt[2:] if opt[1:2] in ("-", "+") else opt[1:]  # nice -5, --5
@@ -157,6 +161,16 @@ def _resolve(
             return None
         i += spec.positional
     return len(words), via, split, None  # only wrappers: no command word, but env -S
+
+
+def _sets_var(word: Word) -> bool:
+    """env and sudo take any operand holding `=` as NAME=value (coreutils
+    env.c, sudo 1.9.15): `a-b=1` and `"$x"=1` too. One starting with - is
+    an option."""
+    head = word.parts[0] if word.parts else None
+    if head is None or head.kind in ("lit", "sq", "dq") and head.text[:1] == "-":
+        return False
+    return any(p.kind in ("lit", "sq", "dq") and "=" in p.text for p in word.parts)
 
 
 def _command(words: tuple[Word, ...], depth: int, bash: bool) -> Iterator[str]:

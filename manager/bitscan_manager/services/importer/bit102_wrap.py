@@ -22,7 +22,7 @@ class _Spec:
     flags: frozenset[str]
     values: frozenset[str] = frozenset()  # take a value (attached or the next word)
     optional: frozenset[str] = frozenset()  # take a value only when attached
-    numeric: frozenset[str] = frozenset()  # nsenter -S/-G: optional in 2.39 only
+    numeric: frozenset[str] = frozenset()  # nsenter -S/-G: read differs by version
     scripts: frozenset[str] = frozenset()  # the value is a shell script (-c)
     permute: bool = False  # su and runuser: GNU getopt reorders the words
     positional: int = 0  # words before the command: timeout's duration, chroot's dir
@@ -189,8 +189,8 @@ def read_option(
         return None if attached is not None else 1  # --flag=x: getopt error
     if key in spec.optional or (key in spec.numeric and attached is not None):
         return 1
-    if key in spec.numeric:  # a uid or gid; otherwise the 2.39 reading runs it
-        return 2 if nxt and _digits(nxt[0]) else 1
+    if key in spec.numeric:  # 2.39.3 takes the next word (`+0` too); else 2.39 runs it
+        return 2 if nxt and _digits(nxt[0]) else None
     if key not in spec.values | spec.scripts:
         return None
     if key in spec.scripts:
