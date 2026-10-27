@@ -1,4 +1,4 @@
-# TASK-155 TEST: PASS
+# TASK-155 TEST: PASS (r0 and r1)
 
 Tester: tester-m7-155b, 2026-10-27. This continues the files that tester-m7-155 left when the container restarted (snapshot d6e60d6). Covers REQ-163 (1)–(6) and REQ-165 (1). Spec: TS §4.1 L516–L532 (L522, L526, L528), §4.6, §8.7 (L1344, L1377). Answers and rulings used: #99 (d) and (e), #101, #98 (j). Decisions (2026-10-27): "Crash window ruling", "Rebuild finishes interrupted uploads first", "TASK-154 REVIEW APPROVED … Carried" (a) and (b), and "TASK-155 built … lead rulings" (1)–(3). Checks: TP-M7-15, CHK-M7-200 to -204, the REQ-165 (1) half of CHK-M7-230, and mutation rows CHK-M7-357 to -359.
 
@@ -76,7 +76,37 @@ Plants: **18/18 red.** The security plants the lead named (O_NOFOLLOW, O_EXCL, c
 
 ## Findings for the reviewer (none blocking)
 
-1. **A missing `uploaded/` folder.** `finish_interrupted_uploads` raises `FileNotFoundError` from `os.scandir`. It creates and changes nothing, so the test accepts either outcome; the spec is silent (TS §8.7 says the package creates the folder). TASK-158 decides whether start-up treats this as fatal. Lead or reviewer to confirm.
+1. **A missing `uploaded/` folder.** Resolved by the lead ruling "A missing `bits/uploaded/` folder" and implemented in r1; see "Revision 1" below.
 2. **The flags are defence in depth.** With only one of `O_EXCL` / `O_NOFOLLOW` removed, a planted symlink is still refused. Only the flags spy guards each flag on its own, so keep that test.
 3. **The deleted-policy guard is two checks.** For an app-deleted policy, `source_file = deleted/<id>` already refuses the rename. `deleted_at IS NULL` matters only for an owner-built inconsistent row, and is tested that way.
 4. **Environment:** `/abs.bit` (root-owned, 675 bytes, a generated test policy) was left at the file-system root by the previous tester's plant run. The safety check blocked my removal and I did not work around it. **The user should delete `/abs.bit`.** The tests no longer depend on it.
+
+## Revision 1 (lead ruling "A missing `bits/uploaded/` folder", `work/decisions.md`; commit c26e046)
+
+The change: if `uploaded/` is missing, `finish_interrupted_uploads` logs one fixed warning, returns `(0, 0)` and creates nothing. `import_upload` is unchanged.
+
+Test changes:
+- The missing-folder test now asserts the ruling exactly: `(0, 0)`, the folder not created, no row, no entry, no catalog change, and exactly one warning from the `uploads` logger with no path in it.
+- New `test_an_upload_with_no_uploaded_folder_fails_closed_with_no_row`: `FileNotFoundError`; nothing is created anywhere under the tmp root; no `bit_import` row, no entry, no counter and no catalog change (#98 (j)). A rejected upload still gets its normal `rejected` row.
+
+| Run | Command (from `manager/`) | Count |
+| --- | --- | --- |
+| r1-1 | `pytest -n 4 tests/test_uploads.py tests/test_uploads_pg.py` | **138/138 passed**, 0 failed, 0 errors, 0 skipped |
+| r1-2 | `pytest -n 4 tests/test_import_pipeline_pg.py tests/test_import_fuzz_pg.py tests/test_samples_import_pg.py` | **202/202 passed** |
+| r1-3 | `--cov=bitscan_manager.services.importer` on the 2 files | 138/138 passed; `uploads.py` 127/127 (100 %), `pipeline_record.py` 68/68 (100 %) |
+| r1-static | ruff, ruff format (2 files); `mypy --strict --config-file manager/pyproject.toml manager` | clean; mypy "no issues found in 291 source files" |
+| r1-plants | copies `scratchpad/t155/r3/<id>`. Control 138/138; the import path is the copy's | all 18 r0 plants re-applied: each red again, same counts. Plus 4 new plants below |
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-230 (1) missing folder | APP | Linux/PG | r1-1 `test_finish_on_a_missing_folder_is_empty_logs_one_line_and_creates_nothing` | PASS | `(0, 0)`, `uploaded/` not created, one warning without a path, no row, entry or catalog change | 2026-10-27 |
+| CHK-M7-155-nofolder | APP | Linux/PG | r1-1 `test_an_upload_with_no_uploaded_folder_fails_closed_with_no_row` | PASS | `FileNotFoundError`; the tmp root still holds only `bits/` (empty); no row, entry, counter or catalog change. A rejected upload gets 1 `rejected` row | 2026-10-27 |
+
+| Check | Plant | Result | Red tests |
+| --- | --- | --- | --- |
+| CHK-M7-155-R1a | the missing-folder branch removed (raises again) | PASS (red) | 1: the missing-folder test |
+| CHK-M7-155-R1b | finish creates `uploaded/` | PASS (red) | 1: the missing-folder test |
+| CHK-M7-155-R1c | the log line removed | PASS (red) | 1: the missing-folder test |
+| CHK-M7-155-R1d | `import_upload` creates `uploaded/` | PASS (red) | 1: the no-folder upload test |
+
+Plants on r1: **22/22 red** (the 18 r0 plants plus R1a to R1d). Verdict for r1: **PASS**.

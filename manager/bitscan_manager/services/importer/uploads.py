@@ -52,30 +52,35 @@ def client_file_name(raw: bytes | str | None) -> str:
     return raw.decode("utf-8", "replace").translate(_CONTROLS)[:_NAME_CAP]
 
 
-def _fsync_dir(folder: Path) -> None:
-    fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+
+
+def _open_uploads(bits_dir: Path) -> int:
+    """`uploaded/` as a directory fd. A missing, symlinked or non-directory
+    `uploaded/` raises OSError (user ruling "Folder guard"); every later
+    path is relative to this fd, so no link in the folder path is followed."""
+    return os.open(bits_dir / "uploaded", _DIR_FLAGS)
 
 
 @dataclass
 class _Upload:
     """The before_commit / after_commit hooks of one upload."""
 
-    folder: Path
+    bits_dir: Path
     data: bytes
     sha256: str
-    temp: Path | None = None  # set once this upload created the temp file
+    dir_fd: int | None = None  # `uploaded/`, opened in write()
+    temp: str | None = None  # set once this upload created the temp file
     committed: bool = False
     kept: bool = False  # the commit outcome is unknown
 
     def write(self, policy_id: int) -> None:
-        path = self.folder / f"{_TMP}{policy_id}-{self.sha256}"
+        self.dir_fd = _open_uploads(self.bits_dir)
+        name = f"{_TMP}{policy_id}-{self.sha256}"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
-        fd = os.open(path, flags, 0o600)  # a planted file or symlink: OSError
-        self.temp = path
+        # A planted file or symlink at the temp name: OSError.
+        fd = os.open(name, flags, 0o600, dir_fd=self.dir_fd)
+        self.temp = name
         try:
             view = memoryview(self.data)
             while view:
@@ -83,30 +88,33 @@ class _Upload:
             os.fsync(fd)
         finally:
             os.close(fd)
-        _fsync_dir(self.folder)
+        os.fsync(self.dir_fd)
 
     def rename(self, pending: Pending) -> None:
         self.committed = True
-        if self.temp is None or pending.store is None:
+        if self.temp is None or self.dir_fd is None or pending.store is None:
             raise RuntimeError("an upload committed without its temp file")
         final = f"policy-{pending.policy_id}.bit"
         if pending.store.source_file != f"uploaded/{final}" or (
-            self.temp.name != f"{_TMP}{pending.policy_id}-{self.sha256}"
+            self.temp != f"{_TMP}{pending.policy_id}-{self.sha256}"
         ):
             raise RuntimeError("the stored source_file is not this upload's")
-        os.replace(self.temp, self.folder / final)  # replaces a symlink itself
+        fd = self.dir_fd  # rename(2) replaces a symlink at `final` itself
+        os.replace(self.temp, final, src_dir_fd=fd, dst_dir_fd=fd)
         self.temp = None
-        _fsync_dir(self.folder)
+        os.fsync(fd)
 
     def discard(self) -> None:
-        """After an exception: delete the temp file unless the commit
-        happened (start-up then renames it) or its outcome is unknown."""
-        if self.temp is None or self.committed or self.kept:
-            return
+        """After the import: delete the temp file unless the commit happened
+        (start-up then renames it) or its outcome is unknown; close the fd."""
         try:
-            self.temp.unlink(missing_ok=True)
+            if self.temp is not None and not (self.committed or self.kept):
+                os.unlink(self.temp, dir_fd=self.dir_fd)
         except OSError as exc:
             log.error("upload temp removal failed: %s", type(exc).__name__)
+        finally:
+            if self.dir_fd is not None:
+                os.close(self.dir_fd)
 
 
 def import_upload(
@@ -126,7 +134,7 @@ def import_upload(
     file = FileInput(
         data, sha, client_file_name(client_name), Target("upload", None, sha)
     )
-    up = _Upload(bits_dir / "uploaded", data, sha)
+    up = _Upload(bits_dir, data, sha)
     try:
         return import_one(
             session,
@@ -147,10 +155,11 @@ def import_upload(
         up.discard()
 
 
-def _temp_hash(path: Path) -> str | None:
+def _temp_hash(name: str, dir_fd: int) -> str | None:
     """The SHA-256 of a regular temp file, read without following a link."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        fd = os.open(name, flags, dir_fd=dir_fd)
     except OSError:
         return None
     with os.fdopen(fd, "rb") as fh:
@@ -184,20 +193,30 @@ def finish_interrupted_uploads(
     every other `.tmp-*` entry (a symlink is removed, never followed). The
     caller holds the catalog lock and has no transaction open on `session`:
     start-up (TASK-158) and the rebuild before it reads the folders (TASK-157,
-    user ruling "Rebuild finishes interrupted uploads first"). A missing
-    `uploaded/` counts as empty and is logged; it is never created."""
-    folder = bits_dir / "uploaded"
+    user ruling "Rebuild finishes interrupted uploads first"). A missing,
+    symlinked or non-directory `uploaded/` is unreadable: one log line and
+    nothing is touched or created (rulings "A missing `bits/uploaded/`
+    folder" and "Folder guard")."""
     try:
-        entries = sorted(e.name for e in os.scandir(folder))
-    except FileNotFoundError:  # a broken install; never created here (lead ruling)
-        log.warning("interrupted uploads: uploaded folder missing, nothing to finish")
+        dir_fd = _open_uploads(bits_dir)
+    except OSError as exc:
+        log.warning(
+            "interrupted uploads: uploaded folder unreadable: %s", type(exc).__name__
+        )
         return FinishedUploads(0, 0)
-    temps = [name for name in entries if name.startswith(_TMP)]
+    try:
+        return _finish(session, dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
+def _finish(session: CatalogSession, dir_fd: int) -> FinishedUploads:
+    temps = sorted(n for n in os.listdir(dir_fd) if n.startswith(_TMP))
     keep: dict[str, int] = {}
     with session.transaction() as tx:
         for name in temps:
             parsed = _parse_temp(name)
-            if parsed is None or _temp_hash(folder / name) != parsed[1]:
+            if parsed is None or _temp_hash(name, dir_fd) != parsed[1]:
                 continue
             row = catalog.policy_by_id_for_update(tx.conn, parsed[0])
             if (
@@ -209,14 +228,15 @@ def finish_interrupted_uploads(
                 keep[name] = parsed[0]
     for name in temps:
         if name in keep:
-            os.replace(folder / name, folder / f"policy-{keep[name]}.bit")
+            final = f"policy-{keep[name]}.bit"
+            os.replace(name, final, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
             continue
         try:  # a directory or an unremovable entry is left; it is not *.bit
-            (folder / name).unlink(missing_ok=True)
+            os.unlink(name, dir_fd=dir_fd)
         except OSError as exc:
             log.error("upload temp removal failed: %s", type(exc).__name__)
     if temps:
-        _fsync_dir(folder)
+        os.fsync(dir_fd)
     log.info(
         "interrupted uploads: renamed=%d deleted=%d", len(keep), len(temps) - len(keep)
     )

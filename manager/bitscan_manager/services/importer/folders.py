@@ -46,6 +46,7 @@ from bitscan_manager.services.importer.store import Conn, Target
 
 log = logging.getLogger(__name__)
 UPLOADED = "uploaded/"
+BITS_ROOT = "./"  # the bits folder itself, as listed in `unreadable_folders`
 LEFTOVER_CHECK = "leftover of an interrupted delete"
 type UploadKind = Literal["live", "leftover", "stray"]
 _SYSTEM = Actor("system", None)
@@ -65,6 +66,7 @@ class ReconcileResult:
     leftovers: tuple[Difference, ...]  # #103 differences, for TASK-158's alert
     strays: tuple[str, ...]  # skipped uploaded/ files, for the #103 check
     renamed: tuple[str, ...]  # skipped live uploads with an edited name, for #103
+    unreadable_folders: tuple[str, ...]  # BITS_ROOT and/or UPLOADED, for #103
 
 
 def _wanted(name: str) -> bool:
@@ -99,6 +101,19 @@ def _names(folder: Path) -> list[str]:
             elif name.endswith(".bit") and not name.startswith("."):
                 log.warning("folder file skipped: its name cannot be stored")
     return found
+
+
+def unreadable(bits_dir: Path) -> tuple[str, ...]:
+    """The folders (`BITS_ROOT`, `UPLOADED`) that are missing, not a real
+    directory, or a symlink (lstat, never followed). Nothing is imported from
+    such a folder and none of its policies is deleted; a real empty folder is
+    readable (user, decisions 2026-10-27 "Folder guard")."""
+    folders = ((BITS_ROOT, bits_dir), (UPLOADED, bits_dir / UPLOADED.rstrip("/")))
+    return tuple(label for label, path in folders if not _real_dir(path))
+
+
+def _folder(rel: str) -> str:
+    return UPLOADED if rel.startswith(UPLOADED) else BITS_ROOT
 
 
 def discover(bits_dir: Path) -> list[str]:
@@ -200,7 +215,10 @@ def remove_leftover(bits_dir: Path, rel: str) -> Difference:
 def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> ReconcileResult:
     """TS §4.1 L528 in `auto` mode, under the caller's catalog lock: import new
     or changed files, then delete the policies whose files disappeared."""
-    files = discover(bits_dir)
+    blind = unreadable(bits_dir)
+    for label in blind:
+        log.warning("folder unreadable, not reconciled: %s", label)  # a constant
+    files = discover(bits_dir)  # finds nothing in an unreadable folder
     with session.transaction() as tx:
         live = {r.source_file for r in integrity_rows(tx.conn)}
     # #15: a file that is already a live policy's source_file first, then
@@ -252,7 +270,12 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
         outcomes.append(outcome)
     deleted = delete_removed(session, clock, bits_dir)
     return ReconcileResult(
-        tuple(outcomes), deleted, tuple(leftovers), tuple(strays), tuple(edited)
+        tuple(outcomes),
+        deleted,
+        tuple(leftovers),
+        tuple(strays),
+        tuple(edited),
+        blind,
     )
 
 
@@ -261,12 +284,14 @@ def delete_removed(
 ) -> tuple[DeleteResult, ...]:
     """Delete (TS §4.3, soft) each live policy whose `source_file` is no
     longer present, one transaction each. Runs after the imports, so a file
-    renamed in the server folder moves its policy instead (REQ-159 (2))."""
+    renamed in the server folder moves its policy instead (REQ-159 (2)).
+    A policy whose folder is `unreadable` is never deleted ("Folder guard")."""
+    blind = unreadable(bits_dir)
     with session.transaction() as tx:
         rows = integrity_rows(tx.conn)
     results: list[DeleteResult] = []
     for row in rows:
-        if present(bits_dir, row.source_file):
+        if _folder(row.source_file) in blind or present(bits_dir, row.source_file):
             continue
         with session.transaction() as tx:
             result = delete_in_tx(
