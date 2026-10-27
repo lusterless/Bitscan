@@ -1,4 +1,4 @@
-# TASK-155 TEST: PASS (r0 and r1)
+# TASK-155 TEST: PASS (r0, r1 and r2)
 
 Tester: tester-m7-155b, 2026-10-27. This continues the files that tester-m7-155 left when the container restarted (snapshot d6e60d6). Covers REQ-163 (1)–(6) and REQ-165 (1). Spec: TS §4.1 L516–L532 (L522, L526, L528), §4.6, §8.7 (L1344, L1377). Answers and rulings used: #99 (d) and (e), #101, #98 (j). Decisions (2026-10-27): "Crash window ruling", "Rebuild finishes interrupted uploads first", "TASK-154 REVIEW APPROVED … Carried" (a) and (b), and "TASK-155 built … lead rulings" (1)–(3). Checks: TP-M7-15, CHK-M7-200 to -204, the REQ-165 (1) half of CHK-M7-230, and mutation rows CHK-M7-357 to -359.
 
@@ -110,3 +110,58 @@ Test changes:
 | CHK-M7-155-R1d | `import_upload` creates `uploaded/` | PASS (red) | 1: the no-folder upload test |
 
 Plants on r1: **22/22 red** (the 18 r0 plants plus R1a to R1d). Verdict for r1: **PASS**.
+
+## Revision 2 (lead ruling "Folder guard applied to the upload path", user ruling "Folder guard"; working tree after 09fcf66)
+
+The change: `uploaded/` is opened with `O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC` (`open_uploaded_dir`). The temp open, the fsync, the rename, the listing and the unlinks are all relative to that fd. The same applies to `delete.remove_after_commit`. If the folder is missing, a symlink or not a directory:
+- the upload fails as an internal error (#98 (j)) and writes nothing through the link;
+- the finish step returns `(0, 0)` with one fixed log line;
+- the post-commit removal leaves the copy and logs one line.
+
+The rows were drafted from the ruling before r2 landed. The previous run showed that r1 wrote through a symlinked `uploaded/`.
+
+Test changes in `manager/tests/test_uploads_pg.py`:
+- **Spies updated for the `dir_fd` call shapes** (the impl's 4 "spy" failures, all test-side):
+  - The flags/order test now also asserts the ruling: the folder is opened with `O_DIRECTORY` and `O_NOFOLLOW`, the temp open is relative to that fd, and so are both sides of the rename.
+  - The `broken` replace spies accept `**kw`.
+  - `test_uploads.py`: the discard-log test patches `os.unlink` as well.
+- **New tests:**
+  - `test_finish_touches_nothing_when_uploaded_is_not_a_real_directory[file, dir-link, file-link, dangling-link]`;
+  - `test_an_upload_writes_nothing_when_uploaded_is_not_a_real_directory[4 kinds × new, update]`;
+  - `test_a_rejected_upload_still_gets_its_row_with_a_broken_folder[4]`;
+  - `test_the_folder_is_checked_at_each_call_not_cached`;
+  - `test_a_server_file_taking_an_uploaded_name_through_a_linked_folder_leaves_the_copy` (`move_upload`);
+  - `test_a_delete_through_a_linked_folder_commits_and_leaves_the_copy`, `test_a_delete_with_a_real_folder_still_removes_the_copy`;
+  - `test_a_failed_copy_removal_is_logged_by_type_and_never_raises`;
+  - `test_a_folder_swapped_for_a_link_after_the_write_renames_in_the_original`.
+
+In every broken-folder case the link target holds a committed temp (it would be renamed if the link were followed), a junk `.tmp-x` (it would be deleted) and the live `policy-<id>.bit`. The tree under the tmp root is compared before and after.
+
+| Run | Command (from `manager/`) | Count |
+| --- | --- | --- |
+| r2-1 | `pytest -n 4 tests/test_uploads.py tests/test_uploads_pg.py` | **160/160 passed**, 0 failed, 0 errors, 0 skipped (74 + 86) |
+| r2-2 (TASK-154 suites + affected) | `pytest -n 4` the 2 files + `test_import_pipeline_pg.py test_import_fuzz_pg.py test_samples_import_pg.py test_policy_delete_pg.py test_folders_pg.py test_import_store_pg.py test_catalog_lock_pg.py` | **522/522 passed** (run before the last new row; that row passed in r2-1) |
+| r2-3 (coverage) | `--cov=bitscan_manager.services.importer`, the 2 files | `uploads.py` 136/136 (100 %), `pipeline_record.py` 68/68 (100 %). `delete.py`: with the delete, folder and pipeline suites, every r2 line is covered (152–153 by the new removal-error row) |
+| r2-static | ruff, ruff format (2 files); `mypy --strict --config-file manager/pyproject.toml manager` | clean; "no issues found in 291 source files" |
+| r2-plants | copies `scratchpad/t155/r4/<id>` (`plant_r2.py`); control 160/160, the import paths of `uploads.py` and `delete.py` are the copy's | **27/27 red** |
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-155-guard-finish | APP | Linux/PG | r2-1 `test_finish_touches_nothing_…[file, dir-link, file-link, dangling-link]` | PASS | `(0, 0)`; the tree is identical (the committed temp in the link target is not renamed and `.tmp-x` is not deleted); the dangling target is not created; no row, entry or catalog change; exactly 1 warning, with no path, entry name or folder name | 2026-10-27 |
+| CHK-M7-155-guard-upload | APP | Linux/PG | r2-1 `test_an_upload_writes_nothing_…[8]`, `…_rejected_upload_still_gets_its_row_…[4]`, `…_not_cached` | PASS | `OSError` for new and update; the tree is identical (nothing written, renamed or deleted in the target); no row, entry, counter or catalog change (#98 (j)); the client-name canary is not logged. A rejection still gets its `rejected` row. Swapped to a link after a good upload → refused; restored → success | 2026-10-27 |
+| CHK-M7-155-guard-removal | APP | Linux/PG | r2-1 `test_a_server_file_taking_…`, `test_a_delete_through_a_linked_folder_…`, `test_a_delete_with_a_real_folder_…`, `test_a_failed_copy_removal_…` | PASS | Through a linked folder: the catalog move or delete commits, nothing raises, the copy behind the link is byte-identical, and "upload removal skipped" is logged with no path. With a real folder the copy is removed. An `EACCES` on the unlink → `upload removal failed: PermissionError`, the copy is left, the delete commits | 2026-10-27 |
+| CHK-M7-155-guard-fd | APP | Linux/PG | r2-1 `test_temp_open_flags_…`, `test_a_folder_swapped_for_a_link_after_the_write_…` | PASS | The folder is opened `O_DIRECTORY \| O_NOFOLLOW`; the temp open and both rename sides use that fd. `uploaded/` swapped for a link to a decoy between commit and rename → the file lands in the original directory, and the decoy holds only `keep` | 2026-10-27 |
+| CHK-M7-200 to -204, -230 (1) | APP | Linux/PG | r2-1 | PASS | every r0 and r1 row passes unchanged on r2 | 2026-10-27 |
+
+| Check | Plant | Result | Red tests |
+| --- | --- | --- | --- |
+| CHK-M7-155-G1 | `dir_fd` removed: the folder opened by path, following links; the temp open and the rename by path | PASS (red) | 5: the flags/fd spy, the dir-link upload (new, update), not-cached, the swap |
+| CHK-M7-155-G2 | `O_DIRECTORY` dropped from the folder open | PASS (red) | 2: the flags spy, finish with a regular file (raised `NotADirectoryError` instead of `(0, 0)`) |
+| CHK-M7-155-G3 | `O_NOFOLLOW` dropped from the folder open | PASS (red) | 7: the flags spy, dir-link finish, the dir-link upload (2), not-cached, both linked-folder removals |
+| CHK-M7-155-G4 | finish raises instead of returning `(0, 0)` | PASS (red) | 5: missing plus the 4 kinds |
+| CHK-M7-155-G5 | `remove_after_commit` opens the folder following links | PASS (red) | 2: the `move_upload` and delete rows |
+| CHK-M7-155-G6 | rename by path instead of by fd | PASS (red) | 2: the fd spy, the swap |
+| CHK-M7-155-R1b, R1c, R1d (on r2) | finish creates the folder; no log line; the upload creates the folder | PASS (red) | 1, 5, 4 |
+| r0 plants re-applied on r2 (P01–P17, adapted to the fd call shapes) | as in r0 | PASS (red) | same counts as r0, except P03 at 58 (more flows store a file) |
+
+Plants on r2: **27/27 red.** Verdict for r2: **PASS**. One note: under P03 the rename is relative to the fd, but an absolute client name still escapes the fd. That is why the `/abs.bit` row stays deselected in plant runs (see the `/abs.bit` note above).
