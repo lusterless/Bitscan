@@ -211,8 +211,9 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
                 leftovers.append(remove_leftover(bits_dir, rel))
                 continue
             if kind == "stray":
-                log.warning("uploaded file skipped: not a live policy's file")
-                strays.append(rel)
+                if present(bits_dir, rel):  # not removed by a move above
+                    log.warning("uploaded file skipped: not a live policy's file")
+                    strays.append(rel)
                 continue
         file = read_input(bits_dir, rel)
         if file is None:
