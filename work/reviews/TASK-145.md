@@ -45,3 +45,25 @@ Spec read: SR §4.2 (L277, L285, L287), TS §3.3 L249 (`/bin/sh -c`, which is da
    - **Fix.** Treat `coproc` as reserved. With a simple command, the next word is the command word. With `coproc NAME {…}` or `coproc NAME (…)`, NAME is a data word. If unsure, fail closed. Add must-reject rows.
    - It is not on the r2 list; main may fold it into r2.
 3. nit, `shlex_grammar.py:233-237`: for `NAME ( )`, `cmds.remove(cur)` also drops any redirections already attached to `cur`, as in `>/etc/x f() { :; }`. That form is a syntax error in dash and bash, so nothing runs today. Raising when `cur.redirects` is non-empty would keep the "never drop what was seen" rule.
+
+## Revision 1 and 1b re-review (2026-10-27)
+
+Verdict: APPROVED
+
+Frozen worktree at `64315ca`: the `0529083` product code plus the tester's reports. Files: `shlex_grammar.py` and `shlex_posix.py` (r1 and r1b hunks; the `Grammar.time()` and `@P`/`@E` hunks belong to TASK-146 r2). TEST: PASS (`TASK-145-test.md`, revision section: 230/230, 7/7 plants red).
+
+Re-run by me: the six importer test files gave 2981 passed. `ruff check` and `ruff format --check` (278 files) are clean, and so is `mypy --strict` on `services/importer`.
+
+Round-1 findings:
+1. **Blocking, here-document across a substitution: fixed.**
+   - Each pending entry now carries the depth that queued it (`shlex_grammar.py` `redirect()`).
+   - A newline at a deeper depth while an outer one is pending raises (`shlex_posix.py:125-128`). So does any newline in a backtick child whose parent has one pending (`outer`, L290).
+   - Substitutions inside `${…}` and `$((…))` go through `subst()` and so through `token()`, which means the depth rule covers them too.
+   - The `)` rule (`shlex_grammar.py:133`) now looks only at here-documents queued at or below the current depth. That removes the old false positive on `cat <<E $(date)`.
+   - The tester's must-reject rows cover all my forms plus `>( )` and a nested form. The two plants (depth ignored, `outer` dropped) are red.
+2. **Should-fix, `coproc`: fixed.** `Grammar.coproc()` makes NAME a data word only before `(` or a compound opener. Otherwise the next word starts a simple command. Rows and the plant are red.
+3. **Nit, function-definition redirections: fixed.** It now raises instead of dropping them.
+
+r1b: the function-definition branch pops by identity in O(1), fail closed if `cur` is not the last command. The tester's 774 ms input now runs in about 48 ms, within REQ-156 (4).
+
+No new findings.
