@@ -68,3 +68,16 @@ Residual risk: after a kept temp (an unknown commit), a second upload of the sam
 - `finish_interrupted_uploads`: committed (renamed), uncommitted (deleted), `.tmp-x`, a symlink temp (deleted, target untouched), a temp whose content does not match its name, a temp for a deleted policy (deleted), a `.tmp-0012-…` (leading zero) and a 30-digit id (deleted, no DB error), a FIFO named `.tmp-…` (no hang; deleted), and non-temp files left alone.
 - `FileInput` with a mismatched `sha256` and `target.file_sha256`, or with `data` not matching, raises `ValueError`.
 - Carry (a), the tester's: the caller holds the lock around `import_upload` and `finish_interrupted_uploads`, and a concurrent upload and rebuild serialise.
+
+## Revision 1 (lead ruling "A missing `bits/uploaded/` folder", `work/decisions.md`)
+
+- `finish_interrupted_uploads` (`uploads.py:189`): if `os.scandir(uploaded/)` raises `FileNotFoundError`, the function logs one warning with fixed words ("interrupted uploads: uploaded folder missing, nothing to finish"), returns `FinishedUploads(0, 0)` and creates nothing. Start-up therefore goes on to reconcile the server folder. The docstring says so. Other errors, such as `NotADirectoryError` or `PermissionError`, still propagate.
+- `import_upload` with a missing `uploaded/`: **unchanged, confirmed.**
+  - What happens: `_Upload.write` opens `uploaded/.tmp-<id>-<sha>` with `O_CREAT` and gets `FileNotFoundError` (ENOENT). This happens inside transaction 1, which therefore rolls back. `import_one` propagates the error and writes no `bit_import` row (#98 (j)), and TASK-162 maps the error to 503. `discard` has nothing to remove, and nothing is created.
+  - Exception: a rejected or skipped upload never reaches `before_commit`, so it still gets its normal row.
+  - Evidence: a throwaway PostgreSQL smoke check in the scratchpad (not kept) with no `uploaded/` folder. `import_upload` raises `FileNotFoundError`, with 0 `bit_import` rows, 0 `policy` rows and the folder still empty. Then `finish_interrupted_uploads` returns `(0, 0)`.
+- The manager creates the folder nowhere.
+- Choices (1)–(3) are unchanged; the lead has accepted them.
+- Gates:
+  - ruff check, ruff format check and `mypy --strict` pass (291 files);
+  - `tests/test_uploads.py tests/test_uploads_pg.py tests/test_import_pipeline_pg.py tests/test_import_fuzz_pg.py tests/test_samples_import_pg.py` give 339 passed.
