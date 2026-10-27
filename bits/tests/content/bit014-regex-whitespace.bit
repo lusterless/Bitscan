@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit014-regex-whitespace: regex with '  \t ' -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit014-regex-whitespace</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>f12568e7-5000-528f-84f1-23432e849435</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>  	 </ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

@@ -1,6 +1,7 @@
 """Prometheus metrics (TS §8.4 L1288-L1289), in one registry that the metrics
-route serves (#70). Every label value comes from a fixed set: alert kinds and
-agent statuses only, never a hostname, token or agent id (REQ-086 (3)).
+route serves (#70). Every label value comes from a fixed set: alert kinds,
+agent statuses and import modes only, never a hostname, token or agent id
+(REQ-086 (3)).
 """
 
 from collections.abc import Mapping
@@ -60,6 +61,19 @@ JOBS_EXPIRED: Final = Counter(
     "Jobs that expired because nobody picked them up before pickup_by.",
     registry=REGISTRY,
 )
+
+
+# bit_import.mode (TS §5.2 L699).
+IMPORT_MODES: Final = ("auto", "manual", "rebuild")
+
+IMPORT_FAILURES: Final = Counter(
+    "bitscan_import_failures",
+    "Rejected .bit imports, by mode, counted when the import record commits.",
+    ["mode"],
+    registry=REGISTRY,
+)
+for _mode in IMPORT_MODES:
+    IMPORT_FAILURES.labels(mode=_mode)  # every mode is exported, from zero
 
 
 class FleetCounts(Protocol):  # repositories.agents.AgentRepo

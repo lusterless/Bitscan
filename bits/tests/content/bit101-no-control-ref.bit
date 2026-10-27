@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit101-no-control-ref: PluginName without a leading control reference (Warn) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit101-no-control-ref</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>Ensure AppArmor is installed</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>07897188-38bf-5ec9-92b5-03f47fc0d074</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

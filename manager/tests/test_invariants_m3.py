@@ -289,8 +289,16 @@ def test_no_query_parameter_can_switch_inventory_off() -> None:
         if p.get("in") == "query"
     }
     assert ("PUT", V1 + "/agent/{id}/inventory", "job_id") in params
-    names = {name for _, path, name in params if path not in PACKAGE_PATHS}
+    policies = V1 + "/policies"
+    names = {
+        name
+        for _, path, name in params
+        if path not in PACKAGE_PATHS and path != policies
+    }
     assert names <= {"limit", "cursor", "state", "job_id"}, names
+    # M7 (TS §6.2 L1100, #9): the profile list pages and filters by status
+    # (enabled or disabled) only.
+    assert {n for _, p, n in params if p == policies} == {"limit", "cursor", "status"}
     # M5: the two package routes take exactly the TS §7.1 filters; the JSON
     # route also pages, the CSV export does not (#84 (a)).
     search = {n for _, p, n in params if p == V1 + "/packages/search"}

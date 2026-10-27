@@ -6,6 +6,7 @@ Owner: reviewer. Each line is a finding that came back more than once in review.
 1. Validate every client value before PostgreSQL casts it (`inet`, `cidr`, `jsonb`, `text`, `debversion`). | Postgres refuses IPv6 zones (`%eth0`), U+0000, lone surrogates and `NaN`/`Infinity`, so the answer is a 500 instead of a 400 (TASK-048, 066, 067, 069). | Send `fe80::1%eth0`, `"\u0000"`, `"\ud800"` and `NaN` to each new field and expect 400.
 2. Never compare Debian versions as text. | Text order puts `1.10` before `1.9` (TASK-053). | Grep the new SQL for `version` in `ORDER BY`, `>` or `<`; each must use `::debversion`.
 3. Keep integer bounds in the OpenAPI document at or below 2^53 − 1. | FastAPI writes bounds as floats, so 2^63 − 1 becomes 2^63 (TASK-048 r2). | The re-exported `maximum` equals the model's bound exactly.
+16. Any `audit_log.target` is cut to 255 characters (TS §5.2 `target VARCHAR(255)`); keep the full value in `detail`. | A file path used as a target can exceed 255 characters (a 255-byte name under `uploaded/`), and the failed INSERT loses the whole transaction, including the `bit_import` record (TASK-153). | Test each target built from a name or path with a 300-character value: the entry is written, the target is at most 255 characters, and the detail holds the full value.
 
 ## Order of checks on a route
 4. Run the token check, or the per-IP limit, before FastAPI parses the body. | FastAPI parses a declared body before any dependency, so a bad body is answered uncounted and before authentication (TASK-067, 072, 082, 083). | Either use the `limit_first` route class or read the body yourself after the check. Test: a bad token plus a non-JSON body gets 401 and is counted.
@@ -27,3 +28,6 @@ Owner: reviewer. Each line is a finding that came back more than once in review.
 
 ## Go agent
 14. Check the file type before opening any path the agent reads from configuration or the host (`ca_file`, `/etc/machine-id`, `/etc/os-release`, `/proc` files), and open non-blocking. | Opening a FIFO for reading blocks until a writer appears, so start-up or collection hangs (TASK-087 FAIL r1; same pattern noted in TASK-089 and TASK-098). | `os.Stat` → `IsRegular()`, then `O_RDONLY|O_NONBLOCK`, then `f.Stat()` again (see `config.readableFile`). Test: a FIFO at the path returns an error at once.
+
+## CLI
+15. A CLI sign-in with a secret must not print the secret back (for example `bao login -no-print`); a hidden prompt alone is not enough. | M6 review (reported by main, 2026-10-27): the secret must stay out of the command's output, not only out of the prompt. | Run the sign-in step with a canary secret and grep stdout, stderr and any captured output for it.

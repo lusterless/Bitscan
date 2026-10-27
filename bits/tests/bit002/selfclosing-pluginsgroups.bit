@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture bit002/selfclosing-pluginsgroups: self-closing PluginsGroups (#16) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit002/selfclosing-pluginsgroups</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups/>
+</Policy>

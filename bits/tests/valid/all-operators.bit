@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture valid/all-operators: valid, each of the 14 SR §2.4 operators once -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture valid/all-operators</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>9f013f58-4e5d-506f-83bc-60e83a4d8066</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.1 - Fixture check 2</PluginName>
+      <PluginDescription>Fixture plugin 2.</PluginDescription>
+      <PluginId>eba033cf-34d2-5822-86bc-36925af1efc6</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>not_equals</Operator>
+      <ExpectedResult>disabled</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>3.1 - Fixture check 3</PluginName>
+      <PluginDescription>Fixture plugin 3.</PluginDescription>
+      <PluginId>e1eae417-f28a-57e9-9bb0-ee2aa7a57024</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>contains</Operator>
+      <ExpectedResult>PermitRootLogin no</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>4.1 - Fixture check 4</PluginName>
+      <PluginDescription>Fixture plugin 4.</PluginDescription>
+      <PluginId>3753c9f3-8921-5eff-8fdb-1bea34c3103e</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>not_contains</Operator>
+      <ExpectedResult>nullok</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>5.1 - Fixture check 5</PluginName>
+      <PluginDescription>Fixture plugin 5.</PluginDescription>
+      <PluginId>c65afdae-8492-5671-ae80-c832e9f189d7</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^MaxAuthTries\s+[1-4]$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>6.1 - Fixture check 6</PluginName>
+      <PluginDescription>Fixture plugin 6.</PluginDescription>
+      <PluginId>9e6aeaf4-4c53-54fc-a7cb-3f8ee9cd0a92</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>not_regex</Operator>
+      <ExpectedResult>^\s*PermitEmptyPasswords\s+yes</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>7.1 - Fixture check 7</PluginName>
+      <PluginDescription>Fixture plugin 7.</PluginDescription>
+      <PluginId>65126839-2d56-57ab-b5e9-e15be642da67</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>eq</Operator>
+      <ExpectedResult>0</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>8.1 - Fixture check 8</PluginName>
+      <PluginDescription>Fixture plugin 8.</PluginDescription>
+      <PluginId>99652ae8-753c-5da8-b3d6-579da5329fa0</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>ne</Operator>
+      <ExpectedResult>-1</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>9.1 - Fixture check 9</PluginName>
+      <PluginDescription>Fixture plugin 9.</PluginDescription>
+      <PluginId>69623e8b-f259-5ca7-b75c-15841eb4df9b</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>gt</Operator>
+      <ExpectedResult>+2.5</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>10.1 - Fixture check 10</PluginName>
+      <PluginDescription>Fixture plugin 10.</PluginDescription>
+      <PluginId>129fe618-d8c5-5537-a291-7a801705463b</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>ge</Operator>
+      <ExpectedResult>14</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>11.1 - Fixture check 11</PluginName>
+      <PluginDescription>Fixture plugin 11.</PluginDescription>
+      <PluginId>6d0a1d96-a0e3-58b5-8af3-d53636e5569c</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>lt</Operator>
+      <ExpectedResult>91</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>12.1 - Fixture check 12</PluginName>
+      <PluginDescription>Fixture plugin 12.</PluginDescription>
+      <PluginId>a5f81228-3268-5774-a628-0122943ec810</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>le</Operator>
+      <ExpectedResult>90</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>13.1 - Fixture check 13</PluginName>
+      <PluginDescription>Fixture plugin 13.</PluginDescription>
+      <PluginId>ab11edb7-ecd7-5d26-88b4-a1cff52638d2</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>empty</Operator>
+      <ExpectedResult></ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>14.1 - Fixture check 14</PluginName>
+      <PluginDescription>Fixture plugin 14.</PluginDescription>
+      <PluginId>4ebf1c86-6950-5aa4-b1de-52300c003868</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>not_empty</Operator>
+      <ExpectedResult></ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

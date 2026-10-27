@@ -1879,6 +1879,34 @@
         "title": "Page[PackageRowItem]",
         "type": "object"
       },
+      "Page_PolicyItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[PolicyItem]",
+        "type": "object"
+      },
       "Page_RequestItem_": {
         "properties": {
           "items": {
@@ -1984,6 +2012,40 @@
         "title": "PasswordChangeRequest",
         "type": "object"
       },
+      "PatchPolicy": {
+        "additionalProperties": false,
+        "description": "Exactly one of {\"policy_status\": \"enabled\" | \"disabled\"} or\n{\"status_overridden\": false} (REQ-168).",
+        "properties": {
+          "policy_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "enabled",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Status"
+          },
+          "status_overridden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Overridden"
+          }
+        },
+        "title": "PatchPolicy",
+        "type": "object"
+      },
       "PatchUser": {
         "additionalProperties": false,
         "description": "One of: {role}, {disabled: false}, {totp: null}, {revoke_tokens: true}.",
@@ -2062,6 +2124,291 @@
           "timeout_s"
         ],
         "title": "PluginSpec",
+        "type": "object"
+      },
+      "PolicyDetailItem": {
+        "properties": {
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "family_id": {
+            "title": "Family Id",
+            "type": "integer"
+          },
+          "family_name": {
+            "title": "Family Name",
+            "type": "string"
+          },
+          "file_status": {
+            "enum": [
+              "enabled",
+              "disabled"
+            ],
+            "title": "File Status",
+            "type": "string"
+          },
+          "format_version": {
+            "title": "Format Version",
+            "type": "string"
+          },
+          "imported_at": {
+            "format": "date-time",
+            "title": "Imported At",
+            "type": "string"
+          },
+          "plugin_count": {
+            "title": "Plugin Count",
+            "type": "integer"
+          },
+          "plugins": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyPluginItem"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
+          "policy_description": {
+            "title": "Policy Description",
+            "type": "string"
+          },
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "integer"
+          },
+          "policy_name": {
+            "title": "Policy Name",
+            "type": "string"
+          },
+          "policy_status": {
+            "enum": [
+              "enabled",
+              "disabled"
+            ],
+            "title": "Policy Status",
+            "type": "string"
+          },
+          "source_file": {
+            "title": "Source File",
+            "type": "string"
+          },
+          "status_overridden": {
+            "title": "Status Overridden",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "policy_id",
+          "policy_name",
+          "policy_description",
+          "policy_status",
+          "file_status",
+          "status_overridden",
+          "family_id",
+          "family_name",
+          "format_version",
+          "version",
+          "source_file",
+          "plugin_count",
+          "imported_at",
+          "updated_at",
+          "deleted_at",
+          "plugins"
+        ],
+        "title": "PolicyDetailItem",
+        "type": "object"
+      },
+      "PolicyItem": {
+        "description": "#98 (a), in this field order.",
+        "properties": {
+          "family_id": {
+            "title": "Family Id",
+            "type": "integer"
+          },
+          "family_name": {
+            "title": "Family Name",
+            "type": "string"
+          },
+          "file_status": {
+            "enum": [
+              "enabled",
+              "disabled"
+            ],
+            "title": "File Status",
+            "type": "string"
+          },
+          "format_version": {
+            "title": "Format Version",
+            "type": "string"
+          },
+          "imported_at": {
+            "format": "date-time",
+            "title": "Imported At",
+            "type": "string"
+          },
+          "plugin_count": {
+            "title": "Plugin Count",
+            "type": "integer"
+          },
+          "policy_description": {
+            "title": "Policy Description",
+            "type": "string"
+          },
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "integer"
+          },
+          "policy_name": {
+            "title": "Policy Name",
+            "type": "string"
+          },
+          "policy_status": {
+            "enum": [
+              "enabled",
+              "disabled"
+            ],
+            "title": "Policy Status",
+            "type": "string"
+          },
+          "source_file": {
+            "title": "Source File",
+            "type": "string"
+          },
+          "status_overridden": {
+            "title": "Status Overridden",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "policy_id",
+          "policy_name",
+          "policy_description",
+          "policy_status",
+          "file_status",
+          "status_overridden",
+          "family_id",
+          "family_name",
+          "format_version",
+          "version",
+          "source_file",
+          "plugin_count",
+          "imported_at",
+          "updated_at"
+        ],
+        "title": "PolicyItem",
+        "type": "object"
+      },
+      "PolicyPluginItem": {
+        "description": "#98 (b), in this field order; display_name from v_plugin.",
+        "properties": {
+          "control_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Ref"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "execute": {
+            "title": "Execute",
+            "type": "string"
+          },
+          "execute_sha256": {
+            "title": "Execute Sha256",
+            "type": "string"
+          },
+          "expected_result": {
+            "title": "Expected Result",
+            "type": "string"
+          },
+          "operator": {
+            "title": "Operator",
+            "type": "string"
+          },
+          "plugin_description": {
+            "title": "Plugin Description",
+            "type": "string"
+          },
+          "plugin_name": {
+            "title": "Plugin Name",
+            "type": "string"
+          },
+          "plugin_uuid": {
+            "format": "uuid",
+            "title": "Plugin Uuid",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "retired"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "timeout_s": {
+            "title": "Timeout S",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_uuid",
+          "sort_order",
+          "display_name",
+          "plugin_name",
+          "control_ref",
+          "plugin_description",
+          "execute",
+          "execute_sha256",
+          "operator",
+          "expected_result",
+          "timeout_s",
+          "state",
+          "updated_at"
+        ],
+        "title": "PolicyPluginItem",
         "type": "object"
       },
       "Problem": {
@@ -5864,6 +6211,333 @@
         "summary": "Search Packages Csv",
         "tags": [
           "packages"
+        ]
+      }
+    },
+    "/api/v1/policies": {
+      "get": {
+        "operationId": "list_policies_api_v1_policies_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "enabled",
+                    "disabled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PolicyItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Policies",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/api/v1/policies/{id}": {
+      "get": {
+        "operationId": "get_policy_api_v1_policies__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{1,20}$",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyDetailItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Policy",
+        "tags": [
+          "policies"
+        ]
+      },
+      "patch": {
+        "description": "Sets the status with an override, or clears the override. Audited;\na re-enable alerts (#101). 409 for a deleted policy (#98 (c)).",
+        "operationId": "patch_policy_api_v1_policies__id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{1,20}$",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Patch Policy",
+        "tags": [
+          "policies"
         ]
       }
     },

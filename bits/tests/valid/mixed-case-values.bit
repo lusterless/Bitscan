@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture valid/mixed-case-values: PolicyStatus ENABLED and Operator EQUALS (case-insensitive, stored lowercase) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture valid/mixed-case-values</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>ENABLED</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>0f6af785-0473-59ed-b880-73c62dfc76c2</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>EQUALS</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.1 - Fixture check 2</PluginName>
+      <PluginDescription>Fixture plugin 2.</PluginDescription>
+      <PluginId>278286b0-fd88-5e1e-a128-2e06cc58aaa6</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>Not_Empty</Operator>
+      <ExpectedResult></ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<!-- bits/tests fixture bit001/us-ascii: declared US-ASCII -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit001/us-ascii</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>dfbc607e-1c22-5a5e-a9be-e2ade801cde4</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

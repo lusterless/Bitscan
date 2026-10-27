@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture valid/three-plugins: valid, three plugins in document order -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture valid/three-plugins</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>7b3c09ad-d757-52f0-a023-4be63c69b7bf</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.1 - Fixture check 2</PluginName>
+      <PluginDescription>Fixture plugin 2.</PluginDescription>
+      <PluginId>6e2f7a16-b091-5a8c-93ea-3594ce9b7908</PluginId>
+      <Execute timeout="30"><![CDATA[sysctl -n kernel.randomize_va_space]]></Execute>
+      <Operator>eq</Operator>
+      <ExpectedResult>2</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>3.1 - Fixture check 3</PluginName>
+      <PluginDescription>Fixture plugin 3.</PluginDescription>
+      <PluginId>8bd21a7f-0788-50cb-a3f5-8379bb8a4746</PluginId>
+      <Execute><![CDATA[grep -E '^\s*PermitRootLogin' /etc/ssh/sshd_config]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^PermitRootLogin\s+no$</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

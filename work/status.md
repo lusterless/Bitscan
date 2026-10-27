@@ -108,3 +108,26 @@ Previously NOT RUN locally (now confirmed in CI): the four workflows on GitHub A
 Next: the user approves the M0 exit gate; then the planner breaks down M1 (open items for it: first-migration size rule PD-18, the audit hash chain core, harness switch to app roles, pytester test for the conftest hook).
 
 Audit history: `work/audit/<role>.md` (merged), `work/audit/archive/` (history, ignore unless asked). Questions for the spec owner and process decisions: `work/open-questions.md`. Decisions: `work/decisions.md`. Tests: `tests/report.md`, `tests/m0/`.
+
+## M7 drain (2026-10-27, user pausing M7 to test v0.1.0)
+
+**No agent is running.** Branch `m7-catalog` (worktree `Bitscan-m7`), nothing committed or pushed.
+
+| State | Tasks |
+| --- | --- |
+| TEST PASS + REVIEW APPROVED, with the user's second approval | 139, 140, 147 (r1), 148, 149, 150 (W1) |
+| TEST PASS + REVIEW APPROVED, **waiting for the user's W2 second approval** | 141 (r1), 142, 143, 147 (r2), 148 (r1), 151 (r3), 152, 153 (r4), 161 (161 also the PD-35 second look) |
+| Tested PASS by tester-m7b, **reports not written**, not reviewed | 144 (687/687), 145 (173/173), 146 r1 (1160/1160); all plants red |
+| IN PROGRESS review (wait for G59 after TASK-154) | 174, 175 |
+| Not started | 154–160, 162–173 |
+
+**On resume, in order:**
+1. tester-m7b writes `work/reports/TASK-144-test.md`, `TASK-145-test.md` and `TASK-146-test.md` from its finished runs (the WSL copy `/root/bstest-m7b-base`, venv `/root/venv-m7b`, plant definitions `%TEMP%\m7b-plants`). Then reviewer-m7 reviews 144, 145 and 146.
+2. **User decision already made, not yet built:** close the BIT102 gaps (external `time` and the wrappers nsenter, unshare, flock, setpriv, taskset, chrt, `su -c` and runuser, all looked through; `trap` treated like eval; brace expansion in `bash -c`). This amends #108 (k), as TASK-146 revision 2 (impl-manager-m7b), with must-reject tests (tester-m7b).
+3. The `stdbuf -io L` dispute is closed: the builder was right, and the test now uses `stdbuf -i0 -oL`.
+4. The W2 second-approval batch goes to the user.
+5. Fold W2 into `tests/m7/report.md` from the per-task reports (lead).
+6. Next tasks: 154 (pipeline, once 144/146 are approved), 155, 165; then 156–160 (the crash-window ruling is recorded in their rows), routes 162–164, CLI 166, README 167, web 168–173.
+7. The VM plants CHK-M6-340..345 must PASS before the M7 gate.
+
+Lead rulings and user decisions from this session are in `work/decisions.md` (2026-10-27 rows).

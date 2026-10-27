@@ -37,6 +37,25 @@ class Database(Protocol):
     def ping(self) -> bool: ...  # for /readyz; never raises
 
 
+class CatalogSession(Protocol):
+    """One pinned connection for several transactions in a row, so the
+    catalog lock spans them (TS §4.1 "Locking"). Used by one thread."""
+
+    @property
+    def conn(self) -> psycopg.Connection[Any]: ...  # autocommit; catalog_lock only
+
+    # Entered several times in a row, never nested; hooks run after COMMIT.
+    def transaction(self) -> AbstractContextManager[Tx]: ...
+
+    # Inside an open transaction (a rebuild's per-file savepoint); on
+    # rollback the hooks registered inside it are dropped.
+    def savepoint(self) -> AbstractContextManager[None]: ...
+
+
+class SessionDatabase(Protocol):
+    def session(self) -> AbstractContextManager[CatalogSession]: ...
+
+
 class TotpCipher(Protocol):
     def encrypt(self, seed: bytes) -> str: ...
 

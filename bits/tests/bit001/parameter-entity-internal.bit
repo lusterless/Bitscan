@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture bit001/parameter-entity-internal: internal parameter entity -->
+<!DOCTYPE Policy [<!ENTITY % pe "<!ENTITY x 'boom'>"> %pe;]>
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit001/parameter-entity-internal</PolicyName>
+  <PolicyDescription>&x;</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>6662f5e1-e2c5-5ed9-9b71-78f3f2de3710</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

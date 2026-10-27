@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Policy formatVersion="1.0">
+  <PolicyName>CIS Ubuntu 24.04 Level 1 - Server</PolicyName>
+  <PolicyDescription>CIS Benchmark Level 1 controls for Ubuntu 24.04 servers.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>CIS Ubuntu 24.04</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.3.1.1 - Ensure AppArmor is installed</PluginName>
+      <PluginDescription>Checks that the AppArmor package is installed.</PluginDescription>
+      <PluginId>3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c48</PluginId>
+      <Execute timeout="30"><![CDATA[
+        dpkg-query -W -f='${Status}' apparmor 2>/dev/null
+      ]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

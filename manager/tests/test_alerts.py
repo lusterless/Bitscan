@@ -52,7 +52,16 @@ M3_KINDS = {
     "agent_auth_failures",
     "default_partition_rows",
 }
-SPEC_KINDS = M2_KINDS | M3_KINDS
+# M7 (TASK-153): the #101 catalog kinds, approved 2026-10-27 (a move is not an alert).
+M7_KINDS = {
+    "policy_imported",
+    "policy_import_rejected",
+    "policy_deleted",
+    "policy_rebuilt",
+    "policy_reenabled",
+    "catalog_integrity_failed",
+}
+SPEC_KINDS = M2_KINDS | M3_KINDS | M7_KINDS
 # REQ-086 (TS §8.4 L1288): the registry the #70 route serves.
 REGISTRY_FAMILIES = {
     "bitscan_alerts",
@@ -60,6 +69,7 @@ REGISTRY_FAMILIES = {
     "bitscan_heartbeat_latency_seconds",
     "bitscan_jobs_queued",
     "bitscan_jobs_expired",
+    "bitscan_import_failures",  # M7 (#101)
 }
 
 
@@ -126,13 +136,19 @@ def count(kind: str) -> float:
 
 
 def test_kinds_are_exactly_the_50_and_71_lists() -> None:
-    """#50 (c) for M2 and #71 for M3 (CHK-M3-103); one union, no other kind."""
-    from bitscan_manager.services.audit.alerts import M2_ALERT_KINDS, M3_ALERT_KINDS
+    """#50 (c) for M2, #71 for M3 (CHK-M3-103) and #101 for M7 (CHK-M7-185);
+    one union, no other kind."""
+    from bitscan_manager.services.audit.alerts import (
+        M2_ALERT_KINDS,
+        M3_ALERT_KINDS,
+        M7_ALERT_KINDS,
+    )
 
     assert set(M2_ALERT_KINDS) == M2_KINDS
     assert set(M3_ALERT_KINDS) == M3_KINDS
+    assert set(M7_ALERT_KINDS) == M7_KINDS
     assert set(ALERT_KINDS) == SPEC_KINDS
-    assert len(ALERT_KINDS) == 28
+    assert len(ALERT_KINDS) == 34
 
 
 @pytest.mark.parametrize("kind", sorted(SPEC_KINDS))
@@ -161,7 +177,9 @@ def test_alert_writes_one_entry_with_alert_true_and_its_kind(kind: str) -> None:
     assert repo.calls == ["lock"]  # the chain append path, under the chain lock
 
 
-@pytest.mark.parametrize("kind", ["", "API_TOKEN_CREATED", "policy_imported", "x"])
+@pytest.mark.parametrize(
+    "kind", ["", "API_TOKEN_CREATED", "Policy_Imported", "policy_moved", "x"]
+)
 def test_unknown_kind_is_refused_and_nothing_is_written(kind: str) -> None:
     repo, tx = FakeRepo(), FakeTx()
     with pytest.raises(ValueError):
