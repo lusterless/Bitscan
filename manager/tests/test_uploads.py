@@ -129,6 +129,12 @@ def test_fileinput_raises_on_each_mismatch(
 # The rename guard: a commit that is not this upload's never moves a file -------
 
 
+def _bits(root: Path) -> Path:
+    """``root`` as the bits folder, with an empty ``uploaded/``."""
+    (root / "uploaded").mkdir()
+    return root
+
+
 def _pending(policy_id: int, source_file: str | None) -> Any:
     store = None if source_file is None else SimpleNamespace(source_file=source_file)
     return SimpleNamespace(policy_id=policy_id, store=store)
@@ -146,25 +152,26 @@ def _pending(policy_id: int, source_file: str | None) -> Any:
 def test_rename_refuses_a_commit_that_is_not_this_uploads(
     tmp_path: Path, written_for: int, pending_id: int, source_file: str | None
 ) -> None:
-    upl = uploads._Upload(tmp_path, DATA, GOOD)
+    upl = uploads._Upload(_bits(tmp_path), DATA, GOOD)
     upl.write(written_for)
-    before = sorted(os.listdir(tmp_path))
+    before = sorted(os.listdir(tmp_path / "uploaded"))
     with pytest.raises(RuntimeError):
         upl.rename(_pending(pending_id, source_file))
-    assert sorted(os.listdir(tmp_path)) == before == [f".tmp-{written_for}-{GOOD}"]
+    assert sorted(os.listdir(tmp_path / "uploaded")) == before
+    assert before == [f".tmp-{written_for}-{GOOD}"]
 
 
 def test_rename_without_a_temp_file_raises(tmp_path: Path) -> None:
-    upl = uploads._Upload(tmp_path, DATA, GOOD)
+    upl = uploads._Upload(_bits(tmp_path), DATA, GOOD)
     with pytest.raises(RuntimeError):
         upl.rename(_pending(5, "uploaded/policy-5.bit"))
-    assert os.listdir(tmp_path) == []
+    assert os.listdir(tmp_path / "uploaded") == []
 
 
 def test_discard_logs_only_the_error_type_when_removal_fails(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    upl = uploads._Upload(tmp_path, DATA, GOOD)
+    upl = uploads._Upload(_bits(tmp_path), DATA, GOOD)
     upl.write(5)
 
     def refuse(path: Any, *a: Any, **kw: Any) -> None:
@@ -175,6 +182,6 @@ def test_discard_logs_only_the_error_type_when_removal_fails(
     monkeypatch.setattr(os, "remove", refuse)
     upl.discard()
     monkeypatch.undo()
-    assert os.listdir(tmp_path) == [f".tmp-5-{GOOD}"]
+    assert os.listdir(tmp_path / "uploaded") == [f".tmp-5-{GOOD}"]
     msgs = [r.getMessage() for r in caplog.records]
     assert msgs == ["upload temp removal failed: PermissionError"]

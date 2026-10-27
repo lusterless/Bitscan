@@ -2481,3 +2481,47 @@ def test_a_bits_folder_swapped_before_an_upload_copy_is_removed_is_not_followed(
     assert [d.policy_id for d in res.deleted] == [g["U"]]
     assert res.unreadable_folders == BOTH
     assert tree(evil) == evil_tree
+
+
+def test_req159_3_move_does_not_remove_the_copy_through_a_swapped_bits_folder(
+    server: PgServer,
+    db: AppDatabase,
+    tmp_path: Path,
+    bits: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-159 (3): a server file takes an uploaded policy's name, so the
+    policy moves and its uploaded copy is removed after commit. The bits
+    folder becomes a link just before that removal: the file of the same name
+    in the link target must stay, and the real copy is left in place."""
+    name = f"Uploaded {tag()}"
+    data = bit(name)[0]
+    up = upload(db, bits, data)
+    pid = int(up.policy_id or 0)
+    rel = f"uploaded/policy-{pid}.bit"
+    put(bits, "x.bit", data)
+    evil = tmp_path / "evil"
+    (evil / "uploaded").mkdir(parents=True)
+    put(evil, rel, b"not the manager's file")
+    evil_tree = tree(evil)
+    real = pipeline.remove_after_commit
+    calls: list[tuple[str, ...]] = []
+
+    def hook(bits_dir: Path, paths: Any) -> None:
+        calls.append(tuple(paths))
+        if rel in paths and not os.path.islink(bits):
+            _break(bits, "missing", tmp_path / "bits-real")
+            os.symlink(evil, bits)
+        real(bits_dir, paths)
+
+    monkeypatch.setattr(pipeline, "remove_after_commit", hook)
+    s = snap(server)
+    res = rec(db, bits)
+    assert (rel,) in calls  # the move's removal was reached
+    row = policy_row(server, pid)
+    assert (row["source_file"], row["deleted_at"]) == ("x.bit", None)
+    assert actions(audits_since(server, s)) == ["policy.import", "policy.move"]
+    assert tree(evil) == evil_tree  # nothing removed through the link
+    assert (tmp_path / "bits-real" / rel).read_bytes() == data  # left in place
+    assert res.unreadable_folders == BOTH
+    assert res.deleted == ()

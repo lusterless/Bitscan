@@ -416,7 +416,10 @@ def test_temp_open_flags_flush_then_commit_then_rename(
         if Path(path) == temp or (via == "dir" and Path(path).name == temp.name):
             events.append(("open", (flags, mode, via)))
             fds[fd] = "temp"
-        elif Path(path) == bits / "uploaded":
+        elif Path(path) == bits:
+            dir_flags.append(flags)
+            fds[fd] = "bits"
+        elif str(path) == "uploaded" and fds.get(kw.get("dir_fd", -1)) == "bits":
             dir_flags.append(flags)
             fds[fd] = "dir"
         return fd
@@ -448,9 +451,11 @@ def test_temp_open_flags_flush_then_commit_then_rename(
         assert flags & getattr(os, flag), flag
     assert not flags & os.O_TRUNC and not flags & os.O_APPEND
     assert mode == 0o600
-    # Folder guard (r2 ruling): uploaded/ opened O_DIRECTORY | O_NOFOLLOW and
-    # the temp open, the directory fsync and the rename are relative to it.
+    # Folder guard (r2, r3 rulings): the bits folder, then uploaded/ relative
+    # to it, each O_DIRECTORY | O_NOFOLLOW; the temp open, the directory fsync
+    # and the rename are relative to the uploaded/ fd.
     assert via == "dir"
+    assert "dir" in fds.values() and "bits" in fds.values()
     assert dir_flags and all(
         f & os.O_DIRECTORY and f & os.O_NOFOLLOW for f in dir_flags
     )
@@ -1242,6 +1247,126 @@ def test_a_folder_swapped_for_a_link_after_the_write_renames_in_the_original(
     assert listing(decoy) == ["keep"]
     assert listing(moved) == [f"policy-{pid}.bit"]
     assert (moved / f"policy-{pid}.bit").read_bytes() == v2
+
+
+# Folder guard on the bits folder itself (TASK-155 r3, decisions 2026-10-27) ----
+
+BITS_KINDS = ["dir-link", "file", "dangling-link"]
+
+
+def _break_bits(
+    server: PgServer, db: AppDatabase, bits: Path, kind: str
+) -> tuple[Path, str, int]:
+    """A live upload with an interrupted rename and a junk temp, then the
+    bits folder replaced by ``kind``. Returns the real folder, the policy's
+    name and id."""
+    name, pid, _ = seed(db, bits)
+    v2, _ = bit(name, status="disabled")
+    with owner(server) as c:
+        c.execute(
+            "UPDATE policy SET source_sha256 = %s WHERE policy_id = %s", (sha(v2), pid)
+        )
+    (bits / "uploaded" / tmp_name(pid, v2)).write_bytes(v2)
+    (bits / "uploaded" / ".tmp-x").write_bytes(b"junk")
+    real = bits.parent / "real-bits"
+    bits.rename(real)
+    if kind == "dir-link":
+        bits.symlink_to(real, target_is_directory=True)
+    elif kind == "file":
+        bits.write_bytes(b"not a directory")
+    else:
+        bits.symlink_to(bits.parent / "nowhere")
+    return real, name, pid
+
+
+@pytest.mark.parametrize("kind", BITS_KINDS)
+def test_finish_touches_nothing_when_the_bits_folder_is_not_a_real_directory(
+    server: PgServer,
+    db: AppDatabase,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+    kind: str,
+) -> None:
+    _break_bits(server, db, bits, kind)
+    disk0 = tree(bits.parent)
+    s0 = snap(server)
+    caplog.set_level("DEBUG", logger="bitscan_manager.services.importer.uploads")
+    assert finish(db, bits) == FinishedUploads(renamed=0, deleted=0)
+    assert tree(bits.parent) == disk0
+    assert not (bits.parent / "nowhere").exists()
+    assert catalog_now(server) == s0.catalog
+    assert imports_since(server, s0) == [] and audits_since(server, s0) == []
+    recs = _guard_logs(caplog)
+    assert len(recs) == 1 and recs[0].levelno >= logging.WARNING
+    assert str(bits.parent) not in recs[0].getMessage()
+
+
+@pytest.mark.parametrize("new", [True, False], ids=["new", "update"])
+@pytest.mark.parametrize("kind", BITS_KINDS)
+def test_an_upload_writes_nothing_when_the_bits_folder_is_not_a_real_directory(
+    server: PgServer, db: AppDatabase, bits: Path, kind: str, new: bool
+) -> None:
+    _, name, _ = _break_bits(server, db, bits, kind)
+    data, _ = bit(f"Guard {tag()}" if new else name)
+    disk0 = tree(bits.parent)
+    s0 = snap(server)
+    with pytest.raises(OSError):
+        up(db, bits, data)
+    assert tree(bits.parent) == disk0
+    assert not (bits.parent / "nowhere").exists()
+    assert catalog_now(server) == s0.catalog
+    assert imports_since(server, s0) == [] and audits_since(server, s0) == []
+    assert counter_delta(s0) == {}
+
+
+def test_a_delete_through_a_linked_bits_folder_commits_and_leaves_the_copy(
+    server: PgServer, db: AppDatabase, bits: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    real, _, pid = _break_bits(server, db, bits, "dir-link")
+    before = tree(real)
+    caplog.set_level("DEBUG")
+    delete_policy(db, pid, actor="user:7", clock=FixedClock(), bits_dir=bits)
+    assert policy_row(server, pid)["deleted_at"] is not None
+    assert tree(real) == before  # policy-<id>.bit still there, behind the link
+    assert (real / "uploaded" / f"policy-{pid}.bit").is_file()
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("upload removal skipped" in m for m in msgs), msgs
+
+
+def test_a_server_file_taking_an_uploaded_name_through_a_linked_bits_folder(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    """``move_upload``'s removal: the catalog move commits; the copy behind a
+    symlinked bits folder is left."""
+    real, name, pid = _break_bits(server, db, bits, "dir-link")
+    srv, _ = bit(name)
+    (real / "srv.bit").write_bytes(srv)
+    before = tree(real / "uploaded")
+    assert server_import(db, bits, srv, "srv.bit") == pid
+    assert policy_row(server, pid)["source_file"] == "srv.bit"
+    assert tree(real / "uploaded") == before
+
+
+def test_a_bits_folder_swapped_for_a_link_after_the_write_renames_in_the_original(
+    server: PgServer, db: AppDatabase, bits: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    name, pid, _ = seed(db, bits)
+    v2, _ = bit(name, status="disabled")
+    decoy = bits.parent / "decoy"
+    (decoy / "uploaded").mkdir(parents=True)
+    moved = bits.parent / "moved-bits"
+    real_rename = uploads._Upload.rename
+
+    def rename(self: Any, pending: Any) -> None:
+        bits.rename(moved)
+        bits.symlink_to(decoy, target_is_directory=True)
+        real_rename(self, pending)
+
+    monkeypatch.setattr(uploads._Upload, "rename", rename)
+    assert up(db, bits, v2).outcome == "success"
+    assert listing(decoy / "uploaded") == []
+    assert listing(moved / "uploaded") == [f"policy-{pid}.bit"]
+    assert (moved / "uploaded" / f"policy-{pid}.bit").read_bytes() == v2
 
 
 def test_finish_leaves_a_directory_named_like_a_temp_and_still_finishes(
