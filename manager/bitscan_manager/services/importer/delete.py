@@ -137,7 +137,7 @@ def remove_after_commit(bits_dir: Path, paths: Sequence[str]) -> None:
     if not names:
         return
     try:
-        dir_fd = open_uploaded_dir(bits_dir / "uploaded")
+        dir_fd = open_uploaded_dir(bits_dir)
     except OSError as exc:
         log.warning(
             "upload removal skipped: uploaded folder unreadable: %s", type(exc).__name__

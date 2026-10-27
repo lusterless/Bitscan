@@ -121,3 +121,33 @@ Residual risk: after a kept temp (an unknown commit), a second upload of the sam
 - The `move_upload` path: a server-folder file takes an uploaded policy's name while `uploaded/` is a symlink. The catalog move commits, the copy in the link target is left, the "upload removal skipped" line is logged, and nothing raises. With a real `uploaded/` the copy is removed.
 - The `delete_policy` and `folders.py` removals go through the same function: the symlinked `uploaded/` leaves the copy and does not raise.
 - Swapping `uploaded/` for a symlink after `write` opened the handle (between commit and rename): the rename still lands in the original directory, through the fd.
+
+## Revision 3 (security: a symlinked bits folder was followed; last row of `work/decisions.md`, option (a))
+
+**Cause:** `open_uploaded_dir(bits_dir / "uploaded")` applied `O_NOFOLLOW` only to the last component, `uploaded`. So with `bits -> elsewhere`, `remove_after_commit` (and the upload and finish paths) worked inside `elsewhere/uploaded`.
+
+**Fix:**
+- `uploads.py:58` `open_uploaded_dir(bits_dir) -> int` now takes the bits folder. It opens it with `O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC`, then opens `uploaded` relative to that fd (`dir_fd=`) with the same flags, and closes the bits fd in a `finally`. A missing, symlinked or non-directory bits folder or `uploaded/` raises `OSError`.
+  - Links in the path *above* the bits folder belong to the install and are not checked; the docstring says so.
+- Callers updated:
+  - `_Upload`: its field is now `bits_dir`, and `write` calls `open_uploaded_dir(self.bits_dir)`. `import_upload` builds `_Upload(bits_dir, ...)`.
+  - `finish_interrupted_uploads` calls `open_uploaded_dir(bits_dir)`.
+  - `delete.py` `remove_after_commit` calls `open_uploaded_dir(bits_dir)`.
+- Failure handling is the same as r2:
+  - the upload fails as an internal error (no row);
+  - finish returns `(0, 0)` with one log line;
+  - the removal leaves the copy and logs one line.
+
+**Grep (no path-based open of `uploaded/` remains):** in `uploads.py` and `delete.py`, every `os.open`, `os.replace`, `os.unlink` and `os.listdir` call is relative to a directory fd (`uploads.py:66, 92, 113, 122, 172, 224, 242, 245`; `delete.py:149`). The only path-based open is the bits folder itself (`uploads.py:64`, with `O_NOFOLLOW`). Two remaining path uses never touch `uploaded/`:
+- `delete.py:34` `_UPLOADED` is a `source_file` string prefix;
+- `import_upload`'s `file_exists` lambda is a `Path.is_file` for server-folder paths, which `decide` never calls for an upload target.
+
+**Gates:**
+- ruff check, ruff format check and `mypy --strict` pass.
+- `tests/test_uploads.py`, `test_uploads_pg.py`, `test_folders_pg.py`, the TASK-154 suites and `test_policy_delete_pg.py`: 510 passed and 6 failed. The two `test_folders_pg.py` tests from tester-m7-156r2, `test_a_leftover_whose_folder_is_swapped_after_discover_is_not_reported_removed[bits-symlink-with-copy]` and `test_a_bits_folder_swapped_before_an_upload_copy_is_removed_is_not_followed`, now **pass**, as does all of `test_folders_pg.py`.
+
+**The 6 failures are test-side, caused by the changed private interface:**
+- `test_uploads.py::test_rename_refuses_a_commit_that_is_not_this_uploads[...]` (4 cases) and `test_discard_logs_only_the_error_type_when_removal_fails` build `_Upload(tmp_path, ...)` with `tmp_path` as the `uploaded/` folder. The first argument is now the bits folder, so these need `bits_dir(tmp_path)` and must look at `tmp_path / "uploaded"`.
+- `test_uploads_pg.py::test_temp_open_flags_flush_then_commit_then_rename`: `spy_open` recognises the folder open by the path `bits / "uploaded"`. The folder is now opened as `"uploaded"` with `dir_fd=` the bits fd, after a path open of `bits`. The spy should track the bits fd and match `("uploaded", dir_fd=bits_fd)`.
+
+**Cases for the tester (r3):** a bits folder that is a symlink to a scratch dir containing `uploaded/` with a `policy-<id>.bit` and a `.tmp-*`. For each of `import_upload`, `finish_interrupted_uploads`, `remove_after_commit` (through `delete_policy` and a `move_upload`), and the swap between discover and removal: nothing in the scratch dir changes. Also a bits folder that is a regular file.
