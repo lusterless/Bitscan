@@ -1,4 +1,4 @@
-# TASK-156 TEST: PASS (revision 1 included)
+# TASK-156 TEST: PASS (revisions 1 and 2 included)
 
 Tester: tester-m7-156, 2026-10-27. Covers REQ-159 (1), (2), (3), (6), REQ-164 (2), REQ-165 (3), and #15, #102 (b) and #103 (the folder side). Spec: TS §4.1 L515, L524, L526, L528, L532; §4.2; §4.3 L550; §4.6; SR §3.6. Rulings applied (`work/decisions.md`, 2026-10-27):
 - "Crash window": a deleted policy's leftover upload is removed and reported.
@@ -92,3 +92,56 @@ The pre-r1 plant P13 (refused aborts the reconcile) is retired, because `refused
 3. P10: without the BIGSERIAL cap, PostgreSQL compares the out-of-range id as numeric and finds no row, so the PG path still gives `stray`. Only the unit test catches it. That is harmless.
 4. A BIT007 loser, or any rejected folder file, writes a `rejected` row and a `policy.import_rejected` alert at every reconcile. TS §4.1 L532 says to retry, and #103 counts the rejected row. Expected, but noisy at every start-up.
 5. `folders.import_one`, `folders.prepare` and `pipeline.store_decide` are re-exports that the spies patch. The tests use `pipeline.import_one` and `pipeline.prepare` for the real calls, so mypy is clean.
+
+## Revision 2 (tester-m7-156r2, 2026-10-27): folder guard: PASS
+
+Ruling: `work/decisions.md`, 2026-10-27, user "Folder guard" and lead "Folder guard details" (1). The code under test is `folders.py` at HEAD 09fcf66 (r2: `unreadable`, `BITS_ROOT`, `ReconcileResult.unreadable_folders`, the guard in `reconcile` and `delete_removed`, and `discover` returning `[]` for a bits folder that is not a real directory). This revision closes r1 Finding 2. I wrote the expected values from the two rulings first. I read the code afterwards, only to choose plant targets. No product file changed.
+
+File changed: `manager/tests/test_folders_pg.py`. It gains 7 test functions (23 cases), so it now has 44 functions (111 cases).
+
+### Runs (Linux container, Docker PostgreSQL 16, `CI=true`, RYUK pinned, nothing skipped)
+
+| Run | Command (from `manager/`) | Count |
+| --- | --- | --- |
+| baseline (HEAD, before the new tests) | `pytest -n 4 tests/test_folders_pg.py` | 88/88 passed |
+| r2 file | `pytest -n 4 tests/test_folders_pg.py` | **111/111 passed**, 0 failed, 0 errors, 0 skipped (r1's 88 are among them) |
+| r2 affected set | `pytest -n 4 tests/test_folders_pg.py tests/test_import_pipeline_pg.py tests/test_import_store_pg.py tests/test_policy_delete_pg.py tests/test_catalog_lock_pg.py` | **383/383 passed**, 0 failed, 0 errors, 0 skipped |
+| coverage | `pytest -n 2 tests/test_folders_pg.py --cov=bitscan_manager.services.importer.folders` | 111/111 passed. `folders.py` 179/180 lines (99.4 %). Only line 256 is missed: a file that vanishes between `discover` and `read_input`, the same branch as in r1 |
+| static | `ruff check manager`, `ruff format --check manager`, `mypy --strict --config-file manager/pyproject.toml manager` | clean (291 files) |
+| plants control | copy at `scratchpad/t156r2/base` (rebuilt from the current tree). The import path printed was the copy's `folders.py` | 111/111 passed |
+
+`test_uploads*.py` were not run. They belong to TASK-155 r2, which is in progress, and `folders.py` does not import `uploads.py`. The `upload()` helper here goes through `uploads.import_upload` and works at HEAD.
+
+### Report rows
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| r2 labels (no DB) | CODE | Linux | `test_unreadable_labels` (10) | PASS | `unreadable()` returns `()` for real folders and for real empty ones. It returns `("uploaded/",)` when `uploaded/` is missing, a symlink to a real folder, a dangling symlink or a regular file. It returns `("./", "uploaded/")` when the bits folder is missing, a symlink to a real folder, a file, or a symlink to a folder with no `uploaded/`. In every case `discover` returns only the files of readable folders (`[]` through a symlinked bits folder), and the whole tmp tree (lstat) is unchanged | 2026-10-27 |
+| r2 `uploaded/` unreadable | APP | Linux/PG | `test_an_unreadable_uploaded_folder_is_left_alone_and_the_server_folder_reconciled[missing, symlink, file]` | PASS | Setup: server S and R, live upload U, deleted upload D. Then `uploaded/` is broken. Its real folder (the symlink target) holds U's file changed, D's leftover and a stray. `r.bit` is removed and `n.bit` added. Over 3 reconciles: `unreadable_folders == ("uploaded/",)`; there is no `bit_import` row for any `uploaded/` path, and `read_input` is never called for one (spy). Leftovers, strays and renamed are empty. U's and D's rows (incl. xmin) and member states are identical, and the real folder's tree is byte-identical. There is exactly one guard log line per run, ending in the label, identical across runs, with no tmp path, `/bits` or `policy-` in any record. Run 1 reconciles the server folder normally: `n.bit success`, `s.bit skipped`, R deleted (`deleted_at` = clock), `policy.import` and `policy.delete`, +1/+1 alerts. Runs 2 and 3 give only skips, no audit entries, no counter change and the same catalog. Recovery: `()`, U `success` with the new hash, D reported as a leftover, the stray reported, no delete | 2026-10-27 |
+| r2 bits folder unreadable | APP | Linux/PG | `test_an_unreadable_bits_folder_makes_both_folders_unreadable[missing, symlink, file]` | PASS | The real folder (the symlink target) holds `s.bit` changed, `r.bit` removed, a new `n.bit`, U's file changed, D's leftover and a stray. Over 3 reconciles: `("./", "uploaded/")`, two guard lines per run, no rows, no audit entries, no counter change, same catalog, and empty outcomes, deleted, leftovers, strays and renamed. S, R, U and D are identical, the target tree is byte-identical, `read_input` is never called, and `discover(bits) == []`. Recovery: `()`, R deleted, `n.bit` and `s.bit` `success`, U's new hash, D reported as a leftover | 2026-10-27 |
+| r2 both together | APP | Linux/PG | `test_both_folders_unreadable_together[missing, symlink, file]` | PASS | A symlinked bits folder whose own `uploaded/` is missing, a symlink or a file, with `s.bit` also removed in the target. Over 2 runs: `("./", "uploaded/")`, two lines, no rows or entries, no deletes, same catalog, the policies identical and the whole tmp tree unchanged | 2026-10-27 |
+| r2 real empty folder | APP | Linux/PG | `test_a_real_empty_folder_still_deletes_its_policies[uploaded, server, both]` | PASS | Empty real `uploaded/` (`listdir == []`), a bits folder holding only `uploaded/`, or both. Run 1: `()`, no guard line, exactly the folder's policies soft-deleted (`deleted_at` = clock, `deleted/<id>`, members retired, `policy.delete` with reason `file removed`, `policy_deleted` +n), the other folder's policies kept. Runs 2 and 3: nothing deleted, no entries, no counter change, same catalog | 2026-10-27 |
+| r2 `delete_removed` direct | APP | Linux/PG | `test_delete_removed_skips_an_unreadable_folder_but_not_an_empty_one` | PASS | With `uploaded/` missing it returns only R (the server folder still works) and U stays live. With `uploaded/` real and empty it returns U. With the bits folder a symlink and `s.bit` gone in the target it returns `()` and S stays live | 2026-10-27 |
+
+### Plants (copy `scratchpad/t156r2/<id>` of the r2 base; control 111/111 green; each run is `test_folders_pg.py`, `-n 4`): 10/10 red
+
+| Plant | Change | Red |
+| --- | --- | --- |
+| R1 | guard skipped in `reconcile` (`blind = ()`) | 9 |
+| R2 | guard skipped in `delete_removed` (`blind = ()`) | 10 |
+| R3 | a symlinked bits folder lists only `"./"` | 6 |
+| R3b | any unreadable bits folder lists only `"./"` | 10 |
+| R4 | label missing from the result (last field `()`) | 9 |
+| R5 | `_real_dir` uses `stat` (follows links) | 10 |
+| R6 | a real empty folder treated as unreadable | 5 (labels `both-empty`, empty `[uploaded]` and `[both]`, the `delete_removed` test, r1's removed-upload test) |
+| R7 | `discover`'s bits-folder check dropped (reads `uploaded/` through a symlinked bits folder) | 2 |
+| R8 | guard log line also carries `bits_dir` | 9 |
+| R9 | guard log line dropped | 9 |
+
+### Findings for the reviewer (none blocking)
+
+1. r1 Finding 2 (a mis-mounted `uploaded/` deletes every uploaded policy) is fixed and is now a PASS criterion.
+2. Plant R6 does not turn `test_a_real_empty_folder_still_deletes_its_policies[server]` red. A bits folder always holds `uploaded/`, so it is never literally empty. The case still covers "a bits folder with no `.bit` file is readable".
+3. On recovery, a folder that comes back with changed content is imported normally (a `success` row and an alert), and a leftover inside it is removed then. That is the expected behaviour, not churn: the guard only defers the reconcile.
+4. Through a symlinked bits folder, `present(bits, "s.bit")` still resolves the link, because `lstat` does not follow only the last path component. This is harmless, because `delete_removed` checks `unreadable` first (plant R2 shows the guard is what protects), but TASK-157 should keep that order.
+5. The guard log words are not pinned. The tests check one line per folder, ending in its label, identical across runs, with no path.

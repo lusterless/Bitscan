@@ -1388,3 +1388,401 @@ def test_spy_contract() -> None:
 
     params = list(inspect.signature(pipeline.import_one).parameters)
     assert params[:4] == ["session", "clock", "bits_dir", "file"]
+
+
+# ----------------------------------------------------------------------------
+# TASK-156 revision 2: the folder guard (decisions 2026-10-27, user "Folder
+# guard" and lead "Folder guard details" (1)). A missing, symlinked or
+# non-directory `uploaded/` or bits folder is unreadable: nothing is imported
+# from it, no policy whose source_file is in it is deleted, one fixed-words
+# log line per folder (no path), and the result lists it. An unreadable bits
+# folder makes both folders unreadable. A real empty folder is still empty.
+# ----------------------------------------------------------------------------
+
+BOTH = ("./", "uploaded/")
+BREAKS = ["missing", "symlink", "file"]
+
+
+def _break(path: Path, how: str, away: Path) -> None:
+    """Make the folder at `path` unreadable; its real content goes to `away`
+    (for "symlink", `path` then links to that real directory)."""
+    path.rename(away)
+    if how == "symlink":
+        os.symlink(away, path)
+    elif how == "file":
+        path.write_bytes(b"a regular file where a folder belongs\n")
+    else:
+        assert how == "missing"
+
+
+def _restore(path: Path, away: Path) -> None:
+    if os.path.lexists(path):
+        path.unlink()
+    away.rename(path)
+
+
+def _guard_setup(server: PgServer, db: AppDatabase, bits: Path) -> dict[str, Any]:
+    """Server policies S (s.bit) and R (r.bit), a live upload U and a deleted
+    upload D, all reconciled once with both folders readable."""
+    s_name, r_name, u_name = f"GS {tag()}", f"GR {tag()}", f"GU {tag()}"
+    put(bits, "s.bit", bit(s_name, [P(), P()])[0])
+    put(bits, "r.bit", bit(r_name)[0])
+    u_data, u_ids = bit(u_name, [P(), P()])
+    upload(db, bits, u_data)
+    d = upload(db, bits, bit(f"GD {tag()}")[0])
+    d_id = int(d.policy_id or 0)
+    d_rel = f"uploaded/policy-{d_id}.bit"
+    d_bytes = (bits / d_rel).read_bytes()
+    dl.delete_policy(db, d_id, actor="user:7", clock=FixedClock(), bits_dir=bits)
+    first = rec(db, bits)
+    assert first.unreadable_folders == ()
+    assert first.deleted == () and first.leftovers == () and first.strays == ()
+    ids = {}
+    for key, name in [("S", s_name), ("R", r_name), ("U", u_name)]:
+        p = policy_by_name(server, name)
+        assert p is not None and p["deleted_at"] is None
+        ids[key] = int(p["policy_id"])
+    assert policy_row(server, ids["U"])["source_file"] == (
+        f"uploaded/policy-{ids['U']}.bit"
+    )
+    return {
+        **ids,
+        "D": d_id,
+        "d_rel": d_rel,
+        "d_bytes": d_bytes,
+        "u_name": u_name,
+        "u_ids": u_ids,
+        "s_name": s_name,
+    }
+
+
+def _frozen(server: PgServer, ids: list[int]) -> dict[int, Any]:
+    """Each policy's row and its members' states."""
+    return {i: (policy_row(server, i), members(server, i)) for i in ids}
+
+
+def _guard_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == LOGGER and "unreadable" in r.getMessage()
+    ]
+
+
+def _assert_guard_log(
+    caplog: pytest.LogCaptureFixture, labels: tuple[str, ...], tmp_path: Path
+) -> list[str]:
+    """Exactly one line per unreadable folder, naming its label and no path."""
+    lines = _guard_lines(caplog)
+    assert len(lines) == len(labels), lines
+    for label in labels:
+        assert sum(line.endswith(" " + label) for line in lines) == 1, lines
+    for r in caplog.records:
+        text = r.getMessage() + repr(r.args)
+        assert str(tmp_path) not in text, text
+        assert "/bits" not in text and "policy-" not in text, text
+    return lines
+
+
+@pytest.mark.parametrize(
+    ("make", "labels"),
+    [
+        ("real", ()),
+        ("both-empty", ()),
+        ("uploaded-missing", ("uploaded/",)),
+        ("uploaded-symlink", ("uploaded/",)),
+        ("uploaded-dangling", ("uploaded/",)),
+        ("uploaded-file", ("uploaded/",)),
+        ("bits-missing", BOTH),
+        ("bits-symlink", BOTH),
+        ("bits-file", BOTH),
+        ("bits-symlink-uploaded-missing", BOTH),
+    ],
+)
+def test_unreadable_labels(
+    tmp_path: Path, bits: Path, make: str, labels: tuple[str, ...]
+) -> None:
+    good = bit()[0]
+    if make != "both-empty":
+        put(bits, "s.bit", good)
+        put(bits, "uploaded/policy-1.bit", good)
+    away = tmp_path / "away"
+    if make.startswith("uploaded-"):
+        how = make.removeprefix("uploaded-")
+        if how == "dangling":
+            (bits / "uploaded/policy-1.bit").unlink()
+            (bits / "uploaded").rmdir()
+            os.symlink(tmp_path / "nowhere", bits / "uploaded")
+        else:
+            _break(bits / "uploaded", how, away)
+    elif make == "bits-symlink-uploaded-missing":
+        (bits / "uploaded/policy-1.bit").unlink()
+        (bits / "uploaded").rmdir()
+        _break(bits, "symlink", away)
+    elif make.startswith("bits-"):
+        _break(bits, make.removeprefix("bits-"), away)
+    before = tree(tmp_path)
+    assert folders.unreadable(bits) == labels
+    expect = {
+        (): ["s.bit", "uploaded/policy-1.bit"] if make == "real" else [],
+        ("uploaded/",): ["s.bit"],
+        BOTH: [],
+    }[labels]
+    assert folders.discover(bits) == expect  # nothing read through a link
+    assert tree(tmp_path) == before
+
+
+@pytest.mark.parametrize("how", BREAKS)
+def test_an_unreadable_uploaded_folder_is_left_alone_and_the_server_folder_reconciled(
+    server: PgServer,
+    db: AppDatabase,
+    tmp_path: Path,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    g = _guard_setup(server, db, bits)
+    u_rel = f"uploaded/policy-{g['U']}.bit"
+    away = tmp_path / "uploaded-real"
+    _break(bits / "uploaded", how, away)
+    # Content that a followed link would act on: a changed live upload, a
+    # leftover (would be removed) and a stray (would be reported).
+    changed = bit(g["u_name"], [P(uuid=g["u_ids"][0], execute="cat /etc/issue")])[0]
+    put(away, f"policy-{g['U']}.bit", changed)
+    put(away, f"policy-{g['D']}.bit", g["d_bytes"])
+    put(away, "policy-999999999.bit", bit(f"GX {tag()}")[0])
+    away_tree = tree(away)
+    # The server folder changes: r.bit removed, n.bit added.
+    (bits / "r.bit").unlink()
+    n_name = f"GN {tag()}"
+    put(bits, "n.bit", bit(n_name)[0])
+    frozen = _frozen(server, [g["U"], g["D"]])
+    reads: list[str] = []
+    real_read = folders.read_input
+
+    def spy(bits_dir: Path, r: str) -> FileInput | None:
+        reads.append(r)
+        return real_read(bits_dir, r)
+
+    monkeypatch.setattr(folders, "read_input", spy)
+    lines_per_run: list[list[str]] = []
+    for run in range(3):
+        caplog.clear()
+        caplog.set_level(logging.DEBUG)
+        s = snap(server)
+        res = rec(db, bits)
+        rows = imports_since(server, s)
+        assert res.unreadable_folders == ("uploaded/",)
+        lines_per_run.append(_assert_guard_log(caplog, ("uploaded/",), tmp_path))
+        assert [r for r in rows if r["file_name"].startswith("uploaded/")] == []
+        assert res.leftovers == () and res.strays == () and res.renamed == ()
+        assert _frozen(server, [g["U"], g["D"]]) == frozen  # U live, D deleted
+        assert tree(away) == away_tree
+        entries = audits_since(server, s)
+        if run == 0:
+            assert sorted(rows_by_file(rows)) == [
+                ("n.bit", "success"),
+                ("s.bit", "skipped"),
+            ]
+            assert [d.policy_id for d in res.deleted] == [g["R"]]
+            assert sorted(actions(entries)) == ["policy.delete", "policy.import"]
+            assert counter_delta(s) == {
+                "alert:policy_imported": 1.0,
+                "alert:policy_deleted": 1.0,
+            }
+            assert policy_row(server, g["R"])["deleted_at"] == T1
+        else:  # no churn
+            assert sorted(rows_by_file(rows)) == [
+                ("n.bit", "skipped"),
+                ("s.bit", "skipped"),
+            ]
+            assert res.deleted == ()
+            assert entries == [] and counter_delta(s) == {}
+            assert catalog_now(server) == s.catalog
+    assert [r for r in reads if r.startswith("uploaded/")] == []
+    assert lines_per_run[0] == lines_per_run[1] == lines_per_run[2]
+    assert policy_row(server, g["S"])["deleted_at"] is None
+    n = policy_by_name(server, n_name)
+    assert n is not None and n["deleted_at"] is None
+    # Recovery: the real folder is back and is read again.
+    _restore(bits / "uploaded", away)
+    s = snap(server)
+    res = rec(db, bits)
+    assert res.unreadable_folders == ()
+    assert sorted(rows_by_file(imports_since(server, s))) == [
+        ("n.bit", "skipped"),
+        ("s.bit", "skipped"),
+        (u_rel, "success"),
+    ]
+    assert policy_row(server, g["U"])["source_sha256"] == sha(changed)
+    assert res.leftovers == (Difference(g["d_rel"], folders.LEFTOVER_CHECK),)
+    assert res.strays == ("uploaded/policy-999999999.bit",)
+    assert res.deleted == ()
+
+
+@pytest.mark.parametrize("how", BREAKS)
+def test_an_unreadable_bits_folder_makes_both_folders_unreadable(
+    server: PgServer,
+    db: AppDatabase,
+    tmp_path: Path,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    g = _guard_setup(server, db, bits)
+    away = tmp_path / "bits-real"
+    _break(bits, how, away)
+    # Everything a followed link would act on, in both folders.
+    s_changed = bit(g["s_name"], [P(), P(execute="cat /etc/issue")])[0]
+    put(away, "s.bit", s_changed)
+    (away / "r.bit").unlink()
+    put(away, "n.bit", bit(f"GN {tag()}")[0])
+    changed = bit(g["u_name"], [P(uuid=g["u_ids"][0], execute="cat /etc/issue")])[0]
+    put(away, f"uploaded/policy-{g['U']}.bit", changed)
+    put(away, g["d_rel"], g["d_bytes"])
+    put(away, "uploaded/policy-999999999.bit", bit(f"GX {tag()}")[0])
+    away_tree = tree(away)
+    ids = [g["S"], g["R"], g["U"], g["D"]]
+    frozen = _frozen(server, ids)
+    reads: list[str] = []
+    real_read = folders.read_input
+
+    def spy(bits_dir: Path, r: str) -> FileInput | None:
+        reads.append(r)
+        return real_read(bits_dir, r)
+
+    monkeypatch.setattr(folders, "read_input", spy)
+    lines_per_run: list[list[str]] = []
+    for _ in range(3):
+        caplog.clear()
+        caplog.set_level(logging.DEBUG)
+        s = snap(server)
+        res = rec(db, bits)
+        assert res.unreadable_folders == BOTH
+        lines_per_run.append(_assert_guard_log(caplog, BOTH, tmp_path))
+        assert imports_since(server, s) == []
+        assert audits_since(server, s) == [] and counter_delta(s) == {}
+        assert catalog_now(server) == s.catalog
+        assert (res.outcomes, res.deleted, res.leftovers) == ((), (), ())
+        assert (res.strays, res.renamed) == ((), ())
+        assert _frozen(server, ids) == frozen
+        assert tree(away) == away_tree
+        assert folders.discover(bits) == []
+    assert reads == []
+    assert lines_per_run[0] == lines_per_run[1] == lines_per_run[2]
+    # Recovery: the real folder is back and both folders are reconciled.
+    _restore(bits, away)
+    s = snap(server)
+    res = rec(db, bits)
+    assert res.unreadable_folders == ()
+    assert [d.policy_id for d in res.deleted] == [g["R"]]
+    assert sorted(
+        (r["file_name"], r["outcome"])
+        for r in imports_since(server, s)
+        if not r["file_name"].startswith("uploaded/")
+    ) == [("n.bit", "success"), ("s.bit", "success")]
+    assert policy_row(server, g["U"])["source_sha256"] == sha(changed)
+    assert res.leftovers == (Difference(g["d_rel"], folders.LEFTOVER_CHECK),)
+
+
+@pytest.mark.parametrize("inner", ["missing", "symlink", "file"])
+def test_both_folders_unreadable_together(
+    server: PgServer,
+    db: AppDatabase,
+    tmp_path: Path,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+    inner: str,
+) -> None:
+    """A symlinked bits folder whose own uploaded/ is broken too."""
+    g = _guard_setup(server, db, bits)
+    _break(bits / "uploaded", inner, tmp_path / "uploaded-real")
+    _break(bits, "symlink", tmp_path / "bits-real")
+    (tmp_path / "bits-real" / "s.bit").unlink()
+    ids = [g["S"], g["R"], g["U"], g["D"]]
+    frozen = _frozen(server, ids)
+    before = tree(tmp_path)
+    for _ in range(2):
+        caplog.clear()
+        caplog.set_level(logging.DEBUG)
+        s = snap(server)
+        res = rec(db, bits)
+        assert res.unreadable_folders == BOTH
+        _assert_guard_log(caplog, BOTH, tmp_path)
+        assert imports_since(server, s) == [] and audits_since(server, s) == []
+        assert res.deleted == () and catalog_now(server) == s.catalog
+        assert _frozen(server, ids) == frozen
+        assert tree(tmp_path) == before
+
+
+@pytest.mark.parametrize("empty", ["uploaded", "server", "both"])
+def test_a_real_empty_folder_still_deletes_its_policies(
+    server: PgServer,
+    db: AppDatabase,
+    tmp_path: Path,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+    empty: str,
+) -> None:
+    g = _guard_setup(server, db, bits)
+    gone: list[int] = []
+    if empty in ("uploaded", "both"):
+        (bits / f"uploaded/policy-{g['U']}.bit").unlink()
+        assert os.listdir(bits / "uploaded") == []
+        gone.append(g["U"])
+    if empty in ("server", "both"):
+        (bits / "s.bit").unlink()
+        (bits / "r.bit").unlink()
+        assert os.listdir(bits) == ["uploaded"]
+        gone += [g["S"], g["R"]]
+    kept = [i for i in (g["S"], g["R"], g["U"]) if i not in gone]
+    for run in range(3):
+        caplog.clear()
+        caplog.set_level(logging.DEBUG)
+        s = snap(server)
+        res = rec(db, bits)
+        assert res.unreadable_folders == ()
+        assert _guard_lines(caplog) == []
+        entries = audits_since(server, s)
+        if run == 0:
+            assert sorted(d.policy_id for d in res.deleted) == sorted(gone)
+            assert actions(entries) == ["policy.delete"] * len(gone)
+            assert {e["detail"]["reason"] for e in entries} == {"file removed"}
+            assert counter_delta(s) == {"alert:policy_deleted": float(len(gone))}
+            for i in gone:
+                row = policy_row(server, i)
+                assert row["deleted_at"] == T1
+                assert row["source_file"] == f"deleted/{i}"
+                assert {st for _, _, st in members(server, i)} == {"retired"}
+        else:
+            assert res.deleted == () and entries == [] and counter_delta(s) == {}
+            assert catalog_now(server) == s.catalog
+        for i in kept:
+            assert policy_row(server, i)["deleted_at"] is None
+
+
+def test_delete_removed_skips_an_unreadable_folder_but_not_an_empty_one(
+    server: PgServer, db: AppDatabase, tmp_path: Path, bits: Path
+) -> None:
+    g = _guard_setup(server, db, bits)
+    u_rel = f"uploaded/policy-{g['U']}.bit"
+    _break(bits / "uploaded", "missing", tmp_path / "uploaded-real")
+    (bits / "r.bit").unlink()
+    with db.session() as s, catalog_lock(s):
+        got = folders.delete_removed(s, FixedClock(), bits)
+    assert [d.policy_id for d in got] == [g["R"]]  # the server folder still works
+    assert policy_row(server, g["U"])["deleted_at"] is None
+    _restore(bits / "uploaded", tmp_path / "uploaded-real")
+    (bits / u_rel).unlink()  # now a real, empty uploaded/
+    with db.session() as s, catalog_lock(s):
+        got = folders.delete_removed(s, FixedClock(), bits)
+    assert [d.policy_id for d in got] == [g["U"]]
+    assert policy_row(server, g["U"])["deleted_at"] == T1
+    _break(bits, "symlink", tmp_path / "bits-real")
+    (tmp_path / "bits-real" / "s.bit").unlink()
+    with db.session() as s, catalog_lock(s):
+        got = folders.delete_removed(s, FixedClock(), bits)
+    assert got == ()
+    assert policy_row(server, g["S"])["deleted_at"] is None
