@@ -81,3 +81,43 @@ Residual risk: after a kept temp (an unknown commit), a second upload of the sam
 - Gates:
   - ruff check, ruff format check and `mypy --strict` pass (291 files);
   - `tests/test_uploads.py tests/test_uploads_pg.py tests/test_import_pipeline_pg.py tests/test_import_fuzz_pg.py tests/test_samples_import_pg.py` give 339 passed.
+
+## Revision 2 (user ruling "Folder guard"; lead row "Folder guard details" (2))
+
+**Probe before the change: yes, a symlink was followed.** `O_NOFOLLOW` guarded only the temp file's own name. With `bits/uploaded -> <scratch dir>`, the temp file would be created in the scratch dir and renamed there, `finish_interrupted_uploads` would list it and unlink there, and `delete.remove_after_commit` would unlink `policy-<id>.bit` there.
+
+**Change:**
+- `uploads.py:58` `open_uploaded_dir(folder) -> int`: public. It is `os.open(bits_dir/"uploaded", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)`. A missing, symlinked or non-directory `uploaded/` raises `OSError`; on Linux a symlink gives `NotADirectoryError`.
+- `_Upload` (`uploads.py:81`–`121`) opens that handle in `write`, as the first step of `before_commit`. The temp-file open (`dir_fd=`), the directory fsync, the rename (`os.replace(..., src_dir_fd=, dst_dir_fd=)`, `:107`) and the cleanup unlink (`os.unlink(..., dir_fd=)`, `:116`) all run relative to it. `discard` closes it.
+  - So an upload with a bad `uploaded/` raises inside transaction 1. That is an internal error: rollback, no row, and TASK-162 maps it to 503.
+  - A rejected or skipped upload never opens the folder, so it still gets its row (as in r1).
+  - `_Upload`'s first field is still the `uploaded/` path, and `_fsync_dir` now takes the directory fd.
+- `finish_interrupted_uploads` (`uploads.py:191`): it opens the handle first. On any `OSError` (missing, symlink, not a directory, no permission) it logs one fixed line, "interrupted uploads: uploaded folder unreadable: <ErrorType>", returns `(0, 0)` and touches nothing. Otherwise `_finish` (`:217`) does the listing (`os.listdir(dir_fd)`), the hashing reads (`_temp_hash(name, dir_fd)`, `O_NOFOLLOW`), the renames and the unlinks relative to the fd.
+- `delete.py:115` `remove_after_commit` (lead-approved edit of that one function). This is the one removal path used by `delete_policy`, `import_one` (`move_upload`) and `folders.py`.
+  - It filters names as before. It then opens `uploaded/` through `open_uploaded_dir` and unlinks with `dir_fd=`.
+  - If the folder is unreadable it logs "upload removal skipped: uploaded folder unreadable: <ErrorType>", leaves the copy and does not raise; the integrity check reports the copy.
+  - A missing file is ignored, as `missing_ok` was. Any other `OSError` is logged by type.
+  - The import of `open_uploaded_dir` is inside the function, because `uploads` imports `pipeline`, which imports `delete` (a cycle at module level).
+- The folder is never created anywhere. The bits folder itself is not guarded here (out of scope; TASK-156 r2).
+- Files in r2: `uploads.py` and `delete.py`. Task total: `uploads.py`, `pipeline_record.py`, `delete.py`, and this report. I ran `ruff format` over `services/importer/`. The check before that already passed on every file there, so only my own `delete.py` lines were reformatted. `folders.py` shows as modified in git, but that is impl-manager-156's in-progress work, not mine.
+
+**Probe after the change** (throwaway scripts in the scratchpad, PostgreSQL):
+- `uploaded/` is a symlink to a scratch dir holding a planted `.tmp-1-<hex>`, or `uploaded/` is a regular file. In both cases `import_upload` raises `OSError`, with 0 `bit_import` rows and 0 `policy` rows. `finish_interrupted_uploads` returns `(0, 0)`. The scratch dir still holds only the planted file.
+- `remove_after_commit(bits, ["uploaded/policy-3.bit"])` with `uploaded -> ../v` logs the "unreadable: NotADirectoryError" line and leaves `v/policy-3.bit`. With a real `uploaded/` it removes `policy-3.bit`, and a missing `policy-4.bit` raises nothing.
+
+**Gates:**
+- ruff check, ruff format check and `mypy --strict` pass (291 files).
+- `tests/test_uploads.py`, `test_uploads_pg.py`, the TASK-154 suites, `test_policy_delete_pg.py` and `test_folders_pg.py`: 455 passed and **4 failed**. The 4 are tester spies tied to the old call shapes, not product faults:
+  - `test_uploads_pg.py::test_temp_open_flags_flush_then_commit_then_rename` (`spy_replace`): the spy must accept `**kw` (`src_dir_fd`, `dst_dir_fd`);
+  - `test_uploads_pg.py::test_a_fault_between_commit_and_rename_is_finished_at_the_next_start` (`broken`): the same;
+  - `test_uploads_pg.py::test_a_new_policy_whose_rename_failed_gets_its_file_from_finish` (`broken`): the same;
+  - `test_uploads.py::test_discard_logs_only_the_error_type_when_removal_fails`: it patches `Path.unlink`, but the removal is now `os.unlink(name, dir_fd=...)`, so it should patch `os.unlink`.
+
+**Cases for the tester (r2):**
+- `uploaded/` as a symlink to a real directory (with and without planted `.tmp-*` and `policy-*.bit` there), as a regular file, as a dangling symlink, and missing. For each:
+  - `import_upload` raises with no row and no catalog change, and nothing in the link target changes;
+  - a rejected upload still gets its row;
+  - `finish_interrupted_uploads` returns `(0, 0)` with one log line and nothing in the target touched.
+- The `move_upload` path: a server-folder file takes an uploaded policy's name while `uploaded/` is a symlink. The catalog move commits, the copy in the link target is left, the "upload removal skipped" line is logged, and nothing raises. With a real `uploaded/` the copy is removed.
+- The `delete_policy` and `folders.py` removals go through the same function: the symlinked `uploaded/` leaves the copy and does not raise.
+- Swapping `uploaded/` for a symlink after `write` opened the handle (between commit and rename): the rename still lands in the original directory, through the fd.
