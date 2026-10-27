@@ -289,6 +289,21 @@ EXPECTED_NAME: dict[int, str] = {
 }
 
 
+def root_state() -> dict[str, tuple[int, int, str] | None]:
+    """What an absolute client name would hit: compared before and after, so
+    a leftover from an earlier run cannot mask or fake a write."""
+    out: dict[str, tuple[int, int, str] | None] = {}
+    for n in ("/abs.bit", "/x.bit", "/a/b.bit"):
+        p = Path(n)
+        if not p.exists() and not p.is_symlink():
+            out[n] = None
+            continue
+        st = p.lstat()
+        body = sha(p.read_bytes()) if stat.S_ISREG(st.st_mode) else ""
+        out[n] = (st.st_ino, st.st_mtime_ns, body)
+    return out
+
+
 @pytest.mark.parametrize("i", range(len(HOSTILE)))
 def test_a_hostile_client_name_lands_only_as_policy_id_bit(
     server: PgServer,
@@ -306,7 +321,7 @@ def test_a_hostile_client_name_lands_only_as_policy_id_bit(
     victim.write_bytes(b"victim")
     passwd = sha(Path("/etc/passwd").read_bytes())
     before = tree(tmp_path)
-    assert not Path("/abs.bit").exists() and not Path("/x.bit").exists()
+    roots0 = root_state()
     name = f"Hostile {tag()}"
     data, _ = bit(name)
     s0 = snap(server)
@@ -317,7 +332,7 @@ def test_a_hostile_client_name_lands_only_as_policy_id_bit(
     rel = f"bits/uploaded/policy-{out.policy_id}.bit"
     assert added == {rel: ("file", 0o600, sha(data))}
     assert set(before) <= set(after)
-    assert not Path("/abs.bit").exists() and not Path("/x.bit").exists()
+    assert root_state() == roots0  # nothing created or rewritten at "/"
     assert sha(Path("/etc/passwd").read_bytes()) == passwd
     row = imports_since(server, s0)
     assert len(row) == 1
@@ -1168,6 +1183,69 @@ def test_a_concurrent_upload_and_server_import_serialise(
     row = policy_row(server, pid)
     assert (row["source_file"], row["source_sha256"]) == ("srv.bit", sha(srv))
     assert listing(bits / "uploaded") == []
+
+
+def test_two_concurrent_uploads_of_one_policy_serialise(
+    server: PgServer, db: AppDatabase, bits: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first upload pauses after its temp write (lock held, not yet
+    committed); the second waits on the lock, then runs after the first has
+    renamed. The last writer's bytes are both the row and the file."""
+    name, pid, _ = seed(db, bits)
+    v2, _ = bit(name, status="disabled")
+    v3, _ = bit(name)
+    paused, go = threading.Event(), threading.Event()
+    errors: list[BaseException] = []
+    order: list[str] = []
+    pid_b: list[int] = []
+    real_write, real_rename = uploads._Upload.write, uploads._Upload.rename
+
+    def write(self: Any, policy_id: int) -> None:
+        real_write(self, policy_id)
+        order.append(f"write {self.sha256 == sha(v2) and 'v2' or 'v3'}")
+        if self.sha256 == sha(v2):
+            paused.set()
+            assert go.wait(30)
+
+    def rename(self: Any, pending: Any) -> None:
+        tag_ = self.sha256 == sha(v2) and "v2" or "v3"
+        real_rename(self, pending)
+        order.append(f"rename {tag_}")
+
+    monkeypatch.setattr(uploads._Upload, "write", write)
+    monkeypatch.setattr(uploads._Upload, "rename", rename)
+
+    def first() -> None:
+        try:
+            up(db, bits, v2)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def second() -> None:
+        try:
+            with db.session() as s:
+                pid_b.append(s.conn.info.backend_pid)
+                with catalog_lock(s):
+                    import_upload(s, FixedClock(), bits, v3, b"c", actor=USER)
+        except BaseException as exc:
+            errors.append(exc)
+
+    ta = threading.Thread(target=first, daemon=True)
+    ta.start()
+    assert paused.wait(30)
+    tb = threading.Thread(target=second, daemon=True)
+    tb.start()
+    with app(server) as probe:
+        until(lambda: bool(pid_b) and waiting(probe, pid_b[0]), "second waits")
+        assert order == ["write v2"]
+        go.set()
+        ta.join(30)
+        tb.join(30)
+    assert not ta.is_alive() and not tb.is_alive() and errors == []
+    assert order == ["write v2", "rename v2", "write v3", "rename v3"]
+    assert policy_row(server, pid)["source_sha256"] == sha(v3)
+    assert listing(bits / "uploaded") == [f"policy-{pid}.bit"]
+    assert stored(bits, pid).read_bytes() == v3
 
 
 def test_prepared_is_used_and_parsing_needs_no_lock(

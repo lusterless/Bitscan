@@ -398,7 +398,7 @@ def test_hostile_entries_are_never_imported(
     assert rows_by_file(rows) == [("a.bit", "success")]
     assert [o.outcome for o in res.outcomes] == ["success"]
     assert res.strays == ("uploaded/policy-1.bit",)  # no policy 1 is live
-    assert res.refused == () and res.deleted == () and res.leftovers == ()
+    assert res.deleted == () and res.leftovers == () and res.renamed == ()
     a = policy_by_name(server, a_name)
     assert a is not None and a["source_file"] == "a.bit"
     for name in names.values():
@@ -435,7 +435,7 @@ def test_unstorable_names_are_logged_once_and_skipped(
     rows = imports_since(server, s)
     assert rows_by_file(rows) == [(long_ok, "success")]
     assert [o.outcome for o in res.outcomes] == ["success"]
-    assert res.strays == () and res.refused == ()
+    assert res.strays == () and res.renamed == ()
     for name in hidden:
         assert policy_by_name(server, name) is None
     skipped = [
@@ -514,7 +514,7 @@ def test_new_server_files_are_imported_in_auto_mode_by_the_system(
     assert actions(entries) == ["policy.import", "policy.import"]
     assert {e["actor"] for e in entries} == {"system"}
     assert counter_delta(s) == {"alert:policy_imported": 2.0}
-    assert res.refused == res.deleted == res.leftovers == res.strays == ()
+    assert (res.deleted, res.leftovers, res.strays, res.renamed) == ((),) * 4
 
 
 def _mixed_folder(server: PgServer, db: AppDatabase, bits: Path) -> dict[str, Any]:
@@ -557,7 +557,7 @@ def test_an_unchanged_folder_writes_only_skipped_rows(
     assert counter_delta(s) == {}
     assert catalog_now(server) == s.catalog
     assert tree(bits) == before_tree
-    assert res.refused == res.deleted == res.leftovers == res.strays == ()
+    assert (res.deleted, res.leftovers, res.strays, res.renamed) == ((),) * 4
 
 
 def test_three_reconciles_and_a_restart_cause_no_churn(
@@ -602,7 +602,7 @@ def test_three_reconciles_and_a_restart_cause_no_churn(
                 res.strays,
                 res.leftovers,
                 res.deleted,
-                res.refused,
+                res.renamed,
                 actions(audits_since(server, s)),
                 catalog_now(server),
                 tree(bits),
@@ -799,7 +799,7 @@ def test_req159_3_server_file_takes_an_uploaded_policy(
     entries = audits_since(server, s)
     assert actions(entries) == ["policy.import", "policy.move"]
     assert entries[1]["detail"] == {"from": rel, "to": "x.bit"}
-    assert res.strays == () and res.refused == () and res.deleted == ()
+    assert res.strays == () and res.renamed == () and res.deleted == ()
     assert res.leftovers == ()
     # A later upload with that name is refused (409 policy_managed_on_server).
     with db.session() as se, catalog_lock(se), pytest.raises(PolicyManagedOnServer):
@@ -962,7 +962,7 @@ def test_ii_a_leftover_is_removed_never_imported_and_reported(
     assert audits_since(server, s) == [] and counter_delta(s) == {}
     assert catalog_now(server) == s.catalog
     assert policy_row(server, pid) == before  # still deleted, untouched
-    assert res.strays == () and res.deleted == () and res.refused == ()
+    assert res.strays == () and res.deleted == () and res.renamed == ()
     lines = [r for r in caplog.records if r.name == LOGGER and "leftover" in r.msg]
     assert len(lines) == 1
     # Next time there is nothing left to report.
@@ -1149,7 +1149,7 @@ def test_c_strays_are_never_imported_and_are_reported(
         assert audits_since(server, s) == [] and counter_delta(s) == {}
         assert catalog_now(server) == s.catalog
         assert tree(bits) == before_tree  # left in place, byte-identical
-        assert res.deleted == () and res.refused == () and res.leftovers == ()
+        assert res.deleted == () and res.renamed == () and res.leftovers == ()
         stray_lines = [
             r for r in caplog.records if r.name == LOGGER and "skipped" in r.msg
         ]
@@ -1160,39 +1160,86 @@ def test_c_strays_are_never_imported_and_are_reported(
     assert policy_row(server, lid)["source_file"] == f"uploaded/policy-{lid}.bit"
 
 
-def test_a_live_upload_edited_to_a_server_policys_name_is_refused(
-    server: PgServer, db: AppDatabase, bits: Path
+@pytest.mark.parametrize(
+    "edit", ["new-name", "other-upload", "server-name", "new-name-with-bit102"]
+)
+def test_a_live_upload_with_an_edited_name_is_skipped_and_reported(
+    server: PgServer,
+    db: AppDatabase,
+    bits: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    edit: str,
 ) -> None:
+    """decisions 2026-10-27, "A live upload file with a hand-edited
+    <PolicyName> is skipped and reported like a stray": nothing imported, no
+    row, no alert, one log line, listed for #103, the policy keeps its last
+    good rows; this replaces the refusal for a server policy's name. The next
+    file is still reconciled."""
     sname = f"Server {tag()}"
     put(bits, "srv.bit", bit(sname)[0])
     u1 = upload(db, bits, bit(f"U1 {tag()}")[0])
     u2 = upload(db, bits, bit(f"U2 {tag()}")[0])
     rec(db, bits)
-    rels = sorted(
+    first, later = sorted(
         [f"uploaded/policy-{u1.policy_id}.bit", f"uploaded/policy-{u2.policy_id}.bit"],
         key=str.encode,
     )
-    first, later = rels
+    first_id = int(first.removeprefix("uploaded/policy-").removesuffix(".bit"))
     later_id = int(later.removeprefix("uploaded/policy-").removesuffix(".bit"))
     later_name = policy_row(server, later_id)["policy_name"]
-    put(bits, first, bit(sname)[0])  # hand-edited to the server policy's name
+    new_name = f"Edited {tag()}"
+    edited = {
+        "new-name": bit(new_name)[0],
+        "other-upload": bit(later_name, [P(), P(), P()])[0],
+        "server-name": bit(sname, [P(), P()])[0],
+        "new-name-with-bit102": bit(new_name, [P(execute="rm -rf /tmp/x")])[0],
+    }[edit]
+    put(bits, first, edited)
     later_data = bit(later_name, [P(), P()])[0]
-    put(bits, later, later_data)  # changed, after the refused one
+    put(bits, later, later_data)  # changed, after the skipped one
+    first_before = policy_row(server, first_id)
     srv = policy_by_name(server, sname)
     assert srv is not None
-    s = snap(server)
-    res = rec(db, bits)
-    assert res.refused == (first,)
-    rows = imports_since(server, s)
-    assert rows_by_file(rows) == [("srv.bit", "skipped"), (later, "success")]
-    entries = audits_since(server, s)
-    assert actions(entries) == ["policy.import_refused", "policy.import"]
-    assert entries[0]["target"] == f"policy:{srv['policy_id']}"
-    assert entries[0]["detail"].get("mode") == "auto"
+    parses: list[int] = []
+    real_prepare = folders.prepare
+
+    def spy(data: bytes | None) -> Any:
+        parses.append(1)
+        return real_prepare(data)
+
+    monkeypatch.setattr(folders, "prepare", spy)
+    caplog.set_level(logging.DEBUG)
+    for run in range(3):
+        parses.clear()
+        caplog.clear()
+        s = snap(server)
+        res = rec(db, bits)
+        assert res.renamed == (first,), run
+        rows = imports_since(server, s)
+        want = [("srv.bit", "skipped"), (later, "success" if run == 0 else "skipped")]
+        assert rows_by_file(rows) == want
+        entries = audits_since(server, s)
+        assert actions(entries) == (["policy.import"] if run == 0 else [])
+        assert counter_delta(s) == ({"alert:policy_imported": 1.0} if run == 0 else {})
+        assert res.strays == () and res.deleted == () and res.leftovers == ()
+        assert len(parses) == 3  # srv.bit, first, later: each parsed once
+        assert (bits / first).read_bytes() == edited
+        lines = [
+            r
+            for r in caplog.records
+            if r.name == LOGGER and "policy name was edited" in r.getMessage()
+        ]
+        assert len(lines) == 1
+        for r in caplog.records:
+            text = r.getMessage() + repr(r.args)
+            assert new_name not in text and first not in text
+            assert first.removeprefix("uploaded/") not in text
+    row = policy_row(server, first_id)
+    assert row == first_before  # keeps its last good rows, not deleted
     assert policy_by_name(server, sname) == srv
+    assert policy_by_name(server, new_name) is None
     assert policy_row(server, later_id)["source_sha256"] == sha(later_data)
-    assert (bits / first).exists()
-    assert res.deleted == ()
 
 
 # ----------------------------------------------------------------------------
