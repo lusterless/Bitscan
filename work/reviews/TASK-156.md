@@ -42,3 +42,30 @@ Rulings applied: "TASK-156 built" (stray), the edited-name skip (user), "TASK-15
 - **(5) The log words are not pinned:** acceptable, since one constant line per folder with no path is pinned.
 - **r1 (3) BIGSERIAL cap caught only by the unit test:** acceptable, as PostgreSQL's numeric comparison makes the database path harmless.
 - **r1 (4) A rejected folder file alerts again at every start-up:** this is spec behaviour. TS §4.1 skips only a file equal to the last *successful* import. It goes in the M7 PR notes; no change.
+
+## Revisions 3 and 4 re-review (2026-10-28)
+
+Verdict: APPROVED
+
+Frozen worktree `ed228ea`, `folders.py` (270 code lines; size accepted by the lead), together with the TASK-155 r3 `open_uploaded_dir` change it relies on.
+
+TEST: PASS (`TASK-156-test.md` "Revision 3" and "Revision 4": 144/144, affected set 588/588, 100 % coverage, 27/27 plants red). The first r4 round at `1b0aff3` failed for a security reason, fixed by TASK-155 r3. My re-run is as in TASK-155.md (588 passed, gates clean).
+
+## Round-1 finding 1 (should-fix): fixed
+- `_state(bits_dir, rel)` is three-way: present, absent or unreadable. It opens the folder through `_open_folder`, which opens the bits folder with `O_DIRECTORY|O_NOFOLLOW` and then `uploaded` relative to it, and uses `stat(…, follow_symlinks=False)`. "Absent" is decided only on `FileNotFoundError` inside that real directory, or for an entry that is not a regular file. Any other error counts as unreadable.
+- `_delete_removed` re-evaluates `_state` right before each `delete_in_tx`. An unreadable folder is marked once and none of its rows is deleted. A folder that breaks mid-loop therefore deletes nothing more.
+- Tester finding 4 is closed too: `present` now goes through `_state`, so a symlinked bits folder is never resolved.
+- The r0–r2 nit is folded in: `read_input` opens the file relative to the no-follow folder fd, so a folder swapped after `discover` is never read through.
+
+## r4 (lead, decisions 2026-10-27)
+1. **No per-file log line when the folder can't be opened.** `read_input` returns None silently, and the reconcile marks the folder through `_mark`, which writes one constant line per folder.
+2. **`remove_leftover` reports only a confirmed removal.** After `remove_after_commit`, `_state` must be "absent". Otherwise it returns None, the caller marks `uploaded/` unreadable, and the file is not listed in `leftovers`.
+
+## Findings
+None blocking or should-fix.
+
+1. nit, `folders.py:299-317` and `:365-372`.
+   - **The gap.** Once a folder is marked in `blind` during the run (an unconfirmed leftover removal, or a failed read), later files from it are still imported if they can be read. Later rows of it are still deleted when `_state` says "absent" in the real directory at that moment.
+   - **Why it is not a defect.** It is safe: a deletion still needs a confirmed absence inside a real directory opened without links, which is the loss the ruling guards against. It differs only from the label: `unreadable_folders` lists `uploaded/` while some of its work went ahead.
+   - **Fix.** Skip any `rel` or row whose folder is in `blind`, one check in each loop, and treat the whole folder as deferred to the next run. That matches the "Folder guard" wording exactly. Optional; it could be done at the next touch, or in TASK-157, which shares these helpers.
+2. Carry for TASK-157 (unchanged): every deletion keeps the per-row three-way `_state` check. It must not rely on a guard computed before the loop.

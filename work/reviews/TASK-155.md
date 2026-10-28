@@ -48,3 +48,22 @@ Rulings applied: "TASK-155 built … lead rulings" (1)–(3), "A missing `bits/u
 None blocking or should-fix.
 
 1. nit, `uploads.py:150`: `file_exists=lambda rel: (bits_dir / rel).is_file()` follows symlinks. `folders.present` is the guarded form with the same meaning, so use it for consistency. It is harmless for an upload target today.
+
+## Revision 3 re-review (2026-10-28)
+
+Verdict: APPROVED
+
+Frozen worktree `ed228ea`: the product code of `1be4769` plus both final test reports. r3 changes:
+- `uploads.open_uploaded_dir(bits_dir)` now opens the bits folder with `O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC`, then `uploaded` relative to that fd with the same flags;
+- the three callers pass `bits_dir`: `_Upload.write`, `finish_interrupted_uploads` and `delete.remove_after_commit`.
+
+This closes the r4 TEST FAIL, where a swapped bits folder was followed by the leftover removal, `delete_removed` and the server-wins move. All three now go through `remove_after_commit`. A grep shows no path-based open of `uploaded/` is left: `folders.discover` lists names only, and every read goes through `folders._open_folder`.
+
+TEST: PASS (`TASK-155-test.md` "Revision 3": 172/172, affected set 419/419, 30/30 plants red). The new rows cover a symlinked, regular-file and dangling bits folder, for the finish step, a new upload, an update, the delete and `move_upload` removals, and a swap between commit and rename.
+
+Re-run by me: the uploads, folders, pipeline, delete, catalog-lock and store files gave 588 passed. `ruff` and `mypy --strict manager` (291 files) are clean.
+
+Tester's note: a plant that opens `uploaded` by path after the no-follow check on the bits folder is caught only by the flags spy. The real code opens `uploaded` relative to the bits-folder fd, so there is no window between two path lookups to race. Keep the flags-spy test, since it is the pin.
+
+## Findings
+None blocking or should-fix. The r0–r2 nit (`uploads.py:150`, `file_exists` follows links) is carried to TASK-160/162 (decisions.md).
