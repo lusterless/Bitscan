@@ -101,3 +101,26 @@ If the **last** transaction (records, task, alert) fails after the catalog commi
 8. A concurrent upload and rebuild serialise (TS §8.3): an upload holding `catalog_lock` makes `run_rebuild` wait.
 9. A DB error in the final transaction: the task is `failed` (see Known edge).
 10. The canary: no file content or Execute in the logs. The log lines are constant words plus folder labels and the leftover path, as in folders.py.
+
+## Revision 1 (2026-10-28): main's "W6 rulings" and "TASK-154 r1 edge"
+
+Only `manager/bitscan_manager/services/importer/rebuild.py` changed.
+
+- **Q2:** `_delete_gone` now calls the public `folders.state(bits_dir, row.source_file)` (TASK-156 r5) right before each `delete_in_tx`, instead of the private `_state`. The deletes still run inside the single rebuild transaction.
+- **Q3, now aligned with the ruling ("… the `policy_rebuilt` alert best-effort, re-raise"):** on a rebuild error, `run_rebuild` rolls back, writes no `bit_import` rows, ends the task `failed` with `{"error": "rebuild failed"}` and raises `policy_rebuilt` (state `failed`) in a fresh session, best effort. Then it **re-raises** the original exception. A returned `RebuildResult` is therefore always `succeeded`. TASK-160's worker and TASK-166's CLI catch the exception; the task row already says `failed`. This replaces the r0 "never raises" note under "Public API" above.
+- **Q1:** nothing changed here. TASK-154 r1 makes `_store` skip `policy_imported` in `rebuild` mode when `changed_executes` is empty. REQ-166 (6) is tested on top of TASK-154 r1.
+- **Q4:** `skipped` and `unreadable_folders` in `task.result` are accepted, as built.
+- The final-transaction failure ("Known edge") is an accepted residual for the M7 PR.
+
+### Gates (r1)
+
+- `ruff check manager && ruff format --check manager`: pass. `mypy --strict --config-file manager/pyproject.toml manager`: no issues (297 files).
+- The smoke tests were re-run, with the DB-error case now expecting `OperationalError` to propagate and the task row to be `failed` / `{"error": "rebuild failed"}`: 3/3 passed.
+- PG regression set (same seven files): 587 passed, 1 failed: `test_import_pipeline_pg.py::test_sr_example_imports_with_one_success_row_and_one_alert_then_auto_skips`. It passes alone and in its own file (211/211), and none of these suites imports `rebuild.py`. Main said one pipeline test is being updated by its tester for TASK-154 r1; this looks like an ordering effect of the combined run, so a tester should check it.
+
+### Tester delta
+
+- In case (5) and the DB-error case, expect `run_rebuild` to raise, with the task `failed` and one `bits.rebuild` entry with state `failed`.
+- In case 5 (mid-loop swap), patch `folders.state`, not `_state`.
+- (6) needs TASK-154 r1: an unchanged file in a rebuild writes a `success` row but no `policy_imported`; a corrupted `execute` or a retired plugin brought back does raise it.
+- Re-run of the same seven files: 630 passed, 2 failed. This time the pipeline test above passed, so it is order-dependent and flaky. The two failures are new `folders.reconcile_paths` tests in the uncommitted `manager/tests/test_folders_pg.py` (TASK-156 r5: `test_reconcile_paths_ignores_paths_that_are_not_folder_files`, `test_reconcile_paths_one_hostile_path_is_ignored[/x.bit]`). They don't touch `rebuild.py`; they are for TASK-156 r5's implementer and tester.
