@@ -1,4 +1,4 @@
-# TASK-155 TEST: PASS (r0, r1 and r2)
+# TASK-155 TEST: PASS (r0, r1, r2 and r3)
 
 Tester: tester-m7-155b, 2026-10-27. This continues the files that tester-m7-155 left when the container restarted (snapshot d6e60d6). Covers REQ-163 (1)–(6) and REQ-165 (1). Spec: TS §4.1 L516–L532 (L522, L526, L528), §4.6, §8.7 (L1344, L1377). Answers and rulings used: #99 (d) and (e), #101, #98 (j). Decisions (2026-10-27): "Crash window ruling", "Rebuild finishes interrupted uploads first", "TASK-154 REVIEW APPROVED … Carried" (a) and (b), and "TASK-155 built … lead rulings" (1)–(3). Checks: TP-M7-15, CHK-M7-200 to -204, the REQ-165 (1) half of CHK-M7-230, and mutation rows CHK-M7-357 to -359.
 
@@ -165,3 +165,49 @@ In every broken-folder case the link target holds a committed temp (it would be 
 | r0 plants re-applied on r2 (P01–P17, adapted to the fd call shapes) | as in r0 | PASS (red) | same counts as r0, except P03 at 58 (more flows store a file) |
 
 Plants on r2: **27/27 red.** Verdict for r2: **PASS**. One note: under P03 the rename is relative to the fd, but an absolute client name still escapes the fd. That is why the `/abs.bit` row stays deselected in plant runs (see the `/abs.bit` note above).
+
+## Revision 3 (security: a symlinked bits folder was followed; lead routing of the TASK-156 r4 FAIL, option (a); commit 1be4769)
+
+The change: `open_uploaded_dir(bits_dir)` opens the bits folder `O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC`, then `uploaded` relative to that fd with the same flags. Every caller uses it: the upload, the finish step and `delete.remove_after_commit`. `_Upload`'s first field is now `bits_dir`.
+
+Test changes:
+- **Changed private interface (test-side):**
+  - `test_uploads.py`: the rename-guard and discard rows build `_Upload(_bits(tmp_path), …)` and look in `tmp_path/uploaded`.
+  - The flags spy now requires exactly two folder opens, in order: the bits folder by path, then `"uploaded"` relative to the bits fd, both `O_DIRECTORY | O_NOFOLLOW`. It records the opens in a list, because a closed fd's number is reused (my first draft keyed them by fd and failed on that reuse; it was a test bug).
+- **New tests in `test_uploads_pg.py`:**
+  - `test_finish_touches_nothing_when_the_bits_folder_is_not_a_real_directory[dir-link, file, dangling-link]`;
+  - `test_an_upload_writes_nothing_when_the_bits_folder_is_not_a_real_directory[3 kinds × new, update]`;
+  - `test_a_delete_through_a_linked_bits_folder_commits_and_leaves_the_copy`;
+  - `test_a_server_file_taking_an_uploaded_name_through_a_linked_bits_folder` (`move_upload`);
+  - `test_a_bits_folder_swapped_for_a_link_after_the_write_renames_in_the_original`.
+
+  In each case the real folder holds a live `policy-<id>.bit`, a committed temp and a junk `.tmp-x`, and the whole tree is compared before and after.
+
+| Run | Command (from `manager/`) | Count |
+| --- | --- | --- |
+| r3-1 | `pytest -n 4 tests/test_uploads.py tests/test_uploads_pg.py` | **172/172 passed**, 0 failed, 0 errors, 0 skipped (74 + 98); re-run after the Docker restart: 172/172 |
+| r3-2 (TASK-154 suites + affected) | `pytest -n 4 tests/test_import_pipeline_pg.py tests/test_import_fuzz_pg.py tests/test_samples_import_pg.py tests/test_policy_delete_pg.py tests/test_folders_pg.py tests/test_import_store_pg.py tests/test_catalog_lock_pg.py` | **419/419 passed** (after the Docker restart). Before it, the same set plus the 2 files: 591/591 |
+| r3-3 (coverage) | `--cov=bitscan_manager.services.importer`, the 2 files plus the delete, folders and pipeline suites | `uploads.py` 139/139 (100 %; also 100 % from the 2 files alone), `pipeline_record.py` 100 %, `delete.py` 71/72 (line 77 predates r3; every r3 line is covered) |
+| r3-static | ruff, ruff format (2 files); `mypy --strict --config-file manager/pyproject.toml manager` | ruff clean. mypy: no error in the TASK-155 files; 1 error in `test_folders_pg.py:2507` (another tester's file, `pipeline.remove_after_commit` not re-exported) |
+| r3-plants | copies `scratchpad/t155/r5/<id>` (`plant_r3.py`). Control 172/172; the import paths of `uploads.py` and `delete.py` are the copy's; `cmp` shows the copy's product and test files are identical to the committed r3 | **30/30 red** |
+
+| Check | Type | Where | Command | Result | Evidence | Date |
+| --- | --- | --- | --- | --- | --- | --- |
+| CHK-M7-155-bits-finish | APP | Linux/PG | r3-1 `test_finish_touches_nothing_when_the_bits_folder_…[3]` | PASS | `(0, 0)`; the tree is identical (the committed temp behind the link is not renamed and `.tmp-x` is not deleted); the dangling target is not created; no row, entry or catalog change; exactly 1 warning, with no path | 2026-10-28 |
+| CHK-M7-155-bits-upload | APP | Linux/PG | r3-1 `test_an_upload_writes_nothing_when_the_bits_folder_…[6]` | PASS | `OSError` for new and update; the tree is identical; no row, entry, counter or catalog change (#98 (j)) | 2026-10-28 |
+| CHK-M7-155-bits-removal | APP | Linux/PG | r3-1 `test_a_delete_through_a_linked_bits_folder_…`, `test_a_server_file_taking_…_linked_bits_folder` | PASS | The delete or move commits and nothing raises; `real/uploaded/` is unchanged (the copy is left); "upload removal skipped" is logged | 2026-10-28 |
+| CHK-M7-155-bits-swap | APP | Linux/PG | r3-1 `test_a_bits_folder_swapped_for_a_link_after_the_write_…` | PASS | Bits swapped for a link to a decoy between commit and rename: the file lands in the original `uploaded/` through the fd, and the decoy's `uploaded/` stays empty | 2026-10-28 |
+| CHK-M7-155-guard-fd (r3) | APP | Linux/PG | r3-1 `test_temp_open_flags_…` | PASS | The opens are exactly [bits by path, `uploaded` relative to the bits fd], each `O_DIRECTORY \| O_NOFOLLOW`; the temp open and both rename sides are relative to the `uploaded` fd | 2026-10-28 |
+| r0 to r2 rows | APP | Linux/PG | r3-1 | PASS | every earlier row passes unchanged on r3 | 2026-10-28 |
+
+| Check | Plant | Result | Red tests |
+| --- | --- | --- | --- |
+| CHK-M7-155-H1 | bits folder opened without `O_NOFOLLOW` (follows a link) | PASS (red) | 6: the flags spy, bits dir-link finish, the upload (new, update), delete, `move_upload` |
+| CHK-M7-155-H2 | `uploaded` opened by path (`bits_dir / "uploaded"`, the r2 shape) after the bits check | PASS (red) | 1: the flags spy (see note) |
+| CHK-M7-155-H3 | `uploaded` relative open without `O_NOFOLLOW` | PASS (red) | 7: the flags spy, `uploaded/` dir-link finish, the upload (2), not-cached, delete, `move_upload` |
+| CHK-M7-155-G1 to G6 (r3 shapes) | as in r2 | PASS (red) | 8, 2, 12, 8, 4, 3 (they now also turn the bits-folder rows red) |
+| R1b, R1c, R1d and P01 to P17 (r3 shapes) | as before | PASS (red) | the same counts as r2, except R1c 8, P03 59 |
+
+Plants on r3: **30/30 red.** Verdict for r3: **PASS**.
+
+Note on H2: with the bits folder checked `O_NOFOLLOW` first, a path-based `uploaded` open is only exposed to a swap of the bits folder between the two opens, a race the tests do not force. Only the flags spy catches this plant, so it must stay.
