@@ -78,20 +78,21 @@ def create_task(db: SessionDatabase, clock: Clock, actor: Actor) -> UUID:
 def run_rebuild(
     db: SessionDatabase, clock: Clock, bits_dir: Path, task_id: UUID, actor: Actor
 ) -> RebuildResult:
-    """REQ-166 for the task `task_id` (from `create_task`). Never raises for a
-    rebuild error: the task ends `failed` (#20) and the result says so."""
+    """REQ-166 for the task `task_id` (from `create_task`). On a rebuild error
+    the catalog rolls back, the task ends `failed` with fixed text and the
+    alert is raised best-effort (#20, #98 (g) (j)); then the error re-raises."""
     try:
         with db.session() as session, catalog_lock(session):
             return _rebuild(session, clock, bits_dir, task_id, actor)
     except Exception as exc:
         log.error("rebuild failed: %s", type(exc).__name__)
-    result = {"error": FAILED_TEXT}
-    try:
-        with db.session() as session, session.transaction() as tx:
-            _finish(tx, clock, task_id, actor, "failed", result, _empty())
-    except Exception as exc:  # the start-up step marks it failed (REQ-165 (2))
-        log.error("rebuild task not finished: %s", type(exc).__name__)
-    return RebuildResult(task_id, "failed", result)
+        try:
+            with db.session() as session, session.transaction() as tx:
+                failed = {"error": FAILED_TEXT}
+                _finish(tx, clock, task_id, actor, "failed", failed, _empty())
+        except Exception as inner:  # start-up marks it failed (REQ-165 (2))
+            log.error("rebuild task not finished: %s", type(inner).__name__)
+        raise
 
 
 def _empty() -> _Run:
@@ -210,7 +211,7 @@ def _delete_gone(tx: Tx, clock: Clock, bits_dir: Path, actor: Actor, run: _Run) 
     for row in integrity_rows(tx.conn):
         if _folder(row.source_file) in run.blind:
             continue
-        state = folders._state(bits_dir, row.source_file)
+        state = folders.state(bits_dir, row.source_file)
         if state == "unreadable":
             _mark(run, bits_dir, _folder(row.source_file))
         if state != "absent":

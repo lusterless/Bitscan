@@ -50,6 +50,7 @@ from bitscan_manager.repositories.catalog_lock import catalog_lock
 from bitscan_manager.services.importer import delete as dl
 from bitscan_manager.services.importer import folders, integrity, startup, uploads
 from bitscan_manager.services.importer.alerts import Difference
+from bitscan_manager.services.importer.model import MAX_BIT_BYTES
 from bitscan_manager.services.importer.pipeline import Actor, FileInput, ImportOutcome
 
 from .catalog_rows import T1, owner, tag
@@ -605,6 +606,22 @@ def test_parse_and_count_checks_only_when_the_hash_matches(
             (f"policy:{c3}", integrity.COUNT_CHECK),
         ]
     )
+
+
+def test_an_oversize_file_whose_hash_matches_gives_the_parse_check(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    pid = server_policy(server, db, bits, "big.bit", bit(f"Big {tag()}")[0])
+    big = b"<Policy>" + b" " * MAX_BIT_BYTES
+    put(bits, "big.bit", big)
+    with owner(server) as c:
+        c.execute(
+            "UPDATE policy SET source_sha256 = %s WHERE policy_id = %s",
+            (sha(big), pid),
+        )
+    assert check(db, bits, empty_result()) == [
+        Difference(f"policy:{pid}", integrity.PARSE_CHECK)
+    ]
 
 
 def test_a_missing_file_at_source_file(

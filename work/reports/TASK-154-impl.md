@@ -80,36 +80,40 @@ record(tx, clock, file, mode, actor, pending) -> int
 - `mode` passed as the plain string `"auto"` behaves like `Mode.AUTO` (`Mode(mode)` converts it).
 - A re-enable by file (`file_status` disabled → enabled with `status_overridden` false) gives `policy_reenabled` with `status_overridden: false` and `by: "file"`. With `status_overridden` true there is no status-change entry.
 
-## Revision 1 (2026-10-28, lead's "W6 rulings" Q1, `work/decisions.md`)
+## Revision 1 (2026-10-28; lead's "W6 rulings" Q1, amended by the last row of `work/decisions.md`)
 
-**What changed.** In `rebuild` mode, `policy.import` (the `policy_imported` alert) is now written only for a changed policy, as the approved #23 says ("a rebuild alerts once plus per changed policy"). The pipeline used to alert for every file it stored.
-- `pipeline.py` `_store` (about line 144): `quiet = mode is Mode.REBUILD and store_decide.is_unchanged(decision, file.target)`. It is computed **before** `store.apply`, from the rows that `decide` has just locked, and then passed on as `audit_success(..., announce=not quiet)`.
-- `pipeline_record.py` `audit_success`: a new keyword `announce: bool = True`. When it is False, the `policy.import` event is left out. The `policy.move`, displaced `policy.delete` and `policy.status_change` entries are written as before. A file that `is_unchanged` accepts is always the `update` case with no displaced policy, so a move or delete cannot happen for it; a status change could only come from a corrupted row.
-- `auto` and `manual` are unchanged: `auto` still skips unchanged files, and `manual` still alerts on every import. `store.py` and `rebuild.py` are untouched. The change is +12/−7 lines, and pipeline.py is now about 202 code lines.
+**What changed.** In `rebuild` mode, `policy.import` (the `policy_imported` alert) is written only when the rebuild puts at least one command live on hosts: a new plugin, a changed `execute_sha256`, or a reactivated plugin (`StoreResult.changed_executes` not empty; #23 together with #100 (a) as widened by the user). The pipeline used to alert for every file it stored.
+- `pipeline.py` `_store` (about line 144): after `store.apply`, `quiet = mode is Mode.REBUILD and not result.changed_executes`, then `audit_success(..., announce=not quiet)`. `is_unchanged` plays no part in it, as the lead asked. A same-hash file whose catalog rows were corrupted still alerts.
+- `pipeline_record.py` `audit_success`: a new keyword `announce: bool = True`. When it is False, only the `policy.import` event is left out. The `policy.move`, displaced `policy.delete` and `policy.status_change` entries are written as before.
+- `auto` and `manual` are unchanged: `auto` still skips unchanged files, and `manual` still alerts on every import, even with an empty `changed_executes`. `store.py` and `rebuild.py` are untouched. The change is +12/−7 lines, and pipeline.py is about 202 code lines.
 
-**Edge for the lead / reviewer.** The ruling keys the decision on `is_unchanged`: same live policy, same file and same hash. In a corrupted catalog, one where a plugin of a live, unchanged policy was retired or its row edited by hand, the rebuild reactivates or rewrites that plugin, and `StoreResult.changed_executes` is not empty. Under the ruling as written, that rebuild raises no `policy_imported` alert, even though a command goes live on hosts again. If the lead prefers it, the condition can become `is_unchanged(...) and not result.changed_executes` (one line, decided after `apply`). I implemented the ruling literally and have not made that change.
+**Consequence for the reviewer.** The condition looks only at commands, so in a rebuild a file whose bytes changed but whose `Execute` texts did not (a description, a name, the status, a rename in place, or a move) also raises no `policy_imported`. That follows the ruling as written. A move still writes `policy.move`, a displaced policy still writes `policy_deleted`, and a re-enable still writes `policy_reenabled`. The rebuild's own `policy_rebuilt` alert (TASK-157) covers the run as a whole.
 
 **Gates.** `ruff check` and `ruff format --check` pass (296 files), and so does `mypy --strict` (296 files).
 
-**Suites** (pipeline, fuzz, samples, store, folders, uploads, uploads_pg): 557 passed, 3 failed.
-- `test_import_pipeline_pg.py::test_sr_example_imports_with_one_success_row_and_one_alert_then_auto_skips` fails as **expected**. Its loop asserts one `policy.import` entry for an identical-bytes re-import in `rebuild` mode, which is the old behaviour. The tester needs to change the `rebuild` step to expect no entry; the `manual` step stays as it is.
-- `test_folders_pg.py::test_a_leftover_that_cannot_be_removed_is_retried_and_reported_once_gone[no-op, unlink-raises]` is **not caused by this revision**. It fails in the same way with my two files restored to HEAD (`git stash` of only those files). The working tree holds someone else's uncommitted `folders.py` change (TASK-156 r5 in progress, I assume), and that is the likely cause.
+**Suites** (pipeline, fuzz, samples, store, folders, uploads, uploads_pg): 559 passed, 1 failed.
+- The failure is **expected**: `test_import_pipeline_pg.py::test_sr_example_imports_with_one_success_row_and_one_alert_then_auto_skips`. Its loop asserts one `policy.import` for an identical re-import in `rebuild` mode, which is the old behaviour. The tester needs to change the `rebuild` step to expect no entry; the `manual` step stays as it is.
+- The two `test_folders_pg.py` leftover failures from the first draft of this revision now pass. They were TASK-156 r5 work in progress, and the lead said to ignore them.
 
-**Throwaway smoke check** on PostgreSQL, the SR §1.1 example as a server file, counting `policy.import` entries per call:
+**Throwaway smoke check** on PostgreSQL, the SR §1.1 example as a server file, counting new `policy.import` entries per call:
 
 | Call | Outcome | New `policy.import` entries |
 | --- | --- | --- |
 | manual, new | success | 1 |
 | rebuild, same bytes | success | 0 |
 | manual, same bytes | success | 1 |
-| rebuild, changed bytes | success | 1 |
-| rebuild, same changed bytes | success | 0 |
+| rebuild, bytes changed, `Execute` unchanged | success | 0 |
+| rebuild, same bytes again | success | 0 |
+| catalog corrupted (`UPDATE plugin SET state='retired'`), then rebuild with the same bytes | success | 1, `reason` `reactivated` |
+| catalog corrupted (`execute` and `execute_sha256` edited), then rebuild with the same bytes | success | 1, `reason` `changed` |
 
 **Cases for the tester (revision 1):**
-- A rebuild of an unchanged file (same live policy, same `source_file`, same hash) gives a `success` row with counts 0/0/0 and its version unchanged. There is no `policy.import` entry, and `bitscan_alerts_total{kind="policy_imported"}` does not change. Check it through both `import_one(mode=rebuild)` and `store_in_savepoint`.
-- A rebuild of a changed file (new hash) gives exactly one `policy_imported` alert, and so does a rebuild of a new file (insert).
-- A rebuild of a revived file (a deleted policy coming back) gives one alert with the plugins' `reason: "reactivated"`. Its case is `revive`, not `update`, so it is never quiet.
-- Rebuild with a rename in place, a move (server file replaces an uploaded copy) or a displaced policy: each still writes its `policy.import`, plus its `policy.move` or `policy.delete` entry, because none of them is the `update` case.
+- A rebuild of an identical file on an intact catalog gives a `success` row with counts 0/0/0. There is no `policy.import` entry, and `bitscan_alerts_total{kind="policy_imported"}` does not change. Check it through both `import_one(mode=rebuild)` and `store_in_savepoint`.
+- Corrupted catalog with a retired plugin: a rebuild of the same bytes restores it and writes exactly one `policy_imported`, listing that plugin with `reason: "reactivated"` and its flags.
+- Corrupted catalog with a hand-edited plugin `execute` or `execute_sha256`: a rebuild of the same bytes writes exactly one alert, listing it with `reason: "changed"` and the file's `Execute` text.
+- A rebuild of a file with a new or changed `Execute`, of a new policy (insert), or of a revived policy writes exactly one alert, listing only the commands that went live.
+- A rebuild where only the description, name or status changed writes no `policy.import`. A move still writes `policy.move`, a displaced policy still writes `policy_deleted`, and a re-enable still writes `policy_reenabled`.
+- A rebuild file that is rejected in its savepoint writes none of these entries (already covered).
 - `auto`: an unchanged file is still `skipped` with no entry; a changed file gets one alert.
 - `manual`: identical bytes still give `success` and one `policy.import` with an empty `changed_executes`.
-- A plant that turns `announce` back on in rebuild mode, and one that silences `manual`, must each turn a row red.
+- Plants: `quiet` forced False in rebuild mode, `quiet` applied in `manual` mode, and `quiet` keyed on `is_unchanged` (which loses the corrupted-catalog alert) must each turn a row red.

@@ -9,12 +9,13 @@ hidden. A burst is coalesced until the folders have been quiet for
 changed only if the catalog's live `source_file` and `source_sha256` differ
 from the file on disk now. The manager's own upload renames and removals
 (and anything else already reflected in the catalog) therefore change
-nothing and are dropped (#102 (c)). If anything did change, the approved
-`folders.reconcile` runs in `auto` mode. Classification, the folder guard
-and the per-row delete check are all reconcile's. A watch is only a trigger:
-a folder swapped between a check and `add_watch` costs at most one extra
-reconcile, which applies the guard itself. A failed reconcile (database
-down, #98 (j)) is logged and left to the next event or the next start-up.
+nothing and are dropped (#102 (c), as amended 2026-10-28). The changed paths
+go to the approved `folders.reconcile_paths` (`auto` mode); a queue overflow,
+a lost watch or a re-arm runs the full `folders.reconcile`. Classification,
+the folder guard and the per-row delete check are all reconcile's. A watch
+is only a trigger: a folder swapped between a check and `add_watch` costs at
+most one extra reconcile, which applies the guard itself. A failed reconcile
+(database down, #98 (j)) is logged and left to the next event or start-up.
 """
 
 from __future__ import annotations
@@ -183,13 +184,21 @@ class FolderWatcher:
                 pending, full = set(), False
 
     def _handle(self, paths: set[str]) -> None:
-        """Under the catalog lock: reconcile if `paths` is empty (a full
-        reconcile) or if any of them differs from the catalog."""
+        """Under the catalog lock: a full `folders.reconcile` if `paths` is
+        empty (overflow, a lost watch or a re-arm), else `reconcile_paths`
+        for the paths that differ from the catalog, if any (decisions
+        2026-10-28: "One-file reconcile" and the self-event check)."""
         try:
             with self._db.session() as session, catalog_lock(session):
-                if paths and not self._changed(session, paths):
-                    return  # self-caused or already in the catalog (#102 (c))
-                result = folders.reconcile(session, self._clock, self._bits)
+                if not paths:
+                    result = folders.reconcile(session, self._clock, self._bits)
+                else:
+                    changed = self._changed(session, paths)
+                    if not changed:
+                        return  # self-caused or already in the catalog (#102 (c))
+                    result = folders.reconcile_paths(
+                        session, self._clock, self._bits, changed
+                    )
         except Exception as exc:  # retried by the next event or start-up
             log.warning("folder reconcile failed: %s", type(exc).__name__)
             return
@@ -200,13 +209,16 @@ class FolderWatcher:
             len(result.unreadable_folders),
         )
 
-    def _changed(self, session: CatalogSession, paths: set[str]) -> bool:
+    def _changed(self, session: CatalogSession, paths: set[str]) -> list[str]:
+        """The paths whose file on disk (its SHA-256, or None if gone) differs
+        from the live catalog's `source_sha256` for that `source_file`."""
         with session.transaction() as tx:
             live = {r.source_file: r.source_sha256 for r in integrity_rows(tx.conn)}
+        changed: list[str] = []
         for rel in sorted(paths):
             file = None
             if folders.present(self._bits, rel):  # no read, no log, if gone
                 file = folders.read_input(self._bits, rel)
             if (file.sha256 if file is not None else None) != live.get(rel):
-                return True
-        return False
+                changed.append(rel)
+        return changed
