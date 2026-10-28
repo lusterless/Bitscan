@@ -2913,3 +2913,30 @@ def test_state_is_public_and_three_way(tmp_path: Path, bits: Path) -> None:
     bits.rename(tmp_path / "b")
     os.symlink(tmp_path / "b", bits)
     assert folders.state(bits, "a.bit") == "unreadable"
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "/x.bit",
+        "//x.bit",
+        "/uploaded/policy-1.bit",
+        "uploaded//policy-1.bit",
+        "./x.bit",
+        "sub/x.bit",
+        "../x.bit",
+        "x.bit/",
+    ],
+)
+def test_reconcile_paths_one_hostile_path_is_ignored(
+    server: PgServer, db: AppDatabase, bits: Path, rel: str
+) -> None:
+    """One path that is not a folder-relative name, next to a real x.bit and
+    a real uploaded/policy-1.bit: no row, no delete, no error; state() calls
+    it absent."""
+    put(bits, "x.bit", bit(f"H {tag()}")[0])
+    put(bits, "uploaded/policy-1.bit", bit(f"Hu {tag()}")[0])
+    assert folders.state(bits, rel) == "absent"
+    s = snap(server)
+    assert rec_paths(db, bits, [rel]) == EMPTY
+    assert imports_since(server, s) == [] and catalog_now(server) == s.catalog
