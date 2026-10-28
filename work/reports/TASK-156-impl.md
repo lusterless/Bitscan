@@ -261,3 +261,44 @@ This revision is the last row of `work/decisions.md` (lead, yes to both). It fix
 3. A leftover whose removal fails while `uploaded/` stays real (patch `folders.remove_after_commit` to a no-op, or make the unlink raise): the same as case 2. The next reconcile tries again. Once the file can be removed, it is listed once in `leftovers`.
 4. Regression: a normal leftover is still removed, listed once with the existing log line, and never read. This is the r0 case ii, unchanged.
 5. `remove_leftover` called directly returns a `Difference` when the file is gone and None otherwise.
+
+## Revision 5 (impl-manager-156b): `reconcile_paths` and public `state`
+
+Rulings: `work/decisions.md`, 2026-10-28, "Watcher self-events … **One-file reconcile** (user)" and "W6 rulings (lead)" Q2. Only `manager/bitscan_manager/services/importer/folders.py` changed. It is now 418 lines, 298 of them code (275 in r4).
+
+### What changed
+
+- **`state(bits_dir, rel) -> "present" | "absent" | "unreadable"`** (folders.py:150) is the r3 three-way check, now public. `_state = state` (:171) stays as an alias, because `rebuild.py:213` still calls `folders._state`. All callers inside `folders.py` now use `state`.
+- **`reconcile_paths(session, clock, bits_dir, paths)`** (:285) is new. The caller holds the catalog lock. It returns a `ReconcileResult`. `reconcile` (:279) and `reconcile_paths` share one body, `_reconcile(..., only)` (:296). `only=None` means the whole folder (`discover`), so `reconcile` behaves exactly as before.
+- **How `reconcile_paths` treats its paths:**
+  - **Folder guard.** It runs first, as in `reconcile`: every unreadable folder is marked and logged once.
+  - **Which paths are imported.** The paths are deduplicated (`frozenset`). A path is a candidate only if its folder is not marked and `state(...) == "present"` (:308). `state` treats a path that is not directly in the bits folder or `uploaded/`, or not a storable `*.bit` name, as `"absent"`. Such a path (for example `sub/x.bit`, `../x.bit` or `x.txt`) is therefore never imported. It cannot delete anything either, because no live `source_file` can equal it.
+  - **Classification and #15 order.** Candidates go through the same classification and order as `reconcile`. Server files come first (existing `source_file`s first, then by UTF-8 bytes), then uploads. Leftover, stray and renamed files are handled and reported the same way. Each file is read once.
+  - **Deletes.** These run after the imports, through `_delete_removed(..., only)` (:386). Only live policies whose `source_file` is in `paths` are considered (:401). Each is deleted only if `state` returns `"absent"` just before its `delete_in_tx`. A row in an unreadable folder is skipped and marked.
+  - **Untouched.** Files and policies not in `paths` are left alone.
+- **Reviewer nit (3) (optional) is not done.** I tried it: once a folder was marked during a run, skip it for the rest of that run. It broke the approved r4 behaviour. A leftover whose removal failed marks `uploaded/` without the folder being unreadable, and the skip then stopped a real deletion. The failing test was `test_a_leftover_that_cannot_be_removed_is_retried_and_reported_once_gone[no-op|unlink-raises]`. Making it work needs a second "really unreadable" list, so it is not cheap and I reverted it. Deletes are already safe without it, because `state` is checked for each row.
+
+### Gates (repo root)
+
+- `ruff check manager && ruff format --check manager`: pass (296 files).
+- `mypy --strict --config-file manager/pyproject.toml manager`: no issues (296 files).
+- PG suites, run from `manager/`: `test_folders_pg.py test_import_pipeline_pg.py test_import_store_pg.py test_policy_delete_pg.py test_catalog_lock_pg.py test_uploads.py test_uploads_pg.py` gave **587 passed and 1 failed**. The failure is `test_import_pipeline_pg.py::test_sr_example_imports_with_one_success_row_and_one_alert_then_auto_skips`, which does not use `folders`. It comes from the in-progress TASK-154 r1 changes to `pipeline.py` and `pipeline_record.py` (the rebuild alert skip), which are modified in the working tree by another agent. It is not caused by this change. No rebuild or watcher test files exist yet.
+- Throwaway smoke checks, in a copy of the test file that has since been deleted. Both passed:
+  - **Server folder.** `reconcile_paths(["b.bit", "sub/x.bit", "../x.bit", "x.txt", "nope.bit"])` with a new `b.bit`, a changed `c.bit` and a removed `d.bit` (the last two not in the paths) gave one row, `b.bit` success. Nothing was deleted, and `c.bit` was not imported.
+  - **Rename.** `a.bit` renamed to `e.bit`, with both paths given, gave `e.bit` success with `policy.import` and `policy.move`. The policy keeps its id and is not deleted.
+  - **Delete.** `["d.bit"]` deleted only D, and `c.bit`'s policy stayed live.
+  - **Uploads.** One batch held a changed live upload (success), an edited-name upload (`renamed`), `uploaded/stray.bit` (`strays`) and a leftover (`leftovers`).
+  - **`uploaded/` removed.** `[r1]` gave `unreadable_folders == ("uploaded/",)` and no delete.
+  - **`uploaded/` recreated empty.** `[r1]` deleted only r1's policy, and the other uploaded policy stayed live.
+
+### Cases for the tester
+
+1. A batch of server paths: a new file, a changed file, an unchanged file (`skipped`), and a removed file give import, import, skip and delete in that order. Changed and removed files *not* in the batch get no row and no delete.
+2. #15 order within a batch: two new server files with the same `<PolicyName>`. The first by UTF-8 bytes wins and the second gets BIT007. If one of them is already the policy's `source_file`, it goes first.
+3. Server before uploaded within a batch: a server file and `uploaded/policy-<id>.bit` with the same name give `move_upload`. The uploaded copy is removed and not reported as a stray.
+4. A rename `a.bit` → `c.bit`. With both paths, `move_server`: the same id and no delete. With only `c.bit`, also `move_server`, because `a.bit` is absent. With only `a.bit`, the policy is deleted (the caller's responsibility).
+5. `uploaded/` paths in a batch: live changed (`success`), live unchanged (`skipped`), edited name (`renamed`), stray (`strays`), leftover (`leftovers`, removed), and a leftover that cannot be removed (marks `uploaded/`, not listed).
+6. Folder guard: a batch whose folder is missing, symlinked or a file. Nothing is read or deleted, and the folder is listed. A folder swapped between the start and a read or delete behaves as in r3 and r4.
+7. Paths that are not folder files (`sub/x.bit`, `../x.bit`, `/abs/x.bit`, `x.txt`, `.hidden.bit`, an absent `nope.bit`, duplicates) give no row, no delete and no error.
+8. `state()` is public. It returns the same values as r3's `_state`, and `_state is state`.
+9. An empty batch: `reconcile_paths([])` gives an empty `ReconcileResult` (except `unreadable_folders` if a folder is unreadable).
