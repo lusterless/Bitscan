@@ -9,6 +9,10 @@
 # Subcommands, run in the order given (default: all):
 #   install missing installenv envvars reinstall upgrade purge reenrol invalid
 #   etcperm stringpreseed symlink static all
+#   upgradefrom   (only when named, needs --from OLD.deb) install OLD.deb, then
+#                 upgrade to --deb: M6 TP-M6-05, CHK-M6-104 (REQ-142 (2), the
+#                 0.1.0~pre1-1 -> 0.1.0-1 upgrade keeps agent_id, token and
+#                 agent.yaml byte-identical)
 # Each subcommand starts from a purged state (package purged, bitscan users,
 # /etc/bitscan and the package's debconf answers removed); the script purges
 # again at the end. It installs packages and creates users, so it refuses to
@@ -23,12 +27,14 @@ set -u
 export LC_ALL=C DEBIAN_FRONTEND=noninteractive
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-usage() { echo "usage: BITSCAN_TEST_DISPOSABLE=1 $0 --deb PATH [SUBCOMMAND...]" >&2; exit 2; }
+usage() { echo "usage: BITSCAN_TEST_DISPOSABLE=1 $0 --deb PATH [--from OLD.deb] [SUBCOMMAND...]" >&2; exit 2; }
 DEB=
+FROM=
 SUBS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --deb) [ $# -ge 2 ] || usage; DEB=$2; shift 2 ;;
+        --from) [ $# -ge 2 ] || usage; FROM=$2; shift 2 ;;
         -h | --help) usage ;;
         -*) usage ;;
         *) SUBS+=("$1"); shift ;;
@@ -40,7 +46,11 @@ DEB=$(cd "$(dirname "$DEB")" && pwd)/$(basename "$DEB")
 [ "${#SUBS[@]}" -gt 0 ] || SUBS=(all)
 ALL=(install missing installenv envvars reinstall upgrade purge reenrol invalid etcperm stringpreseed symlink static)
 for s in "${SUBS[@]}"; do
-    case " ${ALL[*]} all " in *" $s "*) ;; *) echo "unknown subcommand: $s" >&2; usage ;; esac
+    case " ${ALL[*]} all upgradefrom " in *" $s "*) ;; *) echo "unknown subcommand: $s" >&2; usage ;; esac
+    if [ "$s" = upgradefrom ]; then
+        [ -n "$FROM" ] && [ -f "$FROM" ] || { echo "upgradefrom needs --from OLD.deb" >&2; exit 2; }
+        FROM=$(cd "$(dirname "$FROM")" && pwd)/$(basename "$FROM")
+    fi
 done
 if [ "$(id -u)" != 0 ]; then echo "test_maintainer_scripts.sh: must run as root" >&2; exit 2; fi
 if [ "${BITSCAN_TEST_DISPOSABLE:-}" != 1 ]; then
@@ -566,6 +576,43 @@ sub_upgrade() {
         is "$(active bitscan-runner.socket)" active "upgrade $i: runner socket active"
         ! grep -q '^bitscan-agent: ' "$W/upgrade$i.log"; ok $? "upgrade $i: no bitscan-agent error line"
     done
+}
+
+# --- CHK-M6-104: upgrade from a named older .deb (REQ-142 (2), #90) ------------
+sub_upgradefrom() {
+    local old new
+    old=$(dpkg-deb -f "$FROM" Version); new=$VERSION
+    echo "== upgradefrom $old -> $new (CHK-M6-104)"
+    is "$(dpkg-deb -f "$FROM" Package)" bitscan-agent "--from is a bitscan-agent package"
+    dpkg --compare-versions "$old" lt "$new"; ok $? "dpkg --compare-versions $old lt $new"
+    local tok; tok=$(newtok)
+    reset_host
+    preseed "$URL" "$tok"
+    install_deb from "$FROM"
+    is "$AI_RC" 0 "install of the older package $old exits 0"
+    is "$(dpkg-query -W -f='${Version}' bitscan-agent)" "$old" "older version $old installed"
+    wait_active; ok $? "bitscan-agent.service active on $old"
+    plant_enrolled
+    timeout 30 systemctl restart bitscan-agent.service; wait_active
+    local before inv0; before=$(snap); inv0=$(inv)
+    install_deb upgradefrom
+    is "$AI_RC" 0 "upgrade $old -> $new exits 0 with no input"
+    is "$(dpkg-query -W -f='${Version}' bitscan-agent)" "$new" "version $new installed"
+    is "$(status)" "install ok installed" "package configured after the upgrade"
+    is "$(snap)" "$before" "agent.yaml, agent_id, token byte-identical (owner, mode, sha256)"
+    [ ! -e /var/lib/bitscan-agent/enroll.token ]; ok $? "no enroll.token written by the upgrade"
+    wait_active; ok $? "bitscan-agent.service active on $new"
+    local inv1; inv1=$(inv)
+    [ -n "$inv1" ] && [ "$inv1" != "$inv0" ]; ok $? "bitscan-agent.service restarted by the upgrade (new InvocationID)"
+    is "$(active bitscan-runner.socket)" active "runner socket active"
+    is "$(enabled bitscan-runner.service)" disabled "runner service still not enabled"
+    is "$(enabled bitscan-capread.socket)" disabled "capread socket still not enabled"
+    ! grep -q '^bitscan-agent: ' "$W/upgradefrom.log"; ok $? "no bitscan-agent error line in the upgrade log"
+    local bins b; bins=
+    for b in bitscan-agent bitscan-runner bitscan-capread; do
+        cmp -s "/usr/sbin/$b" <(dpkg-deb --fsys-tarfile "$DEB" | tar -xOf - "./usr/sbin/$b"); ok $? "/usr/sbin/$b is the $new binary"
+    done
+    dbfiles=$(dbfiles_with "$(canary_of "$tok")"); is "$dbfiles" "" "the enrolment token is in no debconf file after the upgrade"
 }
 
 # --- CHK-M4-173: remove and purge twice (#82) ----------------------------------

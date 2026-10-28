@@ -13,10 +13,19 @@ const LABELS: Record<AgentStatus, string> = {
   decommissioned: "Decommissioned",
 };
 
+const TONES: Record<AgentStatus, string> = {
+  awaiting_approval: "badge badge-warning",
+  enrolled: "badge badge-info",
+  online: "badge badge-success",
+  stale: "badge badge-warning",
+  offline: "badge badge-danger",
+  decommissioned: "badge badge-neutral",
+};
+
 export interface StatusBadgeProps {
   readonly status: AgentStatus;
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  return <span>{LABELS[status]}</span>;
+  return <span className={TONES[status]}>{LABELS[status]}</span>;
 }

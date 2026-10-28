@@ -290,6 +290,12 @@ def test_the_m5_readme_sections_behave_as_written(  # noqa: PLR0915
         and h.get("content-type") == "text/html; charset=utf-8"
         and all(h.get(k) == v for k, v in HEADERS.items()),
     )
+    # The index loads the script and, since the UI shell, its stylesheet; each
+    # has one fixed type by extension (an unknown extension expects nothing).
+    asset_types = {
+        ".js": "text/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+    }
     for ref in refs:
         path = ref.decode()
         st, h, out = w.req("GET", path)
@@ -300,7 +306,7 @@ def test_the_m5_readme_sections_behave_as_written(  # noqa: PLR0915
             f"{st} {h.get('content-type')}",
             st == 200
             and out == (folder / path.removeprefix("/")).read_bytes()
-            and h.get("content-type") == "text/javascript; charset=utf-8",
+            and h.get("content-type") == asset_types.get(os.path.splitext(path)[1]),
         )
     for path in (
         "/index.html",

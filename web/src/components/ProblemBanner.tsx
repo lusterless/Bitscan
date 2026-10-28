@@ -18,12 +18,13 @@ export function ProblemBanner({ problem }: ProblemBannerProps) {
   }
   const message = messageFor(problem);
   return (
-    <div role="alert">
+    <div role="alert" className="callout callout-danger">
       <p>{message.text}</p>
       {problem.detail !== null && <p>{problem.detail}</p>}
       {message.action === "sign-in-again" && (
         <button
           type="button"
+          className="btn btn-sm"
           onClick={() => {
             void signOut();
           }}

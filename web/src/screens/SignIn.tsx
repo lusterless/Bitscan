@@ -92,23 +92,29 @@ export function SignIn({ onSignedIn, notice }: SignInProps) {
   }
 
   return (
-    <main>
+    <main className="auth-main">
       <h1>Sign in</h1>
+      <p className="page-subtitle">Use your Bitscan account.</p>
       {notice === "password-changed" && (
-        <p role="status">Your password was changed. Sign in again.</p>
+        <p role="status" className="callout callout-success">
+          Your password was changed. Sign in again.
+        </p>
       )}
       {failure?.kind === "rejected" && (
-        <p role="alert">
+        <p role="alert" className="callout callout-danger">
           Sign-in failed. Check your username, password and TOTP code.
         </p>
       )}
       {failure?.kind === "unreachable" && (
-        <p role="alert">The manager is unavailable. Try again later.</p>
+        <p role="alert" className="callout callout-danger">
+          The manager is unavailable. Try again later.
+        </p>
       )}
       {failure?.kind === "problem" && (
         <ProblemBanner problem={failure.problem} />
       )}
       <form
+        className="form"
         onSubmit={(event) => {
           void submit(event);
         }}
@@ -150,7 +156,11 @@ export function SignIn({ onSignedIn, notice }: SignInProps) {
             }}
           />
         </label>
-        <button type="submit" disabled={busy || waitS !== null}>
+        <button
+          type="submit"
+          className="btn btn-primary btn-block"
+          disabled={busy || waitS !== null}
+        >
           Sign in
         </button>
       </form>

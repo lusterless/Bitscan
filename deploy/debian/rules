@@ -1,7 +1,9 @@
 #!/usr/bin/make -f
 # Binary-only packaging of prebuilt static binaries (PD-26). The staging tree
 # made by build-deb.sh holds bin/ (the three binaries), debian/systemd/ (the
-# five agent units, verbatim TS 3.7) and debian/dbus/ (the D-Bus policy).
+# five agent units, verbatim TS 3.7 except RemoveOnStop=yes in
+# bitscan-capread.socket, decisions 2026-10-26) and debian/dbus/ (the D-Bus
+# policy).
 
 UNITDIR := debian/bitscan-agent/lib/systemd/system
 
@@ -11,7 +13,7 @@ UNITDIR := debian/bitscan-agent/lib/systemd/system
 # The binaries are built before packaging, with reproducible Go flags.
 override_dh_auto_build:
 
-# Units are copied unchanged so they stay byte-identical to TS 3.7.
+# Units are copied unchanged from deploy/systemd/.
 execute_after_dh_install:
 	install -d $(UNITDIR)
 	install -m 0644 debian/systemd/bitscan-agent.service $(UNITDIR)/

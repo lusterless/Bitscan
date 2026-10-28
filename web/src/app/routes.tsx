@@ -5,6 +5,7 @@ import { Hosts } from "../screens/Hosts";
 import { PackageSearch } from "../screens/PackageSearch";
 import { PasswordChange } from "../screens/PasswordChange";
 import { TotpEnrol } from "../screens/TotpEnrol";
+import type { IconName } from "../components/Icon";
 import { navigate, type Route, type RouteName } from "./router";
 import type { Role } from "./session";
 
@@ -34,31 +35,70 @@ export function isAllowed(name: RouteName, role: Role): boolean {
   return ROUTE_ROLES[name].includes(role);
 }
 
+/** The sidebar sections, in display order. */
+export type NavGroup = "Fleet" | "Enrolment" | "Account";
+
+export const NAV_GROUPS: readonly NavGroup[] = Object.freeze([
+  "Fleet",
+  "Enrolment",
+  "Account",
+]);
+
 export interface NavEntry {
   readonly route: Route;
   readonly label: string;
+  readonly group: NavGroup;
+  readonly icon: IconName;
 }
 
 const NAV: readonly NavEntry[] = Object.freeze([
-  { route: { name: "hosts" }, label: "Hosts" },
-  { route: { name: "packages" }, label: "Package search" },
-  { route: { name: "enrolment-requests" }, label: "Enrolment requests" },
-  { route: { name: "enrolment-tokens" }, label: "Enrolment tokens" },
-  { route: { name: "totp" }, label: "TOTP" },
-  { route: { name: "password" }, label: "Password" },
+  { route: { name: "hosts" }, label: "Hosts", group: "Fleet", icon: "hosts" },
+  {
+    route: { name: "packages" },
+    label: "Package search",
+    group: "Fleet",
+    icon: "packages",
+  },
+  {
+    route: { name: "enrolment-requests" },
+    label: "Enrolment requests",
+    group: "Enrolment",
+    icon: "requests",
+  },
+  {
+    route: { name: "enrolment-tokens" },
+    label: "Enrolment tokens",
+    group: "Enrolment",
+    icon: "tokens",
+  },
+  { route: { name: "totp" }, label: "TOTP", group: "Account", icon: "totp" },
+  {
+    route: { name: "password" },
+    label: "Password",
+    group: "Account",
+    icon: "password",
+  },
 ]);
 
 export function navFor(role: Role): readonly NavEntry[] {
   return NAV.filter((entry) => isAllowed(entry.route.name, role));
 }
 
+/** The nav entry a route belongs to; a host page belongs to Hosts. */
+export function entryFor(route: Route): NavEntry | null {
+  const name = route.name === "host" ? "hosts" : route.name;
+  return NAV.find((entry) => entry.route.name === name) ?? null;
+}
+
 const HOSTS: Route = Object.freeze({ name: "hosts" });
 
 function NotAvailable() {
   return (
-    <main aria-label="Not available">
-      <h1>Not available</h1>
-      <p>This page is not available for your role.</p>
+    <main aria-label="Not available" className="page page-narrow">
+      <div className="card empty-state">
+        <h1>Not available</h1>
+        <p>This page is not available for your role.</p>
+      </div>
     </main>
   );
 }

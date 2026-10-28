@@ -1279,6 +1279,199 @@ All are in `work/open-questions.md`. "Needed by" is the start of the wave whose 
 
 Staying in M6: the 3-VM end-to-end (enrol, approve, heartbeat, inventory) on amd64 Ubuntu 22.04 and 24.04 VMs (Hyper-V on the dev PC; Debian 12 was dropped from v1 on 2026-10-24, so PD-27's "real Debian 12 host in the M6 gate" no longer applies), the inventory alerts on real hosts, the release step (SHA-256 on a page from another origin), #28 and the N / N−1 marker before the first supported release, and the #6 install half.
 
+## M6 first-release gate
+
+Planned 2026-10-26 (planner-m6) in the worktree `Bitscan-m6` (branch `m6-release`, from main `8ad50eb`). Consistency pass done: every TASK links a REQ and every REQ has a TASK; waves are file-disjoint; every task is within 5 files and about 200 hand-written lines; the spine is acyclic; no gate is lowered. Plans: `work/plans/M6-e2e.md`, `work/plans/TASK-131.md`, `work/plans/TASK-133.md`, `work/plans/TASK-135.md`.
+
+Scope: REQ-137 to REQ-149 in `work/requirements.md`. In this section `bm/` means `manager/bitscan_manager/`.
+
+**Overnight approval (user, 2026-10-26).** This breakdown adds **no new spec deviation**, and every open question it raises or re-checks (#90–#96, #6, #28, #46, #89, the two `.claude/` own-question markers, PD-31, PD-32) carries a recommended answer in `work/open-questions.md`. The deviations it relies on are the recorded ones only: Debian 12 and arm64 dropped (decisions 2026-10-24), #82 purge, the D-Bus lintian overrides, the #6 static-file exception (TS §2.3 L118), and the trailing-slash 404 (decisions 2026-10-25).
+
+**Wave 0 is the VM network check (TP-M6-01), and it gates the end-to-end items only.** It runs first. It proves with a real TLS listener on TCP 8443 that each VM reaches the manager address the end-to-end run will use, and that the tester reaches each VM. If it fails, TP-M6-10 to TP-M6-13 and gates G50 to G52 stop and wait for the user: no SSH tunnel, port forward, firewall, `.wslconfig` or admin change (decisions 2026-10-26 (4)); the tester records what failed and the options in `work/plans/M6-e2e.md` §6, and messages `main`. **No TASK needs VM → manager reachability**: W1 to W3 start at once, alongside W0, and so do TP-M6-00, -02 to -09 and the WSL rows of the gate (G41 included).
+
+Rules every M6 task follows:
+- **Testing by risk (user, 2026-10-25).** Low-risk tasks (docs, runbooks, CI workflows, packaging metadata, the manager paging fix) are tested and reviewed **per wave**: one test run and one review round for the wave's batch; planted faults only for security checks. **High-risk** tasks (here only TASK-132, agent) get full rigor per task: every plant, two review rounds if needed, and the TS §8.2 second approval. The milestone gate keeps its full plant table. Every change is still tested and reviewed before merge.
+- **Speed rules (2026-10-24):** targeted tests per task or batch; the full manager suite (G18), `go test ./...` and the package tests at the gate and in CI; Python tests in WSL with `CI=true`; results as `passed/total`; a failure is re-run by its node id after the fix.
+- No task adds a route, setting, flag or code path that queues a command, pushes to an agent, opens a listening socket on the agent, disables inventory, signs anything, or changes host settings from the manager (security invariants). Runbooks put no secret on a command line or in a plain environment variable.
+- Implementers check `work/reviews/builder-checklist.md` before every hand-off. Manager code keeps `api → services → repositories` and parameterised SQL.
+- Nobody pushes, merges or edits `.claude/` (decisions 2026-10-26 (5)).
+
+### M6 tasks
+
+| TASK | Title | REQ links | Area | Owner | Risk | Files expected | Depends on | Est. LOC | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TASK-129 | Manager wheel: the built UI (`bm/webui/**`, git-ignored, as hatch build artifacts), every migration file, no tests; version 0.1.0 | REQ-137, REQ-140 | manager | impl-manager | low (packaging metadata) | `manager/pyproject.toml` | none; #6 (M6 re-check) | 25 | After `npm run build`, `pip wheel --no-deps --no-build-isolation` of `manager/` (hatchling from the hashed dev lock) gives `bitscan_manager-0.1.0-py3-none-any.whl` listing `webui/index.html`, every asset and every migration file and no `tests/` path; installed with `--no-deps` into a fresh venv over the hashed runtime lock, it runs `db migrate` to head and serves the built `index.html` byte for byte at `/`. |
+| TASK-130 | Agent 0.1.0-1: changelog entry on top; agent runbook for the first release (0.1.0 status, compliance answered `runner_unavailable` per #28, `SHA256SUMS` from the release page, upgrade order, compatibility) | REQ-142 | deploy | impl-deploy | low (packaging metadata, docs) | `deploy/debian/changelog`, `deploy/runbooks/agent-install.md` | none; #28, #90 | 50 (docs) | `build-deb.sh` produces `bitscan-agent_0.1.0-1_amd64.deb` whose agent reports 0.1.0-1; G37, G38 (with an upgrade from `0.1.0~pre1-1` keeping `agent_id`, `token` and `agent.yaml` byte-identical), G39 and G40 pass on it; the changed runbook sections behave as written on a VM. |
+| TASK-131 | `/agents` and `/agents/{id}/packages` cursors carry only ids; the anchor's sort values are read in the same query; a vanished or foreign anchor is 400 (#89) (plan: `work/plans/TASK-131.md`) | REQ-143 | manager | impl-manager | low (paging; SQL plants only) | `bm/api/user/agents.py`, `bm/services/agents/fleet.py`, `bm/repositories/agents.py`, `bm/repositories/inventory.py` | none; #89 | 130 | Through the API on PostgreSQL, a 255-character non-ASCII hostname and package name on page boundaries page with every item once in the unchanged order, every returned cursor is at most 512 characters, a tampered, foreign-agent or vanished-anchor cursor answers 400, the M3 and M5 route suites pass, and `manager/openapi.json` is byte-identical. |
+| TASK-132 | Agent lint: forbidigo also forbids `fcgi.Serve`, `net.FileConn` and `net.FilePacketConn` in non-test agent code (reviewer TASK-004 residuals) | REQ-144 | agent | impl-agent | **high** (agent; two approvals) | `agent/.golangci.yml` | none | 12 | G8 passes on the tree and goes red, with the configured message, on each of the three calls planted in a non-test file under `agent/internal/agent/`; no existing rule is removed or narrowed; the nolint grep and G36 pass. |
+| TASK-133 | Manager install runbook: release-file check, PostgreSQL 16 and TLS-only roles, the TS §5.2 Bootstrap copied byte for byte, user, folders, `manager.env`, secrets, venv and `/usr/bin/bitscan-manager`, units copied unchanged, migrate, maintain timer, start, `/readyz`, first admin and TOTP (plan: `work/plans/TASK-133.md`) | REQ-138, REQ-140 | deploy | impl-deploy | low (docs; walk-tested) | `deploy/runbooks/manager-install.md` | TASK-129; #6, #46, #93 | 200 (docs) | The tester follows it on a fresh systemd-enabled Ubuntu 24.04 manager host (#93) and every step behaves as written, ending with a host that meets REQ-140 (verbatim units, `systemd-analyze verify` clean, migrate, maintain and serve under their units, no capabilities, writes only in the two `ReadWritePaths`, `migrate.dsn` unreadable to the manager user), with a Bootstrap block byte-identical to TS §5.2 and no secret on any command line. |
+| TASK-134 | Manager upgrade and operations runbook: upgrade order, compatibility rule, certificate replacement (#96), OpenBao token replacement, backups and the monthly restore test, removal (layout from `work/plans/TASK-133.md`) | REQ-139 | deploy | impl-deploy | low (docs) | `deploy/runbooks/manager-operations.md` | TASK-129; TASK-133's plan (written in parallel against it; TESTed after TASK-133 IMPL); #96 | 130 (docs) | On the TASK-133 host, the upgrade section (the same wheel re-installed) leaves the head unchanged, restarts the service and keeps an enrolled agent heartbeating without re-enrolment; the certificate step the #96 fact check selects makes new connections present the new certificate; a backup taken as written restores into a scratch database at head. |
+| TASK-135 | Release workflow: version agreement (tag, changelog, `pyproject.toml`), double `.deb` build and compare, UI build and wheel with a UI check, runtime lock copy, the four manager unit files, `SHA256SUMS`, draft GitHub release with the sums in its notes; pinned actions, least privilege (plan: `work/plans/TASK-135.md`) | REQ-141 | deploy | impl-deploy | low (CI; security plants only) | `.github/workflows/release.yml` | TASK-129, TASK-130; #90, #91 | 160 | actionlint is clean, every action is pinned by commit, only the publish job can write and the release is a draft; the build job's commands run locally produce the plan's file list, `sha256sum -c SHA256SUMS` passes and the two `.deb` builds are identical; a tag/changelog mismatch, a wheel without the UI, a file changed after `SHA256SUMS` and a tag-pinned action each turn it red. |
+| TASK-136 | Release workflow: manager SBOMs (CycloneDX from the hashed runtime lock; `npm sbom` for the bundled UI runtime packages), added to `SHA256SUMS` (#92) | REQ-141 | deploy | impl-deploy | low (CI) | `.github/workflows/release.yml` | TASK-135; #92 | 60 | The two SBOMs list every `requirements.txt` package with version and hash and every bundled UI runtime package with its version, both are in `SHA256SUMS`, and a package dropped from either SBOM turns the completeness check red. |
+| TASK-137 | README for the first release: 0.1.0 status, links to the three runbooks, release verification, versions and the compatibility rule; remove the "no production install method" and "agent does not run" lines | REQ-145 | manager | impl-manager | low (docs) | `README.md` | TASK-133, TASK-134, TASK-135 | 70 (docs) | The tester follows every changed section against the TASK-133 host; every link resolves and each step behaves as written; no statement contradicts a runbook or the spec; no secret, task id or process note. |
+
+Totals: 13 REQ (REQ-137 to REQ-149), 9 TASK (TASK-129 to TASK-137), 15 test-plan items (TP-M6-00 to TP-M6-14), 5 waves (W0 to W4) plus the gate. One high-risk task (TASK-132). No task needs VM → manager reachability.
+
+REQ to TASK: REQ-137 TASK-129; REQ-138 TASK-133; REQ-139 TASK-134; REQ-140 TASK-129, TASK-133; REQ-141 TASK-135, TASK-136; REQ-142 TASK-130; REQ-143 TASK-131; REQ-144 TASK-132; REQ-145 TASK-137; REQ-146 TASK-130, TASK-133, TASK-135 (the release candidate and the installed manager it accepts); REQ-147 TASK-133 (the installed manager with its sink; the alert code is M3's, unchanged); REQ-148 TASK-130, TASK-133; REQ-149 TASK-130. REQ-146 to REQ-149 are acceptance requirements: they change no code and are proven by TP-M6-10 to TP-M6-13 on the files those tasks deliver. Every M6 REQ has at least one TASK, and every TASK has at least one REQ.
+
+### M6 owner and review notes
+
+- **Owners:** impl-manager: TASK-129, 131, 137. impl-deploy: TASK-130, 133, 134, 135, 136 (sequential in practice; TASK-133 first in W2, because the end-to-end run needs the installed manager). impl-agent: TASK-132. impl-web: no M6 task (no web file changes; the wheel carries the existing build). The tester owns every test file and fixture (`manager/tests/`, `deploy/tests/`, `e2e/m6/`, `tests/m6/`), the manager-host container image, the test CA and the test doubles.
+- **Two approvals (TS §8.2 L1268):** TASK-132 (agent). No M6 task touches auth, the importer or the runner. TASK-130 changes only the version line the build injects, not agent code (the TASK-092 rule). If the end-to-end run finds a defect whose fix touches the agent or auth, that fix task joins this list. The user's second approval applies under the overnight rule only on a clean TEST PASS plus "APPROVED, no open blocking or should-fix findings" (decisions 2026-10-26 (3)).
+- **Second look (PD-32, recommended none):** TASK-133 handles secrets and database roles in prose only and is walk-tested; the reviewer checks every path, owner and mode against TS §8.7 L1344–L1345 line by line.
+- **Shared files, never in the same wave:** `.github/workflows/release.yml` (TASK-135 W2, TASK-136 W3); `README.md` (TASK-137 only); `deploy/runbooks/agent-install.md` (TASK-130 only). TASK-131's four files are touched by no other M6 task.
+- **No new folders (PD-31):** release helpers stay inline in `release.yml` (as TASK-127 did in `web.yml`); the runbooks are files in `deploy/runbooks/`. The `.claude/` marker updates that follow the answers (#6 in `packaging-and-units.md`, the N / N−1 line in `CLAUDE.md`, the performance marker in `testing.md`) are left for the user.
+- Planted violations are made in a throwaway copy, a throwaway image or a throwaway VM state, never left in the tree; every VM is restored to `clean` afterwards.
+
+### M6 test-plan items (tester)
+
+Drafted from the acceptance criteria at phase start (`tests/m6/test-plan.md`, check ids `CHK-M6-###`; suggested ranges: 001–019 network check, 020–039 wheel, 040–079 install walk and REQ-140, 080–099 operations, 100–119 package and release, 120–139 cursors, 140–149 lint, 150–159 README, 200–259 end-to-end, 260–279 alerts and metrics, 280–299 security subset, 300–309 idle cost, 310–319 gate rows, 320 on the mutation table). "WSL" is WSL2 Ubuntu 24.04 (mirrored networking, systemd, Docker); "VM" is a Hyper-V VM reached from Windows `ssh`/`scp` (or `ssh.exe` through WSL interop; WSL itself has no route to the VMs).
+
+| TP | What | REQ | Runs in | Needs VM → manager | Files (tester) | Depends on |
+| --- | --- | --- | --- | --- | --- | --- |
+| TP-M6-00 | Phase test plan and the M6 index row | all M6 | phase start; report at the gate | no | `tests/m6/test-plan.md`, `tests/test-plan.md` | none |
+| TP-M6-01 | **Wave 0 network check** (`work/plans/M6-e2e.md` §2): restore `clean`, IPs by MAC, tester → VM (SSH, `scp`, checksum), a TLS listener on WSL `0.0.0.0:8443` and one published from a container on 8443, each reached from both VMs by name (handshake and one GET), a control port, VM → Ubuntu archive | REQ-146 (0) | W0 | **it is the check** | `e2e/m6/netcheck.sh` | none |
+| TP-M6-02 | Wheel build, contents, fresh-venv install, `db migrate`, `serve` of `/` (G47) | REQ-137 | TASK-129 TEST | no | `deploy/tests/test_manager_wheel.sh` | TASK-129 IMPL |
+| TP-M6-03 | Manager install walk on a fresh manager host and the REQ-140 checks (G48): verbatim manager units, `systemd-analyze verify`, unit runs, capabilities, write sweep, credential isolation; the Bootstrap byte check | REQ-138, REQ-140 | TASK-133 TEST | no | `e2e/m6/manager-host.Dockerfile`, `deploy/tests/check_manager_host.sh`, `deploy/tests/check_runbook_bootstrap.py` | TP-M6-02 |
+| TP-M6-04 | Operations walk: upgrade, certificate reload, backup and restore | REQ-139 | TASK-134 TEST | no | none in the tree (evidence) | TP-M6-03 |
+| TP-M6-05 | 0.1.0-1 package gates G37–G40, G38 upgrade from `0.1.0~pre1-1`; runbook sections (walked on a VM in TP-M6-10) | REQ-142 | TASK-130 TEST | no (runbook walk: yes, in TP-M6-10) | `deploy/tests/test_maintainer_scripts.sh` (extend: upgrade from a named older `.deb`) | TASK-130 IMPL |
+| TP-M6-06 | Release workflow: actionlint, pin and permission checks, the build job's commands run locally, `SHA256SUMS`, plants (G49) | REQ-141 | TASK-135 and TASK-136 TEST | no | `deploy/tests/check_release_workflow.py` | TASK-135 IMPL |
+| TP-M6-07 | Cursor suite on PostgreSQL (G53): boundary rows, cursor length, refusals, the M3 and M5 route suites | REQ-143 | TASK-131 TEST | no | `manager/tests/test_agent_cursors_pg.py` | TASK-131 IMPL |
+| TP-M6-08 | Lint plants (G8) and G36 | REQ-144 | TASK-132 TEST | no | none in the tree (evidence) | TASK-132 IMPL |
+| TP-M6-09 | README walk against the TP-M6-03 host | REQ-145 | TASK-137 TEST | no | none in the tree (evidence) | TP-M6-03 |
+| TP-M6-10 | **End-to-end gate on both VMs** (G50), phase A and the revoke and purge of `work/plans/M6-e2e.md` §4 | REQ-146 | W4 | **yes** | `e2e/m6/e2e_vms.py`, `e2e/m6/vm.sh` | TP-M6-01 PASS, TP-M6-03 PASS, TP-M6-05 |
+| TP-M6-11 | Alerts and metrics on real hosts (G51), phase B | REQ-147 | W4 | **yes** | `e2e/m6/e2e_vms.py` | TP-M6-10 phase A |
+| TP-M6-12 | Security subset on real hosts (G52) | REQ-148 | W4 | **yes** | `e2e/m6/e2e_vms.py` | TP-M6-10 phase A |
+| TP-M6-13 | Agent idle cost on u2404 (#95; recorded, no gate) | REQ-149 | W4 | **yes** | `e2e/m6/idle_cost.sh` | TP-M6-10 phase A |
+| TP-M6-14 | M6 gate: the gate table below, the mutation table, G41 on the RC `.deb`, and the check that the RC `.deb` tested on the VMs has the SHA-256 the release build produces | REQ-137 to REQ-149 | M6 gate | G50–G52 rows only | as above | all above |
+
+### M6 waves and dependency spine
+
+Spine: `TASK-129 → TASK-133 → TASK-134`; `TASK-129, TASK-130 → TASK-135 → TASK-136`; `TASK-133, TASK-134, TASK-135 → TASK-137`; `TP-M6-01 PASS + TASK-129 + TASK-130 + TASK-133 (TEST PASS) → TP-M6-10 → TP-M6-11, -12, -13 → gate`. TASK-131 and TASK-132 depend on nothing. The graph is acyclic.
+
+Interface first: TASK-129 fixes the wheel's name and contents (W1) before the runbooks and the release workflow consume them; `work/plans/TASK-133.md` fixes the host layout (paths, owners, modes, unit location, venv) before TASK-134 and TASK-137; `work/plans/TASK-135.md` fixes the release file names before TASK-136, TASK-137 and the end-to-end run.
+
+| Wave | Tasks (parallel) | Files touched (disjoint within the wave) | Needs VM → manager? |
+| --- | --- | --- | --- |
+| W0 | tester TP-M6-00, **TP-M6-01 (network check)** | `tests/m6/test-plan.md`, `tests/test-plan.md`, `e2e/m6/netcheck.sh` | it is the check |
+| W1 (starts with W0) | TASK-129, 130, 131, 132 | `manager/pyproject.toml` · `deploy/debian/changelog`, `deploy/runbooks/agent-install.md` · `bm/api/user/agents.py`, `bm/services/agents/fleet.py`, `bm/repositories/agents.py`, `bm/repositories/inventory.py` · `agent/.golangci.yml` | no |
+| W2 | TASK-133 (first), 134, 135 | `deploy/runbooks/manager-install.md` · `deploy/runbooks/manager-operations.md` · `.github/workflows/release.yml` | no |
+| W3 | TASK-136, 137 | `.github/workflows/release.yml` · `README.md` | no |
+| W4 | tester TP-M6-10 to TP-M6-13 (may start once TASK-133 is TEST PASS; it does not wait for W3) | `e2e/m6/{e2e_vms.py,vm.sh,idle_cost.sh}` | **yes** (stops if W0 failed) |
+| Gate | tester TP-M6-14; reviewer's M6 closing review | tester files only | G50–G52 rows only |
+
+Per-wave batches under testing by risk: W1 low-risk batch = TASK-129, 130, 131 (one test run, one review round); TASK-132 alone with full rigor. W2 batch = TASK-133, 134, 135. W3 batch = TASK-136, 137.
+
+### M6 gate
+
+On a clean tree every command is green, and each gate turns red on its planted violation. Gates for areas M6 does not touch (G12–G16 web) are not re-run, as in M5; G42 runs on the `index.html` inside the wheel (part of G47).
+
+| Gate | Command (summary) | Planted violation that must turn it red | Where |
+| --- | --- | --- | --- |
+| G1–G4 | ruff, ruff format, `mypy --strict`, hashed locks (for TASK-129 and TASK-131) | an f-string query in `bm/repositories/agents.py` (S608) | local; CI |
+| G5 | services coverage ≥ 85 % (Linux run, `precision = 2`) | an untested function sized from the clean report | WSL; CI |
+| G6 | OpenAPI export byte-identical | a cursor field added to a response model | local; CI |
+| G7–G11 | gofmt, golangci-lint + nolint grep, `go mod download` + `verify`, static amd64 build, `go test -race ./...` | the CHK-M6-337..339 rows (G8); M4 plants stand (agent code unchanged) | WSL; CI |
+| G17 | units and D-Bus verbatim; `systemd-analyze verify` on the agent units and, new in M6, on the manager units with the real binary installed (no "not executable" lines) | one character changed in `bitscan-manager.service` | WSL; CI |
+| G18 | full manager suite, 0 skipped | any of G53's rows | WSL; CI |
+| G35, G36 | Go contract and agent security subset (re-run once: TASK-132 touches agent lint) | M4 rows stand (agent code unchanged) | WSL; CI |
+| G37–G40 | lintian, maintainer scripts (with the pre1 → 0.1.0-1 upgrade), reproducible double build, SBOM, on 0.1.0-1 | the M4 rows, re-planted only where `changelog` or a script changed | WSL; CI |
+| G41 | `e2e/agent_manager.sh` on the 0.1.0-1 `.deb` against the manager in WSL (regression; needs no VM) | the reverse-order `list_sha256` `.deb` | WSL |
+| G47 | wheel: build, contents, fresh-venv install, `db migrate`, `serve` of `/`, G42 on the wheel's `index.html` | CHK-M6-320..322 | WSL |
+| G48 | manager install walk and REQ-140 checks on a fresh manager host | CHK-M6-323..326 | WSL (container) |
+| G49 | release workflow checks and the local build of the release files | CHK-M6-327..332 | WSL; CI on push (NOT RUN until pushed) |
+| G50 | end-to-end on both VMs (TP-M6-10) | CHK-M6-340 | VMs + WSL |
+| G51 | alerts and metrics on real hosts (TP-M6-11) | CHK-M6-342, -343 | VMs + WSL |
+| G52 | security subset on real hosts (TP-M6-12) | CHK-M6-341, -344, -345 | VMs + WSL |
+| G53 | `pytest tests/test_agent_cursors_pg.py` plus the M3 and M5 `/agents` suites | CHK-M6-333..336 | WSL; CI |
+| — | idle cost (TP-M6-13): recorded against the TS §3.3 target, **no gate** (testing.md own question, #95) | none | VM |
+
+**No gate is lowered.** NOT RUN, with reasons, at the gate: the 10,000-agent load test, soak tests, the TASK-060 and TASK-064 cost checks, the CSV memory check and the TS §7 search timing (deferred until after M6 by the user, 2026-10-24); `new_packages_burst` on a real host (#94: proven at integration level in M3; over 1,000 package installs on a 2 GB VM is a long-running step); the GitHub runs of every workflow and the release publication (no push authorised overnight); the user's optional browser approval (#93 (f)); Debian 12 and arm64 (dropped from v1). If W0 fails, G50–G52 and the idle measurement are NOT RUN (waiting for the user), and the gate cannot pass until they are run.
+
+### M6 mutation table (tester; CHK-M6-320 onwards)
+
+Each row is planted in a throwaway copy, image or VM state and must turn the named gate red. Real-host rows (340–345) run as targeted mini-runs on one VM, only the rows they target.
+
+| CHK | Plant | Red in | Target |
+| --- | --- | --- | --- |
+| CHK-M6-320 | the UI dropped from the wheel (the artifacts line removed) | G47 (`/` answers 404) | TASK-129 |
+| CHK-M6-321 | migration files dropped from the wheel | G47 (`db migrate` fails) | TASK-129 |
+| CHK-M6-322 | `tests/` packed into the wheel | G47 | TASK-129 |
+| CHK-M6-323 | one character of the runbook's Bootstrap block changed | G48 | TASK-133 |
+| CHK-M6-324 | the runbook makes `/etc/bitscan/secrets` 0755 or `manager.env` 0644 | G48 (mode rows) | TASK-133 |
+| CHK-M6-325 | `LoadCredential=migrate_dsn:…` added to the installed `bitscan-manager.service` | G48 (verbatim and credential rows) | TASK-133 |
+| CHK-M6-326 | `ReadWritePaths` widened to `/var/lib/bitscan` in the installed unit | G48 (verbatim and write-sweep rows) | TASK-133 |
+| CHK-M6-327 | the tag/changelog/pyproject agreement check removed | G49 | TASK-135 |
+| CHK-M6-328 | one action pinned by tag instead of commit | G49 | TASK-135 |
+| CHK-M6-329 | the release created without `--draft`, or `contents: write` at workflow level | G49 | TASK-135 |
+| CHK-M6-330 | `SHA256SUMS` written before the last file (a released file missing from it) | G49 (completeness) | TASK-135 |
+| CHK-M6-331 | a wheel without `webui/index.html` accepted | G49 | TASK-135 |
+| CHK-M6-332 | a `requirements.txt` package missing from the manager SBOM | G49 | TASK-136 |
+| CHK-M6-333 | the `/agents` cursor carries the hostname again | G53 (255-character non-ASCII boundary) | TASK-131 |
+| CHK-M6-334 | the anchor lookup built with an f-string | G1 (S608) | TASK-131 |
+| CHK-M6-335 | a vanished package anchor answers 500 (no refusal) | G53 | TASK-131 |
+| CHK-M6-336 | a package cursor accepted for another agent's list | G53 | TASK-131 |
+| CHK-M6-337 | `fcgi.Serve` in a non-test agent file | G8 | TASK-132 |
+| CHK-M6-338 | `net.FileConn` in a non-test agent file | G8 | TASK-132 |
+| CHK-M6-339 | `net.FilePacketConn` in a non-test agent file | G8 | TASK-132 |
+| CHK-M6-340 | the RC agent built with `list_sha256` lines in reverse order | G50 (422 `hash_mismatch`; the chain stops at the snapshot row) | E2E harness |
+| CHK-M6-341 | the RC agent built with the pin check skipped | G52 (wrong-pin row: requests reach the manager) | E2E harness |
+| CHK-M6-342 | the installed manager's clock-skew threshold raised to 10 minutes | G51 (no `clock_skew` entry at +6 minutes) | E2E harness |
+| CHK-M6-343 | the installed manager writes the runner-helper alert without `detail.alert` | G51 (sink and metric rows) | E2E harness |
+| CHK-M6-344 | the installed manager accepts a `bsa_` token on a user route | G52 (route-group row) | E2E harness |
+| CHK-M6-345 | the RC agent logs its token at start-up | G52 (journal canary) | E2E harness |
+
+### Open items for M6
+
+All are in `work/open-questions.md`, each with a recommended answer. "Needed by" is the start of the wave whose task or test cannot finish without the answer.
+
+| Item | Blocks | Needed by |
+| --- | --- | --- |
+| #6 (M6 re-check, install half): wheel, venv under `/opt`, `/usr/bin` link, units under `/etc/systemd/system`, Ubuntu 24.04 manager host | TASK-129, TASK-133, TASK-134 | W1 |
+| #46 (M6 re-check): the Bootstrap copy and role authentication | TASK-133 | W2 |
+| #90 (new): the M6 release is the first supported release, 0.1.0 | TASK-130, TASK-135, TASK-137 | W1 |
+| #91 (new): release page and download origin; who publishes | TASK-135 | W2 |
+| #92 (new): manager SBOM | TASK-136 | W3 |
+| #93 (new): end-to-end environment (manager host, test doubles, CA and names, approval through the API) | TASK-133 walk, TP-M6-01, TP-M6-03, TP-M6-10 | W0 |
+| #94 (new): which alerts are proven on real hosts | TP-M6-11 | W4 |
+| #95 (new): idle-cost method and no gate | TP-M6-13 | W4 |
+| #96 (new): does `systemctl reload` refresh `LoadCredential=` copies (certificate replacement)? Fact first | TASK-134, TP-M6-04 | W2 |
+| #28 (M6 re-check): runner unavailable, before the first supported release | TASK-130 (runbook text) | W1 |
+| CLAUDE.md N / N−1 marker (M6 re-check) | TASK-130, TASK-134, TASK-137 (compatibility text) | W1 |
+| testing.md performance marker (M6 re-check) | TP-M6-13 | W4 |
+| #89 (scheduled in M6) | TASK-131 | W1 |
+| PD-31 (new): no new folders; `.claude/` edits left for the user | TASK-135, TASK-136 | W2 |
+| PD-32 (new): second looks | REVIEW of TASK-133 | W2 |
+
+### Coverage matrix (M6)
+
+| Spec section | Covered by | Status in M6 |
+| --- | --- | --- |
+| TS §1.1 G1, G2, G3 on real hosts | REQ-146, REQ-147, REQ-148 | Covered (inventory half) |
+| TS §1.2 L25 (no signed APT repository; `.deb` with a published SHA-256) | REQ-141 | Covered; no APT repository planned |
+| TS §2.2 (pull only, no listening port) | REQ-144, REQ-148 (5) | Covered |
+| TS §2.3 L118 (bearer token on every call) | REQ-148 (3) | Covered on the real manager; the static UI files keep the recorded #6 (f) exception |
+| TS §3 intro L152 (cgroup v2; `runner_unavailable`) | REQ-146 (1), REQ-142 (#28 text) | Hosts checked for cgroup v2; the runner itself is **M10** |
+| TS §3.1 install, distribution, uninstall | REQ-141, REQ-142, REQ-146 (2), (3), (10) | Covered |
+| TS §3.2 enrolment, approval, machine-id, cloned images, transport | REQ-146 (4), (5), REQ-147 (3), REQ-148 (1), (2) | Covered on real hosts; rotation stays proven by M3/M4 tests (a 335-day wait) |
+| TS §3.3 loops, status, clock skew, idle | REQ-146 (5), (11), REQ-147 (1), REQ-149 | Covered; idle recorded, no gate |
+| TS §3.4 inventory, watcher, alerts | REQ-146 (6), (8), REQ-147 (4) | Covered; `new_packages_burst` on real hosts NOT RUN (#94) |
+| TS §3.5, §3.6, §3.7 runner, capread, sandbox behaviour | REQ-147 (2) (helper detection only) | **M10** |
+| TS §4 compliance engine | none | **M7 to M11** |
+| TS §5.2 Bootstrap; §5.3 roles over TLS, backups | REQ-138 (3), (4), REQ-139 (3) | Covered |
+| TS §6.2 `/agents`, `/agents/{id}/packages` paging (L1108, L1110), §6.3 L1134 | REQ-143 | Covered (#89) |
+| TS §7 performance target (L1194) | none | NOT RUN: deferred with the load tests (user, 2026-10-24) |
+| TS §8.1 supply chain (L1258), tampered job in transit (L1247), secrets in config (L1259) | REQ-141, REQ-148, REQ-138 (5) | Covered |
+| TS §8.2 semantic versioning, N / N−1 (L1267), two approvals (L1268) | REQ-141, REQ-142, REQ-145; owner notes | Covered; the N / N−1 test itself has nothing to run until a second supported release (M6 re-check) |
+| TS §8.3 End-to-end (L1281) | REQ-146 | Inventory half on 3 VMs (the WSL2 manager VM and the two agent VMs); nightly scheduling and import → scan → results are **M11** |
+| TS §8.3 Load (L1282) | none | NOT RUN: deferred until after M6 (user, 2026-10-24) |
+| TS §8.3 Security (L1283) | REQ-148, REQ-144 | Agent and route-group subset on real hosts; runner half **M10**, importer half **M7** |
+| TS §8.3 Sandbox (L1280) | REQ-140 (2), G17 | Unit verification only (manager units now with the real binary); the plugin-cannot list is **M10** |
+| TS §8.3 Packaging and release | REQ-141, REQ-142 / G37–G40, G49 | Covered |
+| TS §8.4 alerts, metrics, health | REQ-147, REQ-140 (4) | Covered for the inventory-era alerts; compliance alerts are **M7 to M11** |
+| TS §8.6 start-up configuration | REQ-138 | Covered |
+| TS §8.7 deployment, units, CLI, upgrade order | REQ-137 to REQ-140, REQ-139 | Covered (#6 install half) |
+| CLAUDE.md out of scope | none | Nothing planned: no signed APT repository, no signing, no client certificates, no OIDC, no policy editor |
 ## M7 compliance catalog (`.bit` importer and validator)
 
 Planned 2026-10-27 (planner-m7) in the worktree `Bitscan-m7` (branch `m7-catalog`, from main `8ad50eb`). Numbering continues after M6 (TASK-138, G53, `Bitscan-m6`, not merged). Consistency pass done: every TASK links a REQ and every REQ has a TASK; waves are file-disjoint; every task is within 5 files and about 200 hand-written lines; the spine is acyclic; no gate is lowered. Summary for the user: `work/plans/M7-breakdown.md`.

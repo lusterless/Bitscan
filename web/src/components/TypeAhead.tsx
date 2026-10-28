@@ -67,7 +67,7 @@ export function TypeAhead({
   }, [value]);
 
   return (
-    <div>
+    <div className="typeahead">
       <label>
         {label}
         <input
@@ -79,11 +79,12 @@ export function TypeAhead({
         />
       </label>
       {names.length > 0 && (
-        <ul aria-label="Suggestions">
+        <ul aria-label="Suggestions" className="suggestions">
           {names.map((name) => (
             <li key={name}>
               <button
                 type="button"
+                className="suggestion"
                 onClick={() => {
                   setNames([]);
                   onChoose(name);

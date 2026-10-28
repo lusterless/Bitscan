@@ -16,9 +16,7 @@ from bitscan_manager.repositories.inventory import (
 
 
 class FleetAgents(Protocol):  # repositories.agents.AgentRepo
-    def list_page(
-        self, limit: int, after: tuple[str, UUID] | None
-    ) -> list[AgentListRow]: ...
+    def list_page(self, limit: int, after_id: UUID | None) -> list[AgentListRow]: ...
 
     def get(self, agent_id: UUID, *, lock: bool = False) -> AgentRow | None: ...
 
@@ -31,7 +29,7 @@ class FleetInventory(Protocol):  # repositories.inventory.InventoryRepo
     def latest_snapshot(self, agent_id: UUID) -> SnapshotRow | None: ...
 
     def package_page(
-        self, agent_id: UUID, limit: int | None, after: tuple[str, str, str] | None
+        self, agent_id: UUID, limit: int | None, after_package_id: int | None
     ) -> list[AgentPackageRow]: ...
 
 
@@ -44,10 +42,11 @@ class AgentDetail:
 
 
 def list_agents(
-    agents: FleetAgents, limit: int, after: tuple[str, UUID] | None
+    agents: FleetAgents, limit: int, after_id: UUID | None
 ) -> list[AgentListRow]:
-    """In (hostname, agent_id) order (#68); every status is listed."""
-    return agents.list_page(limit, after)
+    """In (hostname, agent_id) order (#68), after the agent after_id; every
+    status is listed. AnchorGone (repositories.packages) passes through."""
+    return agents.list_page(limit, after_id)
 
 
 def agent_detail(
@@ -69,10 +68,11 @@ def agent_packages(
     inventory: FleetInventory,
     agent_id: UUID,
     limit: int,
-    after: tuple[str, str, str] | None,
+    after_package_id: int | None,
 ) -> list[AgentPackageRow] | None:
-    """By name, architecture and version in Debian order (TASK-053); None
-    for an unknown agent."""
+    """By name, architecture and version in Debian order (TASK-053), after
+    the package after_package_id; None for an unknown agent. AnchorGone
+    (repositories.packages) passes through."""
     if agents.get(agent_id) is None:
         return None
-    return inventory.package_page(agent_id, limit, after)
+    return inventory.package_page(agent_id, limit, after_package_id)

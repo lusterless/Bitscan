@@ -16,6 +16,8 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
+from bitscan_manager.repositories.packages import AnchorGone
+
 # Swept statuses (TS §3.3 L218); awaiting_approval and decommissioned are never
 # touched by the sweep.
 SWEPT: tuple[str, ...] = ("enrolled", "online", "stale", "offline")
@@ -271,11 +273,21 @@ class AgentRepo:
             (agent_id, tags),
         )
 
-    def list_page(
-        self, limit: int, after: tuple[str, UUID] | None
-    ) -> list[AgentListRow]:
-        """GET /agents in (hostname, agent_id) order, keyset-paged."""
-        hostname, agent_id = after if after is not None else (None, None)
+    def list_page(self, limit: int, after_id: UUID | None) -> list[AgentListRow]:
+        """GET /agents in (hostname, agent_id) order, keyset-paged after the
+        agent after_id (the previous page's last row). The cursor holds only
+        that id and its hostname is read here, in the caller's transaction
+        (#89); AnchorGone if no such agent."""
+        hostname: str | None = None
+        agent_id: UUID | None = None
+        if after_id is not None:
+            anchor = self._conn.execute(
+                "SELECT hostname, agent_id FROM agent WHERE agent_id = %s",
+                (after_id,),
+            ).fetchone()
+            if anchor is None:
+                raise AnchorGone
+            hostname, agent_id = anchor
         rows = self._conn.execute(
             "SELECT a.agent_id, a.hostname, a.status::text, a.agent_version,"
             " o.os_id, o.os_version_id, o.os_pretty_name, a.last_heartbeat_at,"

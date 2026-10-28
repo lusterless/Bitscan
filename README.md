@@ -1,16 +1,49 @@
 # Bitscan
 
-Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported hosts are Ubuntu 22.04 and Ubuntu 24.04 (amd64, cgroup v2).
+Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported agent hosts are Ubuntu 22.04 and Ubuntu 24.04 (amd64, cgroup v2). The manager host is Ubuntu 24.04 on amd64.
 
-**Status:** M5 (web UI and package search). The manager runs:
+**Status:** release 0.1.0 is the first supported release: manager `0.1.0` and agent package `0.1.0-1` (git tag `v0.1.0`). It covers enrolment and approval, heartbeat, the mandatory inventory (`os_info` and the full `dpkg` package list), the host pages and fleet-wide package search. Compliance scans are not in 0.1.0. The agent's runner and the `bitscan-capread` helper are installed but idle, no check command runs, and the agent answers every check of a compliance job with `runner_unavailable`. The earlier pre-release agent builds (`0.1.0~preN-1`) are not supported. Upgrade them to `0.1.0-1` as described in [Installing a release](#installing-a-release).
+
+The manager runs:
 
 - `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), fleet package search and its CSV export (`/api/v1/packages/search`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; the scheduler (inventory runs and `offline_sweep`); and the [web UI](#web-ui);
 - the server commands `users create-admin`, `users create-api-token` and `users reset-totp`;
 - `db migrate` and `db maintain`.
 
-The agent package and compliance scans do not run yet.
+The agent package (`bitscan-agent`) installs the `bitscan-agent` and `bitscan-runner` services. The agent enrols, sends a heartbeat every 5 minutes, pulls its jobs and uploads the inventory.
 
 The specifications are in `docs/spec/`: `Technical_Specification.md` and `bit_Schema_Reference.md`.
+
+## Installing a release
+
+Production installs follow the runbooks in `deploy/runbooks/`:
+
+| Runbook | Covers |
+| --- | --- |
+| [`manager-install.md`](deploy/runbooks/manager-install.md) | A new manager host: PostgreSQL with TLS-only roles, the `bitscan-manager` user and folders, configuration and secrets, the Python package, the four systemd units, the schema and the first admin |
+| [`manager-operations.md`](deploy/runbooks/manager-operations.md) | Upgrades, replacing the TLS certificate and the OpenBao token, backups and the monthly restore test, and removal |
+| [`agent-install.md`](deploy/runbooks/agent-install.md) | Installing, checking, upgrading, re-enrolling and removing the agent on each host |
+
+**Release files.** Each release is published on the project's GitHub release page. For 0.1.0 it holds:
+
+- Manager: `bitscan_manager-0.1.0-py3-none-any.whl` (the built web UI is inside), `bitscan-manager-0.1.0-requirements.txt` (the hashed runtime dependencies), and the unit files `bitscan-manager.service`, `bitscan-manager-migrate.service`, `bitscan-manager-maintain.service` and `bitscan-manager-maintain.timer`.
+- Agent: `bitscan-agent_0.1.0-1_amd64.deb`.
+- CycloneDX SBOMs.
+- `SHA256SUMS`, which lists every file above.
+
+**Verifying downloads.** The release page shows the `SHA256SUMS` text in its notes. That page is served from a different origin than the file downloads. Copy the text from the release page into a file named `SHA256SUMS`, next to the files you downloaded. Never use a checksum file fetched from the download host, and that includes the `SHA256SUMS` file attached to the release. Then run:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+Each file you downloaded must show `OK`. Stop if any line says `FAILED`, if a downloaded file is missing from the output, or if no file was verified. There is no signed APT repository in this version, so this checksum check is the only way to verify the files.
+
+**Versions and compatibility.**
+
+- The manager and the agent use semantic versioning. The agent package version adds a Debian revision, for example `0.1.0-1`.
+- A manager supports agents of its own version and the one before. An agent supports a manager of its own version and the one before. 0.1.0 is the first supported release, so no earlier supported version exists yet.
+- Upgrade order: the manager first (migrate, then restart), then the agents. See [`manager-operations.md`](deploy/runbooks/manager-operations.md) section 1 and [`agent-install.md`](deploy/runbooks/agent-install.md) section 6.
 
 ## Prerequisites
 
@@ -32,11 +65,11 @@ manager/.venv/Scripts/python.exe -m pip install --no-deps --no-build-isolation -
 - `manager/requirements.txt` holds the runtime dependencies only. `manager/requirements-dev.txt` adds the test, lint and build tools, including the build backend, so the last command downloads nothing unhashed.
 - Both lock files install from wheels only (`--only-binary :all:`) and with hash checks.
 - To change a dependency, edit `manager/pyproject.toml`, then rerun the `uv pip compile` command written at the top of each lock file. The `--exclude-newer` date there fixes the result; move it forward only to take newer releases.
-- A production install method is not provided yet.
+- This setup is for development. For a production install, see [Installing a release](#installing-a-release).
 
 ## Configuration
 
-Start-up configuration comes from environment variables. Secrets are read only from the files that the `*_FILE` variables point to, never from plain variables. `BITSCAN_DB_DSN`, for example, is ignored.
+Start-up configuration comes from environment variables. Secrets are read only from the files that the `*_FILE` variables point to, never from plain variables. `BITSCAN_DB_DSN`, for example, is ignored. On an installed manager, the units read the settings that aren't secret from `/etc/bitscan/manager.env`. They point the `*_FILE` variables at their own copies of the files in `/etc/bitscan/secrets/` ([`manager-install.md`](deploy/runbooks/manager-install.md) section 5).
 
 | Variable | Used by | Required | Meaning |
 | --- | --- | --- | --- |
@@ -62,6 +95,8 @@ Rules the loader enforces:
 - **Errors:** every problem is reported at once, one line per variable, naming the variable but never its value or file content. `serve` and the `db` commands exit 2 on a configuration error.
 
 ## Database
+
+On a production host, set up the database with [`manager-install.md`](deploy/runbooks/manager-install.md) section 3, which also limits the three roles to TLS connections.
 
 **Bootstrap**, once, as a PostgreSQL superuser (TS §5.2), then give the three login roles passwords:
 
@@ -136,11 +171,11 @@ The tests run the installed `bitscan-manager` command, so the editable install i
 
 ## Starting the app
 
-`bitscan-manager serve` runs the manager. In production it runs as the `bitscan-manager` user under `bitscan-manager.service`, which loads the secrets as unit credentials (TS §8.7); a production install method is not provided yet.
+`bitscan-manager serve` runs the manager. In production it runs as the `bitscan-manager` user under `bitscan-manager.service`, which loads the secrets as unit credentials (TS §8.7). [`manager-install.md`](deploy/runbooks/manager-install.md) sets this up.
 
-- **Before the first start:** run `db migrate`. The audit queue folder `/var/lib/bitscan/audit-queue/` must belong to the `bitscan-manager` user with mode `0700`; `serve` creates it that way if it is missing (its parent must be writable) and refuses one that group or others can access.
+- **Before the first start:** run `db migrate`. The audit queue folder `/var/lib/bitscan/audit-queue/` must belong to the `bitscan-manager` user with mode `0700`; `serve` creates it that way if it is missing (its parent must be writable) and refuses one that group or others can access. Under `bitscan-manager.service` the folder must exist before the first start ([`manager-install.md`](deploy/runbooks/manager-install.md) section 4).
 - **Listening:** HTTPS only, on `BITSCAN_LISTEN`, TLS 1.2 or later; there is no plain-HTTP listener and no redirect. One process, one worker. `X-Forwarded-For` and `Forwarded` are ignored: the client address is the TCP peer.
-- **Certificate reload:** `systemctl reload bitscan-manager` (or `kill -HUP <pid>`) loads the certificate and key files again for new connections, on the same process and socket. If the new pair cannot be loaded, the old one stays in use and an error is logged.
+- **Certificate reload:** `SIGHUP` (`kill -HUP <pid>`, which is what `systemctl reload bitscan-manager` sends) makes the running process load the certificate and key files it was started with again, for new connections, on the same process and socket. If the new pair cannot be loaded, the old one stays in use and an error is logged. To replace the certificate of an installed manager, follow [`manager-operations.md`](deploy/runbooks/manager-operations.md) section 2.
 - **Stopping:** `SIGTERM` stops the scheduler and then the server, writes the pending failed token-check counts to the audit log, and leaves queued audit entries on disk. It exits 0.
 - **Logs:** one JSON object per line on stderr, each with `request_id`, `agent_id` and `job_id`. Access records hold the method, the path without its query string, the status and the duration. Tokens, passwords, headers, bodies and any part of a DSN (host, port, user, database) are never logged; database driver warnings keep only their fixed text.
 - **Start-up errors:** a missing or invalid variable, an unusable certificate or key, a plain `BITSCAN_AUDIT_SINK` (`http://`, `tcp://`, `udp://` or `syslog://`) and an unsafe queue folder each print one `serve: …` line naming the variable or folder, and exit 2. An unreachable database or OpenBao does not stop start-up: `/readyz` reports the database, and sign-in of users with TOTP answers 503 until OpenBao is back.
@@ -156,7 +191,7 @@ The tests run the installed `bitscan-manager` command, so the editable install i
 - With `syslog+tls://` (RFC 5424 messages, RFC 5425 framing), a frame is counted as delivered when it is written, because syslog has no acknowledgement. Watch the receiver for gaps in `audit_id`.
 - The sink certificate is checked against the system CA store. While the sink is unreachable, entries queue in `/var/lib/bitscan/audit-queue/` and an `audit_sink_unreachable` alert is written. After 15 minutes of outage, sensitive actions are refused until the queue has drained.
 
-**OpenBao** (Vault Transit API): the manager calls `POST /v1/transit/encrypt/<key>` and `/decrypt/<key>` with the token from `BITSCAN_VAULT_TOKEN_FILE`, checking the server certificate against the system CA store; proxy settings in the environment are ignored. Use a periodic or non-expiring token whose policy allows only those two paths for the TOTP key. The manager does not renew tokens, so replacing the token is an operational step (update the credential, then restart the service).
+**OpenBao** (Vault Transit API): the manager calls `POST /v1/transit/encrypt/<key>` and `/decrypt/<key>` with the token from `BITSCAN_VAULT_TOKEN_FILE`, checking the server certificate against the system CA store; proxy settings in the environment are ignored. It reads the token once at start-up and never renews it, so use the periodic token of [`manager-install.md`](deploy/runbooks/manager-install.md) section 1.2, whose policy allows only those two paths for the TOTP key and renewing itself, and set up the renewal timer of section 5 there. To replace the token, follow [`manager-operations.md`](deploy/runbooks/manager-operations.md) section 3.
 
 `bitscan-manager --help` lists the commands that work: `serve`, `users …`, `db migrate` and `db maintain`. Every other command, including `bits rebuild`, prints a usage line and `unknown or not yet implemented command`, and exits 2, without reading configuration or touching the database.
 
@@ -164,7 +199,7 @@ The tests run the installed `bitscan-manager` command, so the editable install i
 
 The manager serves the web UI from its own address, for example `https://manager.example:8443/`. The browser must trust the manager's certificate; with a private CA, add the CA to the browser.
 
-**Building.** From the repository root:
+**Building.** The release wheel already contains the built UI. To build it from a checkout, start from the repository root:
 
 ```sh
 cd web
