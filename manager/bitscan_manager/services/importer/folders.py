@@ -18,6 +18,7 @@ import logging
 import os
 import stat
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -146,7 +147,7 @@ def _open_folder(bits_dir: Path, label: str) -> int:
         os.close(root)
 
 
-def _state(bits_dir: Path, rel: str) -> FileState:
+def state(bits_dir: Path, rel: str) -> FileState:
     """Three-way absence test (review TASK-156 finding 1): "absent" is only
     ever decided inside a real directory opened without following links."""
     folder, _, name = rel.rpartition("/")
@@ -167,6 +168,9 @@ def _state(bits_dir: Path, rel: str) -> FileState:
     return "present" if stat.S_ISREG(mode) else "absent"
 
 
+_state = state  # the r3 name, still used by rebuild.py
+
+
 def discover(bits_dir: Path) -> list[str]:
     """The `*.bit` files of both folders, as paths relative to `bits_dir`;
     none at all if the bits folder is not a real directory."""
@@ -179,7 +183,7 @@ def discover(bits_dir: Path) -> list[str]:
 def present(bits_dir: Path, rel: str) -> bool:
     """Whether `rel` is a file `discover` would find (the `file_exists` of
     `decide`, and the stray check); False too if its folder is unreadable."""
-    return _state(bits_dir, rel) == "present"
+    return state(bits_dir, rel) == "present"
 
 
 def read_input(bits_dir: Path, rel: str) -> FileInput | None:
@@ -266,7 +270,7 @@ def remove_leftover(bits_dir: Path, rel: str) -> Difference | None:
     handle: the caller then treats `uploaded/` as unreadable (decisions,
     TASK-156 revision 4)."""
     remove_after_commit(bits_dir, (rel,))
-    if _state(bits_dir, rel) != "absent":
+    if state(bits_dir, rel) != "absent":
         return None
     log.warning("removed a leftover of an interrupted delete: %s", rel)
     return Difference(rel, LEFTOVER_CHECK)
@@ -275,10 +279,34 @@ def remove_leftover(bits_dir: Path, rel: str) -> Difference | None:
 def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> ReconcileResult:
     """TS §4.1 L528 in `auto` mode, under the caller's catalog lock: import new
     or changed files, then delete the policies whose files disappeared."""
+    return _reconcile(session, clock, bits_dir, None)
+
+
+def reconcile_paths(
+    session: CatalogSession, clock: Clock, bits_dir: Path, paths: Iterable[str]
+) -> ReconcileResult:
+    """`reconcile` for only `paths` (relative to `bits_dir`), under the caller's
+    catalog lock: each one that is present is imported (or skipped and
+    reported) as in `reconcile`; a policy whose `source_file` is one of them
+    is deleted only if `state` finds it absent (user, decisions 2026-10-28
+    "One-file reconcile"). Other files and policies are not touched."""
+    return _reconcile(session, clock, bits_dir, frozenset(paths))
+
+
+def _reconcile(
+    session: CatalogSession, clock: Clock, bits_dir: Path, only: frozenset[str] | None
+) -> ReconcileResult:
     blind: list[str] = []
     for label in unreadable(bits_dir):
         _mark(blind, bits_dir, label)
-    files = discover(bits_dir)  # finds nothing in an unreadable folder
+    if only is None:
+        files = discover(bits_dir)  # finds nothing in an unreadable folder
+    else:
+        files = [
+            p
+            for p in only
+            if _folder(p) not in blind and state(bits_dir, p) == "present"
+        ]
     with session.transaction() as tx:
         live = {r.source_file for r in integrity_rows(tx.conn)}
     # #15: a file that is already a live policy's source_file first, then
@@ -334,7 +362,7 @@ def reconcile(session: CatalogSession, clock: Clock, bits_dir: Path) -> Reconcil
             prepared=prepared,
         )
         outcomes.append(outcome)
-    deleted = _delete_removed(session, clock, bits_dir, blind)
+    deleted = _delete_removed(session, clock, bits_dir, blind, only)
     return ReconcileResult(
         tuple(outcomes),
         deleted,
@@ -356,19 +384,26 @@ def delete_removed(
 
 
 def _delete_removed(
-    session: CatalogSession, clock: Clock, bits_dir: Path, blind: list[str]
+    session: CatalogSession,
+    clock: Clock,
+    bits_dir: Path,
+    blind: list[str],
+    only: frozenset[str] | None = None,
 ) -> tuple[DeleteResult, ...]:
     """`delete_removed`, adding to `blind` each folder found unreadable. The
     three-way test runs again right before each delete (review finding 1),
-    so a folder that goes away mid-loop deletes none of its policies."""
+    so a folder that goes away mid-loop deletes none of its policies. With
+    `only`, just the policies whose `source_file` is in it."""
     with session.transaction() as tx:
         rows = integrity_rows(tx.conn)
     results: list[DeleteResult] = []
     for row in rows:
-        state = _state(bits_dir, row.source_file)
-        if state == "unreadable":
+        if only is not None and row.source_file not in only:
+            continue
+        found = state(bits_dir, row.source_file)
+        if found == "unreadable":
             _mark(blind, bits_dir, _folder(row.source_file))
-        if state != "absent":
+        if found != "absent":
             continue
         with session.transaction() as tx:
             result = delete_in_tx(

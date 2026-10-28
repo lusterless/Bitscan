@@ -77,25 +77,31 @@ def audit_success(
     file: FileInput,
     mode: Mode,
     actor: Actor,
+    *,
+    announce: bool = True,
 ) -> None:
-    """Plan §7: the import alert, then the move, the displaced policy's delete
-    and the re-enable, in the store's transaction or savepoint."""
-    events = [
-        alerts.imported(
-            policy_id=r.policy_id,
-            policy_name=r.policy_name,
-            version=r.version,
-            mode=mode_value(mode),
-            file_sha256=file.sha256,
-            source_file=r.source_file,
-            plugins_added=r.plugins_added,
-            plugins_updated=r.plugins_updated,
-            plugins_retired=r.plugins_retired,
-            renamed_from=r.renamed_from,
-            revived=r.revived,
-            changed_executes=r.changed_executes,
+    """Plan §7: the import alert (unless `announce` is False: a rebuild
+    file with no command going live, #23), then the move, the displaced
+    policy's delete and the re-enable, in the store's transaction or
+    savepoint."""
+    events: list[alerts.AuditEvent] = []
+    if announce:
+        events.append(
+            alerts.imported(
+                policy_id=r.policy_id,
+                policy_name=r.policy_name,
+                version=r.version,
+                mode=mode_value(mode),
+                file_sha256=file.sha256,
+                source_file=r.source_file,
+                plugins_added=r.plugins_added,
+                plugins_updated=r.plugins_updated,
+                plugins_retired=r.plugins_retired,
+                renamed_from=r.renamed_from,
+                revived=r.revived,
+                changed_executes=r.changed_executes,
+            )
         )
-    ]
     if r.moved_from is not None:
         events.append(
             alerts.moved(

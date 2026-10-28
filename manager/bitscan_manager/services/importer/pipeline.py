@@ -142,7 +142,12 @@ def _store(
     if decision.displaced_id is not None:  # already locked by decide
         displaced = catalog.policy_by_id_for_update(tx.conn, decision.displaced_id)
     result = store.apply(tx.conn, decision, prep.candidate, file.target, clock.now())
-    audit_success(tx, result, decision, displaced, file, mode, actor)
+    # #23 with #100 (a) (lead, 2026-10-28): a rebuild alerts only when a
+    # command goes live (new, changed or reactivated), even on a same-hash file.
+    quiet = mode is Mode.REBUILD and not result.changed_executes
+    audit_success(
+        tx, result, decision, displaced, file, mode, actor, announce=not quiet
+    )
     return Pending(
         "success",
         result.policy_id,
