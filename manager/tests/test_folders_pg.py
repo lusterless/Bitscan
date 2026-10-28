@@ -2525,3 +2525,391 @@ def test_req159_3_move_does_not_remove_the_copy_through_a_swapped_bits_folder(
     assert (tmp_path / "bits-real" / rel).read_bytes() == data  # left in place
     assert res.unreadable_folders == BOTH
     assert res.deleted == ()
+
+
+# ----------------------------------------------------------------------------
+# TASK-156 revision 5 (user, decisions 2026-10-28 "One-file reconcile"; lead
+# "W6 rulings" Q2): reconcile_paths runs the reconcile's classification,
+# folder guard, #15 order and per-row check for only the given paths; deletes
+# only for given files that disappeared; nothing else is touched. state() is
+# public.
+# ----------------------------------------------------------------------------
+
+
+def rec_paths(db: AppDatabase, bits: Path, paths: Any) -> folders.ReconcileResult:
+    with db.session() as s, catalog_lock(s):
+        return folders.reconcile_paths(s, FixedClock(), bits, paths)
+
+
+EMPTY = folders.ReconcileResult((), (), (), (), (), ())
+
+
+def test_reconcile_paths_touches_only_the_given_server_files(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    names = {k: f"RP{k} {tag()}" for k in "abcoq"}
+    datas = {k: bit(names[k]) for k in names}
+    for k, (data, _) in datas.items():
+        put(bits, f"{k}.bit", data)
+    rec(db, bits)
+    pid = {}
+    for k in names:
+        p = policy_by_name(server, names[k])
+        assert p is not None
+        pid[k] = int(p["policy_id"])
+    for k in "bo":  # changed
+        ids = datas[k][1]
+        put(
+            bits,
+            f"{k}.bit",
+            bit(names[k], [P(uuid=ids[0], execute="cat /etc/issue")])[0],
+        )
+    for k in "cq":  # removed
+        (bits / f"{k}.bit").unlink()
+    n_name = f"RPn {tag()}"
+    put(bits, "n.bit", bit(n_name)[0])
+    put(bits, "m.bit", bit(f"RPm {tag()}")[0])  # new, not in the batch
+    o_before = policy_row(server, pid["o"])
+    s = snap(server)
+    res = rec_paths(db, bits, ["a.bit", "b.bit", "c.bit", "n.bit"])
+    rows = imports_since(server, s)
+    assert sorted(rows_by_file(rows)) == [
+        ("a.bit", "skipped"),
+        ("b.bit", "success"),
+        ("n.bit", "success"),
+    ]
+    assert [d.policy_id for d in res.deleted] == [pid["c"]]
+    assert policy_row(server, pid["c"])["deleted_at"] == T1
+    assert policy_row(server, pid["q"])["deleted_at"] is None  # not in the batch
+    assert policy_row(server, pid["o"]) == o_before  # changed, not in the batch
+    assert policy_row(server, pid["b"])["version"] == 2
+    assert sorted(actions(audits_since(server, s))) == [
+        "policy.delete",
+        "policy.import",
+        "policy.import",
+    ]
+    assert res.unreadable_folders == () and res.strays == () and res.leftovers == ()
+    # The full reconcile then picks up what the batch left.
+    s2 = snap(server)
+    res2 = rec(db, bits)
+    assert [d.policy_id for d in res2.deleted] == [pid["q"]]
+    assert ("o.bit", "success") in rows_by_file(imports_since(server, s2))
+    assert ("m.bit", "success") in rows_by_file(imports_since(server, s2))
+
+
+@pytest.mark.parametrize(
+    ("first", "second"), [("a.bit", "b.bit"), ("B.bit", "a.bit"), ("z.bit", "é.bit")]
+)
+def test_reconcile_paths_follows_15_within_a_batch(
+    server: PgServer, db: AppDatabase, bits: Path, first: str, second: str
+) -> None:
+    name = f"Twin {tag()}"
+    put(bits, second, bit(name, [P(execute="cat /etc/issue")])[0])
+    put(bits, first, bit(name)[0])
+    s = snap(server)
+    rec_paths(db, bits, [second, first])
+    rows = imports_since(server, s)
+    assert rows_by_file(rows) == [(first, "success"), (second, "rejected")]
+    assert codes(rows[1]["errors"]) == ["BIT007"]
+
+
+def test_reconcile_paths_puts_a_live_policys_file_first(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    x, y = f"X {tag()}", f"Y {tag()}"
+    put(bits, "z.bit", bit(x)[0])
+    rec(db, bits)
+    old = policy_by_name(server, x)
+    assert old is not None
+    put(bits, "z.bit", bit(y)[0])
+    put(bits, "a.bit", bit(x)[0])
+    s = snap(server)
+    rec_paths(db, bits, ["a.bit", "z.bit"])
+    assert rows_by_file(imports_since(server, s)) == [
+        ("z.bit", "success"),
+        ("a.bit", "success"),
+    ]
+    assert policy_row(server, int(old["policy_id"]))["policy_name"] == y
+
+
+@pytest.mark.parametrize("order", ["upload-first", "server-first"])
+def test_reconcile_paths_server_file_wins_over_an_upload_in_a_batch(
+    server: PgServer, db: AppDatabase, bits: Path, order: str
+) -> None:
+    name = f"Uploaded {tag()}"
+    data = bit(name)[0]
+    up = upload(db, bits, data)
+    pid = int(up.policy_id or 0)
+    rel = f"uploaded/policy-{pid}.bit"
+    put(bits, "x.bit", data)
+    batch = [rel, "x.bit"] if order == "upload-first" else ["x.bit", rel]
+    s = snap(server)
+    res = rec_paths(db, bits, batch)
+    assert rows_by_file(imports_since(server, s)) == [("x.bit", "success")]
+    row = policy_row(server, pid)
+    assert (row["source_file"], row["deleted_at"]) == ("x.bit", None)
+    assert not (bits / rel).exists()
+    assert actions(audits_since(server, s)) == ["policy.import", "policy.move"]
+    assert res.strays == () and res.deleted == () and res.leftovers == ()
+
+
+@pytest.mark.parametrize("given", ["both", "new-only", "old-only"])
+def test_reconcile_paths_rename_of_a_server_file(
+    server: PgServer, db: AppDatabase, bits: Path, given: str
+) -> None:
+    name = f"Ren {tag()}"
+    put(bits, "a.bit", bit(name)[0])
+    rec(db, bits)
+    p = policy_by_name(server, name)
+    assert p is not None
+    pid = int(p["policy_id"])
+    (bits / "a.bit").rename(bits / "c.bit")
+    batch = {"both": ["a.bit", "c.bit"], "new-only": ["c.bit"], "old-only": ["a.bit"]}
+    s = snap(server)
+    res = rec_paths(db, bits, batch[given])
+    row = policy_row(server, pid)
+    if given == "old-only":  # a.bit disappeared; c.bit was not given
+        assert [d.policy_id for d in res.deleted] == [pid]
+        assert row["deleted_at"] == T1
+        assert imports_since(server, s) == []
+    else:
+        assert res.deleted == ()
+        assert (row["source_file"], row["deleted_at"]) == ("c.bit", None)
+        assert rows_by_file(imports_since(server, s)) == [("c.bit", "success")]
+        assert actions(audits_since(server, s)) == ["policy.import", "policy.move"]
+
+
+def test_reconcile_paths_uploaded_files_are_classified_as_in_reconcile(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    ch_name = f"Ch {tag()}"
+    ch_data, ch_ids = bit(ch_name)
+    ch = upload(db, bits, ch_data)
+    same = upload(db, bits, bit(f"Same {tag()}")[0])
+    ed = upload(db, bits, bit(f"Ed {tag()}")[0])
+    ch_rel = f"uploaded/policy-{ch.policy_id}.bit"
+    same_rel = f"uploaded/policy-{same.policy_id}.bit"
+    ed_rel = f"uploaded/policy-{ed.policy_id}.bit"
+    rec(db, bits)
+    put(bits, ch_rel, bit(ch_name, [P(uuid=ch_ids[0], execute="cat /etc/issue")])[0])
+    put(bits, ed_rel, bit(f"Edited {tag()}")[0])
+    put(bits, "uploaded/stray.bit", bit(f"Stray {tag()}")[0])
+    d_id = _leftover(db, bits)
+    d_rel = f"uploaded/policy-{d_id}.bit"
+    ed_before = policy_row(server, int(ed.policy_id or 0))
+    s = snap(server)
+    res = rec_paths(db, bits, [ch_rel, same_rel, ed_rel, "uploaded/stray.bit", d_rel])
+    assert sorted(rows_by_file(imports_since(server, s))) == sorted(
+        [(ch_rel, "success"), (same_rel, "skipped")]
+    )
+    assert res.renamed == (ed_rel,)
+    assert res.strays == ("uploaded/stray.bit",)
+    assert res.leftovers == (Difference(d_rel, folders.LEFTOVER_CHECK),)
+    assert not (bits / d_rel).exists()
+    assert policy_row(server, int(ed.policy_id or 0)) == ed_before
+    assert res.deleted == () and res.unreadable_folders == ()
+
+
+def test_reconcile_paths_a_leftover_that_cannot_be_removed_marks_uploaded(
+    server: PgServer, db: AppDatabase, bits: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    d_id = _leftover(db, bits)
+    d_rel = f"uploaded/policy-{d_id}.bit"
+    monkeypatch.setattr(folders, "remove_after_commit", lambda bits_dir, paths: None)
+    res = rec_paths(db, bits, [d_rel])
+    assert res.leftovers == () and res.unreadable_folders == ("uploaded/",)
+    assert (bits / d_rel).exists()
+
+
+@pytest.mark.parametrize("how", BREAKS)
+@pytest.mark.parametrize("folder", ["uploaded", "bits"])
+def test_reconcile_paths_folder_guard(
+    server: PgServer,
+    db: AppDatabase,
+    tmp_path: Path,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    folder: str,
+    how: str,
+) -> None:
+    g = _guard_setup(server, db, bits)
+    u_rel = f"uploaded/policy-{g['U']}.bit"
+    (bits / "r.bit").unlink()
+    n_name = f"GN {tag()}"
+    put(bits, "n.bit", bit(n_name)[0])
+    path = bits / "uploaded" if folder == "uploaded" else bits
+    away = tmp_path / "real"
+    _break(path, how, away)
+    if folder == "uploaded":  # U's file gone in the real folder too
+        (away / f"policy-{g['U']}.bit").unlink()
+    away_tree = tree(away)
+    frozen = _frozen(server, [g["U"], g["D"]] + ([g["S"]] if folder == "bits" else []))
+    reads: list[str] = []
+    real_read = folders.read_input
+
+    def spy(bits_dir: Path, r: str) -> FileInput | None:
+        reads.append(r)
+        return real_read(bits_dir, r)
+
+    monkeypatch.setattr(folders, "read_input", spy)
+    caplog.set_level(logging.DEBUG)
+    s = snap(server)
+    res = rec_paths(db, bits, [u_rel, g["d_rel"], "r.bit", "n.bit", "s.bit"])
+    labels = ("uploaded/",) if folder == "uploaded" else BOTH
+    assert res.unreadable_folders == labels
+    _assert_guard_log(caplog, labels, tmp_path)
+    assert [r for r in reads if r.startswith("uploaded/")] == []
+    assert res.leftovers == () and res.strays == ()
+    assert tree(away) == away_tree
+    rows = imports_since(server, s)
+    if folder == "uploaded":  # the server folder is reconciled for its paths
+        assert sorted(rows_by_file(rows)) == [
+            ("n.bit", "success"),
+            ("s.bit", "skipped"),
+        ]
+        assert [d.policy_id for d in res.deleted] == [g["R"]]
+        assert _frozen(server, [g["U"], g["D"]]) == frozen
+    else:
+        assert rows == [] and res.deleted == () and reads == []
+        assert _frozen(server, [g["U"], g["D"], g["S"]]) == frozen
+        assert policy_row(server, g["R"])["deleted_at"] is None
+
+
+@pytest.mark.parametrize("how", ["missing", "symlink"])
+def test_reconcile_paths_folder_broken_after_the_first_delete(
+    server: PgServer,
+    db: AppDatabase,
+    tmp_path: Path,
+    bits: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    g = _many(server, db, bits, 3)
+    ups = g["uploads"]
+    rels = [f"uploaded/policy-{p}.bit" for p in ups]
+    for rel in rels:
+        (bits / rel).unlink()
+    target = tmp_path / "empty-target"
+    target.mkdir()
+    real = dl.delete_in_tx
+    calls: list[int] = []
+
+    def hook(tx: Any, policy_id: int, **kw: Any) -> Any:
+        out = real(tx, policy_id, **kw)
+        calls.append(policy_id)
+        if len(calls) == 1:
+            _break(bits / "uploaded", "missing", tmp_path / "uploaded-real")
+            if how == "symlink":
+                os.symlink(target, bits / "uploaded")
+        return out
+
+    monkeypatch.setattr(folders, "delete_in_tx", hook)
+    res = rec_paths(db, bits, rels)
+    assert len(calls) == 1 and [d.policy_id for d in res.deleted] == calls
+    for pid in ups:
+        assert (policy_row(server, pid)["deleted_at"] is None) == (pid != calls[0])
+    assert res.unreadable_folders == ("uploaded/",)
+
+
+def test_reconcile_paths_ignores_paths_that_are_not_folder_files(
+    server: PgServer,
+    db: AppDatabase,
+    tmp_path: Path,
+    bits: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Each hostile path names an existing regular .bit file somewhere (so a
+    lookup by basename or by full path would find one)."""
+    good = bit(f"H {tag()}")[0]
+    put(bits, "x.bit", good)
+    (bits / "sub").mkdir()
+    put(bits, "sub/x.bit", bit(f"Hs {tag()}")[0])
+    (bits / "uploaded" / "sub").mkdir()
+    put(bits, "uploaded/sub/policy-1.bit", bit(f"Hu {tag()}")[0])
+    put(bits, ".hidden.bit", bit(f"Hh {tag()}")[0])
+    put(bits, "x.txt", bit(f"Ht {tag()}")[0])
+    put(tmp_path, "x.bit", bit(f"Ho {tag()}")[0])
+    os.symlink(bits / "x.bit", bits / "l.bit")
+    os.mkfifo(bits / "f.bit")
+    before = tree(tmp_path)
+    hostile = [
+        "sub/x.bit",
+        "../x.bit",
+        str(bits / "x.bit"),
+        str(tmp_path / "x.bit"),
+        "/x.bit",
+        "./x.bit",
+        "x.bit/",
+        "x.txt",
+        ".hidden.bit",
+        "nope.bit",
+        "uploaded/sub/policy-1.bit",
+        "uploaded/../x.bit",
+        "uploaded/policy-1.bit",
+        "l.bit",
+        "f.bit",
+        "",
+        "uploaded/",
+        "deleted/1",
+    ]
+    caplog.set_level(logging.DEBUG)
+    s = snap(server)
+    res = rec_paths(db, bits, hostile)
+    assert res == EMPTY
+    assert imports_since(server, s) == [] and audits_since(server, s) == []
+    assert catalog_now(server) == s.catalog
+    assert tree(tmp_path) == before
+    assert _module_warnings(caplog) == []
+
+
+def test_reconcile_paths_deduplicates_and_accepts_any_iterable(
+    server: PgServer, db: AppDatabase, bits: Path
+) -> None:
+    name = f"Dup {tag()}"
+    put(bits, "n.bit", bit(name)[0])
+    put(bits, "gone.bit", bit(f"Gone {tag()}")[0])
+    rec(db, bits)
+    p = policy_by_name(server, name)
+    assert p is not None
+    put(bits, "n.bit", bit(name, [P(), P()])[0])
+    (bits / "gone.bit").unlink()
+    s = snap(server)
+    res = rec_paths(db, bits, (r for r in ["n.bit", "n.bit", "gone.bit", "gone.bit"]))
+    assert rows_by_file(imports_since(server, s)) == [("n.bit", "success")]
+    assert len(res.deleted) == 1 and res.deleted[0].source_file == "gone.bit"
+    assert actions(audits_since(server, s)) == ["policy.import", "policy.delete"]
+
+
+def test_reconcile_paths_empty_batch(
+    server: PgServer, db: AppDatabase, tmp_path: Path, bits: Path
+) -> None:
+    g = _guard_setup(server, db, bits)
+    (bits / "r.bit").unlink()
+    put(bits, "n.bit", bit(f"N {tag()}")[0])
+    s = snap(server)
+    assert rec_paths(db, bits, []) == EMPTY
+    assert imports_since(server, s) == [] and audits_since(server, s) == []
+    assert policy_row(server, g["R"])["deleted_at"] is None
+    _break(bits / "uploaded", "missing", tmp_path / "away")
+    res = rec_paths(db, bits, [])
+    assert res == folders.ReconcileResult((), (), (), (), (), ("uploaded/",))
+
+
+def test_state_is_public_and_three_way(tmp_path: Path, bits: Path) -> None:
+    assert folders._state is folders.state
+    put(bits, "a.bit", bit()[0])
+    put(bits, "uploaded/policy-1.bit", bit()[0])
+    os.mkfifo(bits / "f.bit")
+    os.symlink(bits / "a.bit", bits / "l.bit")
+    assert folders.state(bits, "a.bit") == "present"
+    assert folders.state(bits, "uploaded/policy-1.bit") == "present"
+    for rel in ["gone.bit", "f.bit", "l.bit", "sub/a.bit", "../a.bit", "a.txt"]:
+        assert folders.state(bits, rel) == "absent", rel
+    (bits / "uploaded").rename(tmp_path / "up")
+    os.symlink(tmp_path / "up", bits / "uploaded")
+    assert folders.state(bits, "uploaded/policy-1.bit") == "unreadable"
+    assert folders.state(bits, "a.bit") == "present"
+    bits.rename(tmp_path / "b")
+    os.symlink(tmp_path / "b", bits)
+    assert folders.state(bits, "a.bit") == "unreadable"

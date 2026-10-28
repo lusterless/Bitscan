@@ -512,20 +512,39 @@ def test_req165_4_a_removed_policy_plugin_row_alerts_and_is_not_repaired(
     assert n is not None and n[0] == 1
 
 
-def test_req165_4_a_changed_source_sha256_alerts(
-    server: PgServer, db: AppDatabase, bits: Path
+@pytest.mark.parametrize("where", ["server", "upload"])
+def test_req165_4_a_changed_source_sha256_is_repaired_by_the_reconcile(
+    server: PgServer, db: AppDatabase, bits: Path, where: str
 ) -> None:
-    """REQ-165 (4) names this corruption explicitly."""
-    pid = server_policy(server, db, bits, "b.bit", bit(f"B {tag()}")[0])
+    """decisions 2026-10-28 "REQ-165 (4) example corrected": with the check
+    after the reconcile (#27), an owner-changed source_sha256 on an unchanged
+    file is re-imported (a visible repair) and the check is clean."""
+    data = bit(f"B {tag()}")[0]
+    if where == "server":
+        pid = server_policy(server, db, bits, "b.bit", data)
+        rel = "b.bit"
+    else:
+        pid = upload(db, bits, data)
+        rel = f"uploaded/policy-{pid}.bit"
+    version = policy_row(server, pid)["version"]
     with owner(server) as c:
         c.execute(
             "UPDATE policy SET source_sha256 = %s WHERE policy_id = %s",
             ("0" * 64, pid),
         )
     s = snap(server)
-    run(db, bits)
-    e = one_alert(server, s)
-    assert (f"policy:{pid}", integrity.HASH_CHECK) in diffs(e)
+    res = run(db, bits)
+    rows = imports_since(server, s)
+    assert [(r["file_name"], r["outcome"], r["mode"]) for r in rows] == [
+        (rel, "success", "auto")
+    ]
+    after = policy_row(server, pid)
+    assert after["source_sha256"] == sha(data) and after["deleted_at"] is None
+    assert after["source_file"] == rel and after["version"] >= version
+    delta = counter_delta(s)
+    assert delta.get("alert:policy_imported") == 1
+    assert res.differences == ()
+    no_alert(server, s)
 
 
 @pytest.mark.parametrize("how", ["retired", "foreign"])
