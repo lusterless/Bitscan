@@ -52,6 +52,12 @@ Manage the team and help the user break requirements into micro-tasks, then driv
 - Full rigor for the agent, runner, sandbox, evaluator, auth and importer; one review round for UI and package search.
 - The next milestone may be planned and started alongside the current one when it builds against the spec's frozen contract.
 
+## Testing by risk (user, 2026-10-25, from M6 on)
+- **High-risk areas, full rigor per task:** the agent, the runner and its sandbox, the evaluator, the importer and auth. Each task is tested and reviewed on its own, with mutation plants for every security row, boundaries and races.
+- **Low-risk areas, tested per wave:** UI screens, docs (README, runbooks), CI workflows and packaging metadata. All such tasks in a wave are built, then get one test run and one review round together. A failure is fixed and re-run by test id as usual.
+- **Planted faults** only for security checks (the mutation table and security rows) outside the high-risk areas; no "one plant per acceptance criterion" there.
+- Unchanged: every change is tested and reviewed before merge; the user's TS §8.2 second approval; the milestone gate and its full plant table; no gate lowered.
+
 ## Gates and loops
 - TEST FAIL -> implementer fixes -> tester re-runs. REVIEW CHANGES_REQUESTED -> implementer fixes -> tester re-runs affected tests -> reviewer re-reviews.
 - After 3 rounds on one task, take over the decision: re-scope or split the task via the planner, resolve the spec question with the user, or reassign. Do not let two teammates loop forever.

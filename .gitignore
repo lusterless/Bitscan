@@ -10,6 +10,9 @@ coverage.xml
 htmlcov/
 *.egg-info/
 
+#Hooks
+.claude/hooks/
+
 # Web (the generated OpenAPI client stays committed: CI regenerates it and checks for no diff)
 node_modules/
 web/dist/
