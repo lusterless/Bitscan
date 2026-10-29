@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!-- bits/tests fixture bit001/iso-8859-1: declared ISO-8859-1 with a non-ASCII byte -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit001/iso-8859-1</PolicyName>
+  <PolicyDescription>café</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>f5b5dca8-631b-5d0a-8f9c-6f157147b896</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

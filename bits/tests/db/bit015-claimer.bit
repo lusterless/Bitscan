@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture db/bit015-claimer: lists the owner's plugin id -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture db/bit015-claimer</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>b4b1a1ae-ba93-53aa-b07c-2eaabb88f999</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.1 - Fixture check 2</PluginName>
+      <PluginDescription>Fixture plugin 2.</PluginDescription>
+      <PluginId>a41ae0c5-4173-55e2-90bb-f9eaeac0fe00</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

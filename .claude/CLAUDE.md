@@ -37,7 +37,7 @@ Bitscan is a manager + agent platform that inventories Ubuntu/Debian endpoints a
 - API tokens are created only from a web session or the server CLI, never with an API token.
 - The delete-policy API exists: `DELETE /policies/{id}` (admin, TOTP session).
 - Certificate pinning on agents is optional. There is no signed APT repository in v1.
-- Supported hosts: Ubuntu 22.04, Ubuntu 24.04 and Debian 12, on amd64 and arm64, with cgroup v2. Ubuntu 20.04 and Debian 11 are not supported.
+- Supported hosts: Ubuntu 22.04, Ubuntu 24.04, on amd64. Ubuntu 20.04 and Debian 11/12 are not currently supported.
 
 ## Repository layout
 

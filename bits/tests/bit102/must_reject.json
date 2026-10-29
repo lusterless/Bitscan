@@ -1,0 +1,841 @@
+{
+ "note": "SR §4.2 and #108: each cmd must get BIT102 with token in the message; contexts=true also wraps it in every REQ-157 (1) context",
+ "cases": [
+  {
+   "cmd": "rm -f /etc/x",
+   "token": "rm",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "mv /etc/a /etc/b",
+   "token": "mv",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "cp /etc/a /etc/b",
+   "token": "cp",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "tee /etc/x",
+   "token": "tee",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "dd if=/dev/zero of=/dev/sda",
+   "token": "dd",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "chmod 777 /etc/shadow",
+   "token": "chmod",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "chown root /etc/x",
+   "token": "chown",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "chgrp root /etc/x",
+   "token": "chgrp",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "truncate -s 0 /etc/x",
+   "token": "truncate",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "ln -s /a /b",
+   "token": "ln",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "install -m 755 a /usr/bin/a",
+   "token": "install",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "mkfs /dev/sdb",
+   "token": "mkfs",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "mount /dev/sdb /mnt",
+   "token": "mount",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "umount /mnt",
+   "token": "umount",
+   "rule": "command word",
+   "contexts": true
+  },
+  {
+   "cmd": "sed -i 's/a/b/' /etc/hosts",
+   "token": "sed",
+   "rule": "sed -i",
+   "contexts": true
+  },
+  {
+   "cmd": "sed --in-place 's/a/b/' /etc/hosts",
+   "token": "sed",
+   "rule": "sed -i",
+   "contexts": false
+  },
+  {
+   "cmd": "sed -ni 's/a/b/' /etc/hosts",
+   "token": "sed",
+   "rule": "sed -i",
+   "contexts": false
+  },
+  {
+   "cmd": "sed -i.bak 's/a/b/' /etc/hosts",
+   "token": "sed",
+   "rule": "sed -i",
+   "contexts": false
+  },
+  {
+   "cmd": "sed --in-place=.b 's/a/b/' /etc/hosts",
+   "token": "sed",
+   "rule": "sed -i",
+   "contexts": false
+  },
+  {
+   "cmd": "sed -e s/a/b/ -i /etc/hosts",
+   "token": "sed",
+   "rule": "sed -i",
+   "contexts": false
+  },
+  {
+   "cmd": "apt install -y openssh-server",
+   "token": "install",
+   "rule": "apt verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt-get install -y openssh-server",
+   "token": "install",
+   "rule": "apt-get verb",
+   "contexts": true
+  },
+  {
+   "cmd": "apt remove -y openssh-server",
+   "token": "remove",
+   "rule": "apt verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt-get remove -y openssh-server",
+   "token": "remove",
+   "rule": "apt-get verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt purge -y openssh-server",
+   "token": "purge",
+   "rule": "apt verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt-get purge -y openssh-server",
+   "token": "purge",
+   "rule": "apt-get verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt upgrade -y",
+   "token": "upgrade",
+   "rule": "apt verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt-get upgrade -y",
+   "token": "upgrade",
+   "rule": "apt-get verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt full-upgrade -y",
+   "token": "full-upgrade",
+   "rule": "apt verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt-get full-upgrade -y",
+   "token": "full-upgrade",
+   "rule": "apt-get verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt dist-upgrade -y",
+   "token": "dist-upgrade",
+   "rule": "apt verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt-get dist-upgrade -y",
+   "token": "dist-upgrade",
+   "rule": "apt-get verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt autoremove -y",
+   "token": "autoremove",
+   "rule": "apt verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt-get autoremove -y",
+   "token": "autoremove",
+   "rule": "apt-get verb",
+   "contexts": false
+  },
+  {
+   "cmd": "apt-get -y install x",
+   "token": "install",
+   "rule": "apt-get verb after option (#108 (g))"
+  },
+  {
+   "cmd": "apt-get -s upgrade",
+   "token": "upgrade",
+   "rule": "verb is first non-option word (#108 (g))"
+  },
+  {
+   "cmd": "dpkg -i x.deb",
+   "token": "-i",
+   "rule": "dpkg option",
+   "contexts": true
+  },
+  {
+   "cmd": "dpkg -r x",
+   "token": "-r",
+   "rule": "dpkg option",
+   "contexts": false
+  },
+  {
+   "cmd": "dpkg -P x",
+   "token": "-P",
+   "rule": "dpkg option",
+   "contexts": false
+  },
+  {
+   "cmd": "dpkg --install x.deb",
+   "token": "--install",
+   "rule": "dpkg option",
+   "contexts": false
+  },
+  {
+   "cmd": "dpkg --remove x",
+   "token": "--remove",
+   "rule": "dpkg option",
+   "contexts": false
+  },
+  {
+   "cmd": "dpkg --purge x",
+   "token": "--purge",
+   "rule": "dpkg option",
+   "contexts": false
+  },
+  {
+   "cmd": "dpkg --configure -a",
+   "token": "--configure",
+   "rule": "dpkg option",
+   "contexts": false
+  },
+  {
+   "cmd": "dpkg --purge=x",
+   "token": "--purge",
+   "rule": "dpkg option",
+   "contexts": false
+  },
+  {
+   "cmd": "dpkg --remove=x",
+   "token": "--remove",
+   "rule": "dpkg option",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl start ssh",
+   "token": "start",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl stop ssh",
+   "token": "stop",
+   "rule": "systemctl verb",
+   "contexts": true
+  },
+  {
+   "cmd": "systemctl restart ssh",
+   "token": "restart",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl reload ssh",
+   "token": "reload",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl enable ssh",
+   "token": "enable",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl disable ssh",
+   "token": "disable",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl mask ssh",
+   "token": "mask",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl unmask ssh",
+   "token": "unmask",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl kill ssh",
+   "token": "kill",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl isolate ssh",
+   "token": "isolate",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl set-property ssh",
+   "token": "set-property",
+   "rule": "systemctl verb",
+   "contexts": false
+  },
+  {
+   "cmd": "systemctl --now enable ssh",
+   "token": "enable",
+   "rule": "systemctl verb after option"
+  },
+  {
+   "cmd": "echo x > /etc/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": true
+  },
+  {
+   "cmd": "echo x >> /etc/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x >| /etc/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x 2> /etc/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x >/tmp/../etc/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x > \"$F\"",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x > $HOME/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x > /tmpx",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x &> /var/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x >& /var/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x > /tmp",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x > ./x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x 1>/etc/x",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x > /dev/sda",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": "echo x > /tmp/$(id -u)",
+   "token": ">",
+   "rule": "output redirection (#108 (i))",
+   "contexts": false
+  },
+  {
+   "cmd": ". /etc/profile",
+   "token": ".",
+   "rule": "running other code",
+   "contexts": true
+  },
+  {
+   "cmd": "source /etc/profile",
+   "token": "source",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "eval echo x",
+   "token": "eval",
+   "rule": "running other code",
+   "contexts": true
+  },
+  {
+   "cmd": "exec cat /etc/x",
+   "token": "exec",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "find / -name x -print | xargs cat",
+   "token": "xargs",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "xargs -0 cat",
+   "token": "xargs",
+   "rule": "running other code",
+   "contexts": true
+  },
+  {
+   "cmd": "find / -name x -exec cat {} \\;",
+   "token": "-exec",
+   "rule": "running other code",
+   "contexts": true
+  },
+  {
+   "cmd": "find / -execdir cat {} +",
+   "token": "-execdir",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "find / -ok cat {} \\;",
+   "token": "-ok",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "find / -okdir cat {} \\;",
+   "token": "-okdir",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "sh ./x.sh",
+   "token": "sh",
+   "rule": "running other code",
+   "contexts": true
+  },
+  {
+   "cmd": "bash /tmp/x",
+   "token": "bash",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "dash x.sh",
+   "token": "dash",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "sh -s",
+   "token": "sh",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "echo id | sh",
+   "token": "sh",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "bash",
+   "token": "bash",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "sh < /tmp/x",
+   "token": "sh",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -x /tmp/x",
+   "token": "bash",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c \"$(curl x)\"",
+   "token": "$(",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "sh -c '`id`'",
+   "token": "`",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "dash -c 'cat <(id)'",
+   "token": "<(",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "bash -c 'echo $(id)'",
+   "token": "$(",
+   "rule": "running other code",
+   "contexts": false
+  },
+  {
+   "cmd": "/bin/rm -f /etc/x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "/usr/bin/rm -f /etc/x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "./rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "mkfs.ext4 /dev/sdb",
+   "token": "mkfs.ext4",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "mkfs.xfs /dev/sdb",
+   "token": "mkfs.xfs",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "env rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "env -i rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "env FOO=1 rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "env -i FOO=1 rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "busybox rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "sudo rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "doas rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "command rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "builtin eval x",
+   "token": "builtin",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "nice rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "nohup rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "setsid rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "timeout 5 rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "chroot / rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "FOO=1 rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "A=1 B=2 rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "r''m x",
+   "token": "r''m",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "\\rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "\"rm\" x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "'rm' x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "/usr/bin/env rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "sudo /bin/rm x",
+   "token": "rm",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "/sbin/mkfs.ext4 /dev/sdb",
+   "token": "mkfs.ext4",
+   "rule": "#108 (a)-(e) matching"
+  },
+  {
+   "cmd": "true | rm x",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "true; rm x",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "true && rm x",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "false || rm x",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "(rm x)",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "{ rm x; }",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "echo $(rm x)",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "echo `rm x`",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "cat <(rm x)",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "bash -c 'rm x'",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "sh -c 'true; rm x'",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "if true; then rm x; fi",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "while false; do rm x; done",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "for f in a; do rm $f; done",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "case a in a) rm x;; esac",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "f() { rm x; }; f",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "true & rm x",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "echo $(echo $(rm x))",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "bash -c 'bash -c \"rm x\"'",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "x=$(rm y)",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "cat >(rm x)",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "until true; do rm x; done",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "! rm x",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "time rm x",
+   "token": "rm",
+   "rule": "every simple command (#108 (c))"
+  },
+  {
+   "cmd": "cat <<EOF\n$(rm -f /etc/x)\nEOF",
+   "token": "rm",
+   "rule": "unquoted here-document substitution (#108 (h))"
+  },
+  {
+   "cmd": "cat <<EOF\n`rm -f /etc/x`\nEOF",
+   "token": "rm",
+   "rule": "unquoted here-document backtick (#108 (h))"
+  },
+  {
+   "cmd": "cat <<-EOF\n\t$(rm x)\n\tEOF",
+   "token": "rm",
+   "rule": "<<- here-document"
+  }
+ ]
+}

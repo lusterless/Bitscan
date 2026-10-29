@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit010-empty: Operator '' -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit010-empty</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>ba6cb5bd-9829-598f-a4ef-8e75aaf80fd1</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator></Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

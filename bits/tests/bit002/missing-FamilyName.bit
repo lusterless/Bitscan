@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture bit002/missing-FamilyName: required element FamilyName missing -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit002/missing-FamilyName</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>a6ca1cad-97e0-5afe-a3aa-97b971884e84</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

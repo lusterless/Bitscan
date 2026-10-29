@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit013-lookahead: regex with RE2-invalid lookahead -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit013-lookahead</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>87e4ca0b-118b-5f5a-bac8-918877a0d90f</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>(?=x)</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

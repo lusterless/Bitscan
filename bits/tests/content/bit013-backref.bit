@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit013-backref: regex with RE2-invalid backref -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit013-backref</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>d1ee053f-0be4-570f-9a90-c1508a27b061</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>(a)\1</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

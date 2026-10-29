@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture bit002/plus-bit102: BIT002 and a BIT102 command: only BIT002 -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit002/plus-bit102</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Author>me</Author>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>d0851598-a9aa-529d-b9c5-214720e74e29</PluginId>
+      <Execute timeout="30"><![CDATA[rm -rf /etc/x]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Policy formatVersion="1.0">
+  <PolicyName>CIS Ubuntu 24.04 Level 1 - Server</PolicyName>
+  <PolicyDescription>CIS Benchmark Level 1 controls for Ubuntu 24.04 servers. A sample of read-only checks; each plugin only reads files or live kernel values and prints the observed value. Control numbers are not yet confirmed against the CIS benchmark copy (TS §8.5).</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>CIS Ubuntu 24.04</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.3.1.1 - Ensure AppArmor is installed</PluginName>
+      <PluginDescription>Checks that the AppArmor package is installed.</PluginDescription>
+      <PluginId>3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c48</PluginId>
+      <Execute timeout="30"><![CDATA[
+        dpkg-query -W -f='${Status}' apparmor 2>/dev/null
+      ]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>1.1.1.1 - Ensure cramfs kernel module is not available</PluginName>
+      <PluginDescription>Checks that the cramfs module is not loaded and, if the kernel ships it, that a modprobe.d file sets "install cramfs /bin/false" (or /bin/true) and "blacklist cramfs". Prints "absent" when the kernel has no cramfs module, otherwise the three observed states.</PluginDescription>
+      <PluginId>9f232f90-19f8-4b58-b886-65efaf83dd9c</PluginId>
+      <Execute timeout="60"><![CDATA[
+        m=cramfs
+        if grep -q "^$m " /proc/modules; then ld=yes; else ld=no; fi
+        k=$(uname -r)
+        f=$(find "/lib/modules/$k" -name "$m.ko*" -print 2>/dev/null | head -n 1)
+        if [ "$ld" = no ] && [ -z "$f" ]; then echo absent; exit 0; fi
+        ins=no
+        bl=no
+        for c in /etc/modprobe.d/*.conf /run/modprobe.d/*.conf /usr/local/lib/modprobe.d/*.conf /lib/modprobe.d/*.conf; do
+          [ -f "$c" ] || continue
+          if grep -Eq "^[[:space:]]*install[[:space:]]+$m[[:space:]]+(/usr)?/bin/(false|true)([[:space:]]|$)" "$c"; then ins=yes; fi
+          if grep -Eq "^[[:space:]]*blacklist[[:space:]]+$m([[:space:]]|$)" "$c"; then bl=yes; fi
+        done
+        echo "loaded=$ld install=$ins blacklist=$bl"
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(absent|loaded=no install=yes blacklist=yes)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>1.1.2.1.2 - Ensure nodev option set on /tmp partition</PluginName>
+      <PluginDescription>Reads the mount options of /tmp from the host's view (PID 1's mount table). Passes when /tmp is a separate mount with the nodev option; prints nothing (FAIL) when /tmp is not a separate mount.</PluginDescription>
+      <PluginId>178cee42-58a3-4f26-a6f6-01dd7671030a</PluginId>
+      <Execute timeout="30"><![CDATA[
+        findmnt --task 1 -n -f -o OPTIONS --mountpoint /tmp
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>(^|,)nodev(,|$)</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>1.1.2.2.3 - Ensure nosuid option set on /dev/shm partition</PluginName>
+      <PluginDescription>Reads the mount options of /dev/shm from the host's view (PID 1's mount table). Passes when /dev/shm is mounted with the nosuid option.</PluginDescription>
+      <PluginId>b0a43662-158b-4806-9481-4202dd531870</PluginId>
+      <Execute timeout="30"><![CDATA[
+        findmnt --task 1 -n -f -o OPTIONS --mountpoint /dev/shm
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>(^|,)nosuid(,|$)</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>1.5.1 - Ensure address space layout randomization is enabled</PluginName>
+      <PluginDescription>Reads the running value of kernel.randomize_va_space. Passes when it is 2 (full randomisation). The persistent sysctl.d setting is not checked.</PluginDescription>
+      <PluginId>43bc18fb-2a2d-4d05-b334-f6ab4fefb837</PluginId>
+      <Execute timeout="30"><![CDATA[
+        cat /proc/sys/kernel/randomize_va_space
+      ]]></Execute>
+      <Operator>eq</Operator>
+      <ExpectedResult>2</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>1.5.2 - Ensure ptrace_scope is restricted</PluginName>
+      <PluginDescription>Reads the running value of kernel.yama.ptrace_scope. Passes when it is 1 or higher. The persistent sysctl.d setting is not checked.</PluginDescription>
+      <PluginId>b99dbc20-84e1-4e8a-b049-d39cba025e41</PluginId>
+      <Execute timeout="30"><![CDATA[
+        cat /proc/sys/kernel/yama/ptrace_scope
+      ]]></Execute>
+      <Operator>ge</Operator>
+      <ExpectedResult>1</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>1.5.4 - Ensure prelink is not installed</PluginName>
+      <PluginDescription>Prints the name of the prelink package if dpkg records it in any state other than not-installed or config-files. Passes when nothing is printed.</PluginDescription>
+      <PluginId>b1d61ee2-cf1a-43ce-97b6-65bfdbbecae2</PluginId>
+      <Execute timeout="30"><![CDATA[
+        dpkg-query -W -f='${Package} ${db:Status-Status}\n' prelink 2>/dev/null | awk '$2 != "not-installed" && $2 != "config-files" { print $1 }'
+      ]]></Execute>
+      <Operator>empty</Operator>
+      <ExpectedResult></ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.2.4 - Ensure telnet client is not installed</PluginName>
+      <PluginDescription>Prints the names of the telnet and inetutils-telnet packages that dpkg records in any state other than not-installed or config-files. Passes when nothing is printed.</PluginDescription>
+      <PluginId>dfa7e395-744b-402f-84ad-585d6367eb45</PluginId>
+      <Execute timeout="30"><![CDATA[
+        dpkg-query -W -f='${Package} ${db:Status-Status}\n' telnet inetutils-telnet 2>/dev/null | awk '$2 != "not-installed" && $2 != "config-files" { print $1 }'
+      ]]></Execute>
+      <Operator>empty</Operator>
+      <ExpectedResult></ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.4.1.1 - Ensure cron daemon is enabled and active</PluginName>
+      <PluginDescription>Prints the unit-file state and the active state of cron.service, separated by a space. Passes when they are "enabled active".</PluginDescription>
+      <PluginId>284bab45-0ec0-4e76-806c-fe744d4294af</PluginId>
+      <Execute timeout="30"><![CDATA[
+        printf '%s %s\n' "$(systemctl is-enabled cron.service 2>/dev/null)" "$(systemctl is-active cron.service 2>/dev/null)"
+      ]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>enabled active</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>3.3.1 - Ensure ip forwarding is disabled</PluginName>
+      <PluginDescription>Reads the running values of net.ipv4.ip_forward and net.ipv6.conf.all.forwarding ("absent" when IPv6 is disabled in the kernel). Passes when forwarding is off for both. The persistent sysctl.d settings are not checked.</PluginDescription>
+      <PluginId>5a8f31b0-afbb-455c-bee9-dd067dab4ff0</PluginId>
+      <Execute timeout="30"><![CDATA[
+        v4=$(cat /proc/sys/net/ipv4/ip_forward)
+        v6=$(cat /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || echo absent)
+        echo "ipv4=$v4 ipv6=$v6"
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^ipv4=0 ipv6=(0|absent)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>4.1.1 - Ensure ufw is installed</PluginName>
+      <PluginDescription>Checks that the ufw package is installed.</PluginDescription>
+      <PluginId>a925949c-5a85-4d67-8457-0b73f415dfb5</PluginId>
+      <Execute timeout="30"><![CDATA[
+        dpkg-query -W -f='${Status}' ufw 2>/dev/null
+      ]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>5.1.1 - Ensure permissions on /etc/ssh/sshd_config are configured</PluginName>
+      <PluginDescription>Prints each of /etc/ssh/sshd_config and /etc/ssh/sshd_config.d/*.conf whose mode is not 0600 or stricter, or which is not owned by root:root, followed by its mode, owner and group. Passes when nothing is printed (also when the SSH server is not installed).</PluginDescription>
+      <PluginId>77f7a15a-4f1e-4a51-9684-75d8999c7473</PluginId>
+      <Execute timeout="30"><![CDATA[
+        for f in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do
+          [ -e "$f" ] || continue
+          s=$(stat -Lc '%04a %U %G' "$f")
+          case "$s" in
+            0[0246]00\ root\ root) ;;
+            *) echo "$f $s" ;;
+          esac
+        done
+      ]]></Execute>
+      <Operator>empty</Operator>
+      <ExpectedResult></ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>5.1.20 - Ensure sshd PermitRootLogin is disabled</PluginName>
+      <PluginDescription>Reads the effective PermitRootLogin value from the SSH server configuration files (sshd -T needs root): the first value outside a Match block, reading /etc/ssh/sshd_config.d/*.conf before /etc/ssh/sshd_config as Ubuntu's Include line does, and the built-in default prohibit-password when none is set. Prints "not-installed" when the SSH server is not installed. Passes on "no" or "not-installed".</PluginDescription>
+      <PluginId>e5252af6-9d2e-4238-a553-6540e3083549</PluginId>
+      <Execute timeout="30"><![CDATA[
+        if [ ! -e /etc/ssh/sshd_config ]; then echo not-installed; exit 0; fi
+        for f in /etc/ssh/sshd_config.d/*.conf /etc/ssh/sshd_config; do
+          [ -f "$f" ] || continue
+          awk '{ sub(/^[ \t]+/, ""); split($0, w, /[ \t=]+/); k = tolower(w[1]) }
+            k == "match" { exit }
+            k == "permitrootlogin" { print tolower(w[2]); exit }' "$f"
+        done | awk 'NR == 1 { v = $0 } END { if (NR == 0) v = "prohibit-password"; print v }'
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(no|not-installed)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>5.4.1.1 - Ensure password expiration is configured</PluginName>
+      <PluginDescription>Reads PASS_MAX_DAYS from /etc/login.defs (the last setting wins). Passes when it is 365 or less. Existing accounts' expiry in /etc/shadow is not checked.</PluginDescription>
+      <PluginId>142a7b43-b2d3-405e-92d2-6d334ef2f2dc</PluginId>
+      <Execute timeout="30"><![CDATA[
+        awk '$1 == "PASS_MAX_DAYS" { v = $2 } END { print v }' /etc/login.defs
+      ]]></Execute>
+      <Operator>le</Operator>
+      <ExpectedResult>365</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>5.4.2.1 - Ensure root is the only UID 0 account</PluginName>
+      <PluginDescription>Prints the names of all accounts in /etc/passwd with UID 0. Passes when the only one is root.</PluginDescription>
+      <PluginId>37c25aa5-c5f2-44eb-b08e-facd1f96a8c4</PluginId>
+      <Execute timeout="30"><![CDATA[
+        awk -F: '$3 == 0 { print $1 }' /etc/passwd
+      ]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>root</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>7.2.2 - Ensure /etc/shadow password fields are not empty</PluginName>
+      <PluginDescription>Prints the names of accounts whose password field in /etc/shadow is empty; the password hashes themselves are never printed. Prints "unreadable" if /etc/shadow could not be read. Passes when nothing is printed.</PluginDescription>
+      <PluginId>d9cabf04-a21c-4bf6-904c-115768ca5d9d</PluginId>
+      <Execute timeout="30"><![CDATA[
+        cat /etc/shadow 2>/dev/null | awk -F: '$2 == "" { print $1 } END { if (NR == 0) print "unreadable" }'
+      ]]></Execute>
+      <Operator>empty</Operator>
+      <ExpectedResult></ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

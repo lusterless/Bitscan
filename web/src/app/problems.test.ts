@@ -199,3 +199,126 @@ describe("CHK-M5-186 toProblem", () => {
     ).toBeNull();
   });
 });
+
+// TASK-168 TEST (TP-M7-29): CHK-M7-311.
+// Expected values: REQ-183 and the TASK-168 row (both new problem types map to
+// their messages; an unknown type still maps to the generic one); TS §4.3 L550
+// and #98 (e), (k) (409 `policy_managed_on_server`); #102 (d) (until the
+// catalog start-up ends, upload, delete and rebuild answer 503 `about:blank`
+// "The catalog is starting; retry shortly." with `Retry-After: 10`); the lead's
+// TP-M7-29 brief: only 503 + about:blank + that exact detail + a numeric
+// Retry-After maps; any other 503 falls through.
+const SERVER_FOLDER =
+  "This policy is managed in the server folder. Change or remove its file on the server.";
+const STARTING = "The catalog is starting; retry shortly.";
+const UNAVAILABLE = "The manager is unavailable. Try again later.";
+
+describe("CHK-M7-311 the M7 problem answers", () => {
+  it.each([409, 400, 403, 500, 503])(
+    "policy_managed_on_server at %i maps to the server-folder message",
+    (status) => {
+      expect(messageFor(info(status, "policy_managed_on_server"))).toEqual({
+        text: SERVER_FOLDER,
+        action: null,
+      });
+    },
+  );
+
+  it.each([
+    ["Retry-After 10", 10],
+    ["Retry-After 0", 0],
+    ["Retry-After 1", 1],
+  ])("the start-up 503 (%s) maps to the catalog-starting message", (_n, s) => {
+    expect(messageFor(info(503, "about:blank", s, STARTING))).toEqual({
+      text: STARTING,
+      action: null,
+    });
+  });
+
+  it.each([
+    [
+      "another status (500)",
+      info(500, "about:blank", 10, STARTING),
+      "Request failed (status 500).",
+    ],
+    [
+      "another status (502)",
+      info(502, "about:blank", 10, STARTING),
+      "Request failed (status 502).",
+    ],
+    ["another type", info(503, "unavailable", 10, STARTING), UNAVAILABLE],
+    ["no Retry-After", info(503, "about:blank", null, STARTING), UNAVAILABLE],
+    ["no detail", info(503, "about:blank", 10, null), UNAVAILABLE],
+    [
+      "another detail",
+      info(503, "about:blank", 10, "Database down."),
+      UNAVAILABLE,
+    ],
+    [
+      "a trailing space",
+      info(503, "about:blank", 10, STARTING + " "),
+      UNAVAILABLE,
+    ],
+    [
+      "no final full stop",
+      info(503, "about:blank", 10, STARTING.slice(0, -1)),
+      UNAVAILABLE,
+    ],
+    [
+      "other case",
+      info(503, "about:blank", 10, STARTING.toUpperCase()),
+      UNAVAILABLE,
+    ],
+    ["a prefix", info(503, "about:blank", 10, "x " + STARTING), UNAVAILABLE],
+  ])("%s falls through to the generic text", (_n, problem, text) => {
+    expect(messageFor(problem)).toEqual({ text, action: null });
+  });
+
+  it("the audit-sink 503 still wins by type even with the start-up detail", () => {
+    expect(
+      messageFor(info(503, "audit_sink_unavailable", 10, STARTING)).text,
+    ).toBe(PAUSED);
+  });
+
+  it("an unknown type still maps to the generic status message", () => {
+    expect(messageFor(info(409, "policy_managed_elsewhere")).text).toBe(
+      "Request failed (status 409).",
+    );
+    expect(messageFor(info(503, "catalog_starting", 10, STARTING)).text).toBe(
+      UNAVAILABLE,
+    );
+  });
+
+  it("through toProblem: the real header and body decide", () => {
+    const body = {
+      type: "about:blank",
+      title: "t",
+      status: 503,
+      detail: STARTING,
+    };
+    const ok = toProblem(body, response(503, { "Retry-After": "10" }));
+    expect(messageFor(ok).text).toBe(STARTING);
+    for (const value of ["Wed, 21 Oct 2026 07:28:00 GMT", "1.5", "-1", ""]) {
+      const p = toProblem(body, response(503, { "Retry-After": value }));
+      expect(messageFor(p).text).toBe(UNAVAILABLE);
+    }
+    expect(messageFor(toProblem(body, response(503))).text).toBe(UNAVAILABLE);
+    // a body with no type is about:blank (RFC 9457 default)
+    const untyped = toProblem(
+      { detail: STARTING },
+      response(503, { "Retry-After": "10" }),
+    );
+    expect(messageFor(untyped).text).toBe(STARTING);
+  });
+
+  it("neither new message carries response text or markup", () => {
+    for (const m of [
+      messageFor(info(409, "policy_managed_on_server", 5, CANARY)),
+      messageFor(info(503, "about:blank", 10, STARTING)),
+    ]) {
+      expect(m.text).not.toContain("CANARY");
+      expect(m.text).not.toContain("<");
+      expect(m.text.toLowerCase()).not.toMatch(/api token|bsk_/);
+    }
+  });
+});

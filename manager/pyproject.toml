@@ -24,6 +24,9 @@ dependencies = [
     "httpx>=0.27",
     "psycopg-pool>=3.2",
     "prometheus-client>=0.20",
+    # PD-33 (a): the low-level multipart parser for in-memory `.bit` uploads
+    # (TS §4.1, §6.3); its high-level form API spools to disk and is not used.
+    "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture valid/warnings-only: only warnings: BIT101 (no control ref) and BIT103 (33-char ref) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture valid/warnings-only</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>Ensure AppArmor is installed</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>b8ad17c8-5e48-553c-8a4d-30aedb482f98</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1 - Thirty-three character reference</PluginName>
+      <PluginDescription>Fixture plugin 2.</PluginDescription>
+      <PluginId>74d0ed02-e653-57f2-8ba5-d22972174ca5</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1 - Thirty-one character reference kept</PluginName>
+      <PluginDescription>Fixture plugin 3.</PluginDescription>
+      <PluginId>b6dd8827-b158-5c4a-842e-8cbcf052b084</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

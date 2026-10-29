@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit101-arabic-digits: Arabic-Indic digits are not a control reference (REQ-154 (1)) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit101-arabic-digits</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>١.٣ - Ensure</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>fa7e4a43-dcad-5b26-9c55-612b56f96511</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

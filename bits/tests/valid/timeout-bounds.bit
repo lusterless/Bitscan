@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture valid/timeout-bounds: timeout 1, 600, 0600 (leading zeros) and absent (60) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture valid/timeout-bounds</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>b555094a-4f9d-5886-9fe2-3d284873bff2</PluginId>
+      <Execute timeout="1"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.1 - Fixture check 2</PluginName>
+      <PluginDescription>Fixture plugin 2.</PluginDescription>
+      <PluginId>e0ad95d5-c4be-5faa-8aef-b7ec4f739957</PluginId>
+      <Execute timeout="600"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>3.1 - Fixture check 3</PluginName>
+      <PluginDescription>Fixture plugin 3.</PluginDescription>
+      <PluginId>b262e471-50a5-57c9-ac34-1efb4ef0f006</PluginId>
+      <Execute timeout="0600"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>4.1 - Fixture check 4</PluginName>
+      <PluginDescription>Fixture plugin 4.</PluginDescription>
+      <PluginId>6e70815c-db45-53db-a084-907a7e67656f</PluginId>
+      <Execute><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

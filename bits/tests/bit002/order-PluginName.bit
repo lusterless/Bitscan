@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture bit002/order-PluginName: PluginName out of order -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit002/order-PluginName</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginId>35bd6521-195f-5612-98db-4e0b55c69404</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

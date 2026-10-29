@@ -7,6 +7,10 @@ export type IconName =
   | "tokens"
   | "totp"
   | "password"
+  | "profiles"
+  | "upload"
+  | "imports"
+  | "rebuild"
   | "sign-out"
   | "menu"
   | "close"
@@ -55,6 +59,28 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <rect x="4" y="11" width="16" height="10" rx="2" />
       <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  profiles: (
+    <>
+      <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z" />
+      <path d="M16 5h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" />
+      <path d="M9 13l2 2 4-4" />
+    </>
+  ),
+  upload: (
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+  ),
+  imports: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 3" />
+    </>
+  ),
+  rebuild: (
+    <>
+      <path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2" />
+      <path d="M18.5 2v4h-4M5.5 22v-4h4" />
     </>
   ),
   "sign-out": (

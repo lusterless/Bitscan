@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/warning-with-error: a rejected file lists its warnings too (REQ-154 (3)) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/warning-with-error</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>Ensure x</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>362bc01f-c279-50c6-9f26-f9528d04784a</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.1 - Fixture check 2</PluginName>
+      <PluginDescription>Fixture plugin 2.</PluginDescription>
+      <PluginId>e1a34808-42f0-557a-8594-f07a02eaf361</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equal</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

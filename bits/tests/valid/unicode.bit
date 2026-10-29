@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture valid/unicode: multi-byte text in every text element -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture unicode — Überprüfung ✓ 検査</PolicyName>
+  <PolicyDescription>Beschreibung: äöü — 説明 — émoji 🛡</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Família Ünïcode 試験</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Prüfe ✓ 検査</PluginName>
+      <PluginDescription>Ελληνικά</PluginDescription>
+      <PluginId>3f038451-f37b-5fcd-8406-55cd33cd1ab1</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>installé ✓</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

@@ -25,7 +25,7 @@ STILL_STUBS = [
     [],
     ["users"],
     ["users", "bogus"],
-    ["bits", "rebuild"],
+    ["bits"],
     ["db"],
     ["db", "downgrade"],
     ["db", "downgrade", "base"],
@@ -108,6 +108,19 @@ def test_refused_commands_touch_no_env_socket_or_db(
     assert code != 0
     assert db == []
     assert read == []
+
+
+def test_bits_rebuild_without_its_folder_reads_only_bits_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # TASK-166 (#107 (a)): `bits rebuild` is implemented; with a missing
+    # folder it exits 2 having read only the non-secret BITSCAN_BITS_DIR, and
+    # loads no database module (REQ-175 (3), (5)).
+    monkeypatch.setenv("BITSCAN_BITS_DIR", str(tmp_path / "absent"))
+    code, db, read = _guarded_run(monkeypatch, ["bits", "rebuild"])
+    assert code == 2
+    assert db == []
+    assert read == ["BITSCAN_BITS_DIR"]
 
 
 @pytest.mark.parametrize("command", ["migrate", "maintain"])

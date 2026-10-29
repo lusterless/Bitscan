@@ -6,8 +6,9 @@ Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs
 
 The manager runs:
 
-- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), fleet package search and its CSV export (`/api/v1/packages/search`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; the scheduler (inventory runs and `offline_sweep`); and the [web UI](#web-ui);
-- the server commands `users create-admin`, `users create-api-token` and `users reset-totp`;
+- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), fleet package search and its CSV export (`/api/v1/packages/search`), the policy catalog (`/api/v1/policies`, `/api/v1/imports`, `/api/v1/tasks`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; the scheduler (inventory runs and `offline_sweep`); and the [web UI](#web-ui);
+- the folder watcher, which imports `.bit` policy files as they change (see [Policies](#policies));
+- the server commands `users create-admin`, `users create-api-token`, `users reset-totp` and `bits rebuild`;
 - `db migrate` and `db maintain`.
 
 The agent package (`bitscan-agent`) installs the `bitscan-agent` and `bitscan-runner` services. The agent enrols, sends a heartbeat every 5 minutes, pulls its jobs and uploads the inventory.
@@ -193,7 +194,7 @@ The tests run the installed `bitscan-manager` command, so the editable install i
 
 **OpenBao** (Vault Transit API): the manager calls `POST /v1/transit/encrypt/<key>` and `/decrypt/<key>` with the token from `BITSCAN_VAULT_TOKEN_FILE`, checking the server certificate against the system CA store; proxy settings in the environment are ignored. It reads the token once at start-up and never renews it, so use the periodic token of [`manager-install.md`](deploy/runbooks/manager-install.md) section 1.2, whose policy allows only those two paths for the TOTP key and renewing itself, and set up the renewal timer of section 5 there. To replace the token, follow [`manager-operations.md`](deploy/runbooks/manager-operations.md) section 3.
 
-`bitscan-manager --help` lists the commands that work: `serve`, `users …`, `db migrate` and `db maintain`. Every other command, including `bits rebuild`, prints a usage line and `unknown or not yet implemented command`, and exits 2, without reading configuration or touching the database.
+`bitscan-manager --help` lists the commands that work: `serve`, `users …`, `bits rebuild`, `db migrate` and `db maintain`. Every other command prints a usage line and `unknown or not yet implemented command`, and exits 2, without reading configuration or touching the database.
 
 ## Web UI
 
@@ -226,10 +227,16 @@ The build replaces the contents of `manager/bitscan_manager/webui/` with `index.
 
 | Page | viewer | operator | admin |
 | --- | --- | --- | --- |
-| Hosts, host detail, Package search, TOTP, Password | yes | yes | yes |
+| Hosts, host detail, Package search, Profiles, profile detail, TOTP, Password | yes | yes | yes |
+| Upload policy, Import history, Rebuild catalog | no | no | yes |
 | Enrolment requests, Enrolment tokens | no | no | yes |
 
-Admin actions on the enrolment pages need a TOTP-verified session. If the session is not TOTP-verified, the page offers **Sign in again**.
+Admin actions on the enrolment pages, deleting a profile and rebuilding the catalog need a TOTP-verified session. If the session is not TOTP-verified, the page offers **Sign in again**.
+
+- **Profiles:** every profile that isn't deleted, filtered by **All**, **Enabled** or **Disabled**. A name opens the profile page: its details and every check with its command. Admins also get **Enable** or **Disable**, **Clear override** and **Delete** (which asks for confirmation). A deleted profile shows **Deleted** and offers no actions.
+- **Upload policy** (admin): choose a `.bit` file and press **Upload**. The page shows **Imported** or **Rejected** and the findings.
+- **Import history** (admin): every import, newest first, with its findings.
+- **Rebuild catalog** (admin): see [Rebuild](#rebuild).
 
 - **Enrolment tokens:** the form's defaults create a single-use token valid for 24 hours, for any source address, without auto-approve. The new `bse_` token is shown once, with a **Copy** button; it cannot be shown again after **Done**. A token can be revoked from the list.
 - **Enrolment requests:** **Show** switches between pending and decided requests. Each request shows the host, its source address, OS, agent version and machine-id. Any existing agent with the same hostname or machine-id is listed under a warning, because a cloned image shares the machine-id. **Approve** and **Reject** each ask for confirmation. A request already decided elsewhere shows "This request was already decided."
@@ -322,6 +329,106 @@ curl -s -G https://manager.example:8443/api/v1/packages/search \
 - The answer is `text/csv; charset=utf-8` (UTF-8 without BOM, CRLF line ends), with `Content-Disposition: attachment; filename="packages.csv"`. The first line holds the item keys, in the order above.
 - At most 100,000 rows or groups. A larger result gets 400 `Invalid request: more than 100000 rows; narrow the filters`, before any CSV is sent.
 - **Formula escaping:** a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return, or with whitespace followed by one of these, gets a leading `'`, so a spreadsheet shows it as text. Cells holding a comma, a double quote or a line break are then quoted, so `=HYPERLINK("http://x")` is written as `"'=HYPERLINK(""http://x"")"`.
+
+## Policies
+
+A compliance profile is one `<Policy>` in a `.bit` file. The file is UTF-8 XML holding exactly one `Policy`, its `Family` (the standard, for example `CIS Ubuntu 24.04`) and up to 5,000 `Plugin` checks. Each check has the shell command to run (`Execute`), and its output is compared with `ExpectedResult` using `Operator`. Checks are shown as `<family name> - <plugin name>`. [`docs/spec/bit_Schema_Reference.md`](docs/spec/bit_Schema_Reference.md) describes the format, every element and its limits, and the validation codes; its section 1.1 is a complete example. `<PolicyName>` is the profile's name and its unique key; the file name is never used as a name.
+
+### Loading policies
+
+A policy comes from one of two places, and lives in only one of them.
+
+**The server folder.** `BITSCAN_BITS_DIR` (default `/var/lib/bitscan/bits`, owner `root:bitscan-manager`, mode 0750) is where a server administrator copies or moves `.bit` files.
+
+- On Linux the manager watches the folder. It imports a file a few seconds after it is completely written or moved in, and removing a file deletes its policy.
+- At start-up the manager imports what changed while it was down, and deletes the policies whose files are gone.
+- Only regular files directly in the folder whose names end in `.bit` count. These are ignored:
+  - hidden files (`.x.bit`) and other names;
+  - sub-folders, symlinks, FIFOs and devices;
+  - a name that is not valid UTF-8, holds a control character or is longer than 255 bytes. Such a name gets one log line and no import record.
+- **Copy or move files into the folder; don't hard-link files into the bits folder.** The watcher sees only changes made through the folder. An edit made through another link to the same file is not imported until the next start-up or rebuild.
+- Changing `<PolicyName>` inside the same file renames the policy and keeps its id, checks and history.
+- Two server-folder files can't hold the same `<PolicyName>`. While the first still exists, the second is rejected with `BIT007`. If two new files share a name, the one whose file name sorts first byte by byte wins.
+
+**Upload (admin).** Send `POST /api/v1/policies/import` with one multipart field, `file`. Use a session or an admin's `bsk_` API token, or the web UI's **Upload policy** page. The manager checks the file in memory. It keeps the file only if the import succeeds, as `uploaded/policy-<policy_id>.bit`; the name you uploaded it under is kept only in the import history.
+
+```sh
+curl -s https://manager.example:8443/api/v1/policies/import \
+  -H 'Authorization: Bearer <token>' -F file=@cis-ubuntu-24.04.bit
+```
+
+- **The answer** is 200 for both outcomes: `{import_id, outcome, policy_id, policy_name, policy_version, plugins_added, plugins_updated, plugins_retired, errors}`.
+  - `outcome` is `success` or `rejected`.
+  - `errors` lists every finding, warnings included, as `{line, element, code, message}`.
+  - A file larger than 5 MiB gets 413.
+  - A 503 after an upload means the policy may already be live. Check the policy list or the import history before you upload it again. After "The import was stored but its record could not be written.", check the policy list (its version and imported time); this case has no import-history row.
+- **The server folder wins.**
+  - A policy whose file is in the server folder can't be uploaded: it gets 409 `policy_managed_on_server`. Change its file in the folder instead.
+  - A server-folder file with the name of an uploaded policy takes that policy over: the policy moves to the server file, the uploaded copy is deleted, and the move is recorded in the audit log.
+
+### What an import does
+
+- **Validation.** The file is read once, with DTDs and external entities refused, and checked against every rule. One failing rule rejects the whole file, and nothing changes.
+  - The codes `BIT001`–`BIT017` and `BIT102` reject the file; `BIT101` and `BIT103` are warnings.
+  - `BIT102` refuses commands that write to or change the host: for example `rm`, `cp`, `tee`, `sed -i`, `apt install`, `systemctl stop`, `eval`, `source`, `xargs`, `find -exec`, and output redirection anywhere other than `/dev/null`, `/dev/stdout`, `/dev/stderr` or `/tmp/`. Rewrite such checks as the schema reference describes, for example with `find … -print` and a `while read` loop.
+  - `BIT102` is only a safety net: what stops a command from changing the host is the agent's sandbox.
+- **Live at once.** A successful import is stored in one transaction, and every scan job queued after it uses it; jobs already queued keep their commands. If the file's content changed, the policy's `version` goes up by 1. Checks that no profile lists any more are retired, not deleted, so old results stay readable.
+- **Automatic imports** (by the watcher and at start-up) skip a file whose content hasn't changed since its last successful import, and record it as `skipped`. Uploads and rebuilds never skip a file.
+- **Alerts.** Every import writes an audit entry.
+  - A successful import raises `policy_imported`. It carries, in full, every `Execute` that goes live with the import: new, changed, or active again.
+  - A rejected import raises `policy_import_rejected`.
+- **Audit-sink entry size.** One `policy_imported` entry can be as large as the file's commands: up to about 10 MiB of JSON for a 5 MiB file. The HTTPS sink accepts this. A `syslog+tls://` receiver must accept messages that large; many cut messages at 8 KiB by default, so raise its limit before you load large policies.
+
+### Status, delete and history
+
+- **List and read (viewer).**
+  - `GET /api/v1/policies` (optionally `?status=enabled` or `disabled`) lists the profiles that aren't deleted, ordered by name. Each item is `{policy_id, policy_name, policy_description, policy_status, file_status, status_overridden, family_id, family_name, format_version, version, source_file, plugin_count, imported_at, updated_at}`.
+  - `GET /api/v1/policies/{policy_id}` adds `deleted_at` and `plugins`: every check, in file order, with its command.
+- **Status (admin, session or API token).** `PATCH /api/v1/policies/{policy_id}`:
+  - `{"policy_status": "disabled"}` (or `"enabled"`) sets the status and an override (`status_overridden: true`). Later file updates then change only `file_status`.
+  - `{"status_overridden": false}` clears the override and takes the file's own status again.
+  - A disabled profile can't be chosen for new scans; scans already running finish.
+  - Re-enabling a profile raises `policy_reenabled`. A deleted policy gets 409.
+- **Delete (admin, TOTP-verified session).** `DELETE /api/v1/policies/{policy_id}` answers 204. It is refused for API tokens, and once the audit sink has been down for 15 minutes.
+  - The policy is marked deleted, not removed, so old results stay readable. It leaves selection, its queued jobs are cancelled, its schedules are disabled, its checks are retired and its uploaded file is deleted. The delete raises `policy_deleted`.
+  - A server-folder policy gets 409 `policy_managed_on_server`; remove its file from the folder instead.
+  - An unknown id gets 404, and an already deleted policy 409 `conflict`.
+  - Uploading a file with the same `<PolicyName>` later brings the policy back, with the same id and a new version.
+- **Import history (admin, session or API token).** `GET /api/v1/imports` lists every import, newest first. Each item is `{import_id, file_name, file_sha256, policy_version, mode, outcome, plugins_added, plugins_updated, plugins_retired, errors, imported_by, imported_at}`.
+  - `mode` is `auto`, `manual` or `rebuild`.
+  - `outcome` is `success`, `skipped` or `rejected`.
+  - `errors` holds the findings.
+
+### Rebuild
+
+A rebuild re-imports every file in both folders, without skipping any, and deletes the policies whose files are gone.
+
+- Each file is checked on its own. A rejected file keeps its existing catalog rows and is reported, and the rebuild commits as a whole.
+- Ids and history are kept. A rebuild is the way to recover a damaged catalog, and it never touches hosts, inventory, scans or the audit log.
+- It raises one `policy_rebuilt` alert, plus `policy_import_rejected` for each rejected file and `policy_imported` for each policy whose catalog rows it changed.
+
+**In the web UI (admin, TOTP-verified session).** On **Rebuild catalog**, press **Rebuild** and confirm. The page follows the task until it succeeds or fails, then lists the files, the files not imported, the deleted policies and the removed leftovers.
+
+**Through the API (admin, TOTP-verified session).** `POST /api/v1/policies/rebuild` answers 202 with `{"task_id"}`, and the rebuild runs in the background. Follow it with `GET /api/v1/tasks/{task_id}` (admin, session or API token), which returns `{task_id, kind, state, requested_by, result, started_at, finished_at}`.
+
+- `state` is `running`, `succeeded` (even with rejected files) or `failed`.
+- A succeeded `result` is `{files, deleted_policy_ids, plugins_retired, removed_leftovers, not_imported}`, and each file is `{source_file, import_id, outcome, policy_id, policy_version}`.
+- A failed `result` is `{error}`. A failed rebuild leaves the catalog unchanged.
+- A rebuild still running when the manager stops ends `failed` at the next start-up; start it again.
+
+**On the server.** `sudo bitscan-manager bits rebuild` runs the same rebuild in the foreground, as `cli:root`.
+
+- It reads the DSN from `/etc/bitscan/secrets/app.dsn`, checked like the `users` commands.
+- It takes the folder from `BITSCAN_BITS_DIR` in its environment, else from `/etc/bitscan/manager.env`, else the default. The folder and its `uploaded/` must exist.
+- If another import holds the catalog, it waits for it to finish.
+- It prints one line per file (`success <file> policy <id> version <n>`, or `rejected <file> (<n> findings)`), then `not imported`, `removed leftover` and `deleted policy <id>` lines, and a summary. Read the findings with `GET /api/v1/imports`.
+- Exit codes: 0 when the rebuild committed, rejected files included; 1 when it failed or didn't run; 2 for a usage, folder or DSN-file error.
+
+**At start-up.** Before anything else, the manager finishes interrupted uploads and imports what changed, then compares the catalog with the files.
+
+- Any difference raises one `catalog_integrity_failed` alert that lists them; a rebuild repairs the catalog.
+- If a policy was deleted just before a crash, its uploaded file is removed and listed in that alert, and the policy stays deleted. To bring it back, upload it again.
+- Until start-up has finished, upload, delete and rebuild answer 503 with `Retry-After: 10`.
 
 ## Users
 

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit012-lt: lt with non-numeric abc -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit012-lt</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>bf42d529-c6ba-5d24-9dd4-27b288da019a</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>lt</Operator>
+      <ExpectedResult>abc</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

@@ -39,7 +39,9 @@ MIB: Final = 1_048_576  # "MB" in TS §6.3 means MiB (#57).
 BODY_CAP_CLASSES: Final[Mapping[str, int]] = {
     "json": MIB,
     "result_batch": 3 * MIB // 2,
-    "bit": 5 * MIB,
+    # TS §6.3 L1138: the file part is at most 5 MiB (checked by the route);
+    # the body may add a 64 KiB multipart envelope (#99 (a)).
+    "bit": 5 * MIB + 64 * 1024,
     "inventory": 10 * MIB,
 }
 
@@ -73,6 +75,14 @@ ROUTE_BODY_CAPS: list[RouteCap] = [
         "/api/v1/agent/{id}/inventory",
         "inventory",
         BODY_CAP_CLASSES["inventory"],
+        after_auth=True,
+    ),
+    # TS §6.3 L1137-L1138, #99 (a): one multipart `.bit` upload; after the
+    # token and role check, so no unauthenticated body is buffered.
+    RouteCap(
+        "/api/v1/policies/import",
+        "bit",
+        BODY_CAP_CLASSES["bit"],
         after_auth=True,
     ),
 ]

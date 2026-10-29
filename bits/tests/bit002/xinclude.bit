@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture bit002/xinclude: XInclude element (namespace, #105 (c)); never fetched -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit002/xinclude</PolicyName>
+  <PolicyDescription><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="file://@@CANARY@@" parse="text"/></PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>c109118e-e3fa-5f28-9247-ddfd1d1832fb</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

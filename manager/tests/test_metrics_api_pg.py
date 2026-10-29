@@ -348,7 +348,12 @@ def test_no_label_holds_an_unbounded_value(env: Env) -> None:
         if not fam.name.startswith("bitscan_"):
             continue
         for s in fam.samples:
-            assert set(s.labels) <= {"kind", "status", "le"}, (s.name, s.labels)
+            assert set(s.labels) <= {"kind", "status", "le", "mode"}, (
+                s.name,
+                s.labels,
+            )
+            if "mode" in s.labels:  # M7 (#101): bit_import.mode only
+                assert s.labels["mode"] in {"auto", "manual", "rebuild"}
             if "status" in s.labels:
                 assert s.labels["status"] in STATUSES
             if "kind" in s.labels:

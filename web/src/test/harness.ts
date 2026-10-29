@@ -18,10 +18,20 @@ export interface Call {
   /** path plus query string, as sent */
   readonly url: string;
   readonly authorization: string | null;
+  /** The Content-Type header as sent (M7: the multipart upload). */
+  readonly contentType: string | null;
   readonly body: string;
+  /**
+   * The FormData given to `new Request` (M7 upload). undici serialises a
+   * jsdom FormData without its file names and bytes, so tests read the
+   * entries here instead of `body`.
+   */
+  readonly form: FormData | null;
 }
 
 export type Handler = (call: Call) => Response | Promise<Response>;
+
+const forms = new WeakMap<Request, FormData>();
 
 class ResolvingRequest extends Request {
   constructor(input: RequestInfo | URL, init?: RequestInit) {
@@ -29,6 +39,12 @@ class ResolvingRequest extends Request {
       super(input, init);
     } else {
       super(new URL(String(input), ORIGIN), init);
+    }
+    const body = init?.body;
+    if (body instanceof FormData) {
+      forms.set(this, body);
+    } else if (input instanceof Request && forms.has(input)) {
+      forms.set(this, forms.get(input) as FormData);
     }
   }
 }
@@ -66,7 +82,9 @@ async function fakeNetwork(input: Request | string | URL): Promise<Response> {
     query: url.searchParams,
     url: url.pathname + url.search,
     authorization: request.headers.get("Authorization"),
+    contentType: request.headers.get("Content-Type"),
     body: await request.clone().text(),
+    form: forms.get(request) ?? null,
   };
   calls.push(call);
   return handler(call);

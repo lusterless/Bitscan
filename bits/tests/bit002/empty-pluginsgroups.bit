@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture bit002/empty-pluginsgroups: empty PluginsGroups (#16) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture bit002/empty-pluginsgroups</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+  </PluginsGroups>
+</Policy>

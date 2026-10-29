@@ -244,18 +244,21 @@ def test_metric_families_and_labels() -> None:
         "bitscan_heartbeat_latency_seconds",
         "bitscan_jobs_queued",
         "bitscan_jobs_expired",
+        "bitscan_import_failures",  # M7 (#101)
     }
     assert families["bitscan_agents"].type == "gauge"
     assert families["bitscan_jobs_queued"].type == "gauge"
     assert families["bitscan_heartbeat_latency_seconds"].type == "histogram"
     assert families["bitscan_jobs_expired"].type == "counter"
     assert families["bitscan_alerts"].type == "counter"
+    assert families["bitscan_import_failures"].type == "counter"
     allowed = {
         "bitscan_alerts": {"kind"},
         "bitscan_agents": {"status"},
         "bitscan_heartbeat_latency_seconds": {"le"},
         "bitscan_jobs_queued": set(),
         "bitscan_jobs_expired": set(),
+        "bitscan_import_failures": {"mode"},
     }
     for name, fam in families.items():
         for sample in fam.samples:
@@ -264,6 +267,8 @@ def test_metric_families_and_labels() -> None:
                 assert sample.labels["status"] in AGENT_STATUSES
             if "kind" in sample.labels:
                 assert sample.labels["kind"] in ALERT_KINDS
+            if "mode" in sample.labels:  # bit_import.mode, TS §5.2 L699
+                assert sample.labels["mode"] in {"auto", "manual", "rebuild"}
 
 
 def test_every_status_exported_from_zero_and_names_on_the_wire() -> None:
@@ -280,11 +285,14 @@ def test_every_status_exported_from_zero_and_names_on_the_wire() -> None:
 
 
 def test_no_unbounded_label_names_anywhere() -> None:
-    """REQ-086 (3): the only label names on the wire are kind, status and le."""
+    """REQ-086 (3): the only label names on the wire are kind, status, le and
+    (M7, #101) mode, each from a fixed set."""
     text = generate_latest(REGISTRY).decode()
     names = {m.group(1) for m in re2.finditer(r'[{,]([a-zA-Z_]+)="', text)}
-    assert names <= {"kind", "status", "le"}, names
-    assert names >= {"kind", "status", "le"}
+    assert names <= {"kind", "status", "le", "mode"}, names
+    assert names >= {"kind", "status", "le", "mode"}
+    modes = {m.group(1) for m in re2.finditer(r'[{,]mode="([^"]*)"', text)}
+    assert modes == {"auto", "manual", "rebuild"}  # bit_import.mode, TS §5.2 L699
 
 
 def test_metrics_move() -> None:

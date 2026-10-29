@@ -8,11 +8,15 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
 
 import psycopg
 from fastapi import HTTPException, Request
+
+if TYPE_CHECKING:  # the importer imports this module; no cycle at run time
+    from bitscan_manager.services.importer.delete import DeleteResult
+    from bitscan_manager.services.importer.pipeline import Actor, ImportOutcome
 
 
 class Clock(Protocol):
@@ -35,6 +39,25 @@ class Database(Protocol):
     def transaction(self) -> AbstractContextManager[Tx]: ...  # READ COMMITTED
 
     def ping(self) -> bool: ...  # for /readyz; never raises
+
+
+class CatalogSession(Protocol):
+    """One pinned connection for several transactions in a row, so the
+    catalog lock spans them (TS §4.1 "Locking"). Used by one thread."""
+
+    @property
+    def conn(self) -> psycopg.Connection[Any]: ...  # autocommit; catalog_lock only
+
+    # Entered several times in a row, never nested; hooks run after COMMIT.
+    def transaction(self) -> AbstractContextManager[Tx]: ...
+
+    # Inside an open transaction (a rebuild's per-file savepoint); on
+    # rollback the hooks registered inside it are dropped.
+    def savepoint(self) -> AbstractContextManager[None]: ...
+
+
+class SessionDatabase(Protocol):
+    def session(self) -> AbstractContextManager[CatalogSession]: ...
 
 
 class TotpCipher(Protocol):
@@ -67,6 +90,19 @@ class RateLimits(Protocol):
     def unscheduled_inventory_retry_after(self, agent_id: UUID) -> int: ...
 
 
+class Catalog(Protocol):
+    """services/importer/service.CatalogService (TASK-160). Each call raises
+    CatalogStarting until the start-up sequence has completed (#102 (d))."""
+
+    def upload(
+        self, data: bytes, client_name: bytes | str | None, actor: "Actor"
+    ) -> "ImportOutcome": ...
+
+    def delete(self, policy_id: int, actor: str) -> "DeleteResult": ...
+
+    def start_rebuild(self, requested_by: int | None, actor: "Actor") -> UUID: ...
+
+
 class Lifecycle(Protocol):
     async def start(self) -> None: ...
 
@@ -81,6 +117,7 @@ class Runtime:
     sink_gate: SinkGate
     limits: RateLimits
     lifecycle: Lifecycle | None = None  # None in tests and the OpenAPI export
+    catalog: Catalog | None = None  # None in tests and the OpenAPI export
 
 
 def get_runtime(request: Request) -> Runtime:

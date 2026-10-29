@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bits/tests fixture content/three-faults: three content faults on three lines: BIT003, BIT004, BIT012 (in line order) -->
+<Policy formatVersion="1.0">
+  <PolicyName>Fixture content/three-faults</PolicyName>
+  <PolicyDescription>Bitscan test fixture.</PolicyDescription>
+  <PolicyStatus>on</PolicyStatus>
+  <Family>
+    <FamilyName>Bitscan Test Family</FamilyName>
+  </Family>
+  <PluginsGroups>
+    <Plugin>
+      <PluginName>1.1 - Fixture check 1</PluginName>
+      <PluginDescription>Fixture plugin 1.</PluginDescription>
+      <PluginId>BAD</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>equals</Operator>
+      <ExpectedResult>install ok installed</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>2.1 - Fixture check 2</PluginName>
+      <PluginDescription>Fixture plugin 2.</PluginDescription>
+      <PluginId>d18b1f4e-afe9-5952-9132-910378ea915e</PluginId>
+      <Execute timeout="30"><![CDATA[dpkg-query -W -f='${Status}' apparmor 2>/dev/null]]></Execute>
+      <Operator>eq</Operator>
+      <ExpectedResult>x</ExpectedResult>
+    </Plugin>
+  </PluginsGroups>
+</Policy>
