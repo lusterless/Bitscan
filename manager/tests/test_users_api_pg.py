@@ -27,7 +27,12 @@ from bitscan_manager.auth.tokens import TokenKind, new_token, token_hash
 from bitscan_manager.db.pool import AppDatabase
 from bitscan_manager.runtime import Runtime
 from bitscan_manager.services.audit.disk_queue import DiskQueue
-from bitscan_manager.services.audit.shipper import DbOutageAudit, PgAuditTail, Shipper
+from bitscan_manager.services.audit.shipper import (
+    BATCH,
+    DbOutageAudit,
+    PgAuditTail,
+    Shipper,
+)
 from bitscan_manager.services.audit.sink_transport import DeliveryError, SinkRecord
 
 from .canary import sweep
@@ -406,8 +411,17 @@ def test_every_method_refuses_the_wrong_callers(env: Env) -> None:
 def test_sink_outage_refuses_every_method_after_15_minutes(env: Env) -> None:
     _, tok = env.admin()
     target = env.user("viewer")
+    # Isolation (decisions 2026-10-29, "CHK-M2-232 test isolation fix"): the
+    # shipper sees an outage only when it has something to deliver, and on a
+    # fresh database audit_log can be empty (the test then failed alone). One
+    # audited change guarantees an entry to ship.
+    created = env.call(
+        "POST", tok, json={"username": f"o-{secrets.token_hex(3)}", "password": PW}
+    )
+    assert created.status_code == 201
     env.sink.up = False
     env.shipper.run_once()  # first failed delivery: the outage starts now
+    assert env.shipper.refusing() is False  # not before 15 minutes
     start = env.clock.now()
     env.clock.at = start + timedelta(minutes=14, seconds=59)
     assert env.call("GET", tok, f"{ROUTE}/{target}").status_code == 200
@@ -419,10 +433,19 @@ def test_sink_outage_refuses_every_method_after_15_minutes(env: Env) -> None:
     # sign-in and /api-tokens keep working during the outage (REQ-054 (4))
     assert env.call("GET", tok, "/api/v1/api-tokens").status_code == 200
     env.sink.up = True
-    for _ in range(5):
+    # Drain: each cycle reads at most BATCH new audit rows, so a database the
+    # whole suite wrote to needs more than a fixed number of cycles. The bound
+    # comes from the rows to deliver; hitting it fails the test.
+    with env.conn() as c:
+        count = c.execute("SELECT count(*) FROM audit_log").fetchone()
+    assert count is not None
+    bound = int(count[0]) // BATCH + 5
+    for _ in range(bound):
         env.clock.at += timedelta(seconds=31)
         env.shipper.run_once()
-    assert env.shipper.refusing() is False
+        if not env.shipper.refusing():
+            break
+    assert env.shipper.refusing() is False, f"not drained in {bound} cycles"
     assert env.call("GET", tok, f"{ROUTE}/{target}").status_code == 200
 
 
