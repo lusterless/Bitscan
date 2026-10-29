@@ -544,7 +544,7 @@ def test_the_m7_policies_section_behaves_as_written(  # noqa: PLR0915
         f"{back.get('policy_id')} v{back.get('policy_version')}",
         back.get("policy_id") == api_pid and (back.get("policy_version") or 0) >= 2,
     )
-    hist = imports()
+    history = imports()
     ih_keys = [
         "import_id",
         "file_name",
@@ -563,12 +563,12 @@ def test_the_m7_policies_section_behaves_as_written(  # noqa: PLR0915
         "import history: keys, newest first, modes and outcomes",
         "GET /imports",
         "documented keys; ids descending",
-        f"{list(hist[0])} {sorted({i['mode'] for i in hist})}",
-        list(hist[0]) == ih_keys
-        and [i["import_id"] for i in hist]
-        == sorted((i["import_id"] for i in hist), reverse=True)
-        and {i["mode"] for i in hist} <= {"auto", "manual", "rebuild"}
-        and {i["outcome"] for i in hist} == {"success", "skipped", "rejected"},
+        f"{list(history[0])} {sorted({i['mode'] for i in history})}",
+        list(history[0]) == ih_keys
+        and [i["import_id"] for i in history]
+        == sorted((i["import_id"] for i in history), reverse=True)
+        and {i["mode"] for i in history} <= {"auto", "manual", "rebuild"}
+        and {i["outcome"] for i in history} == {"success", "skipped", "rejected"},
     )
 
     # ----------------------------------------------------- rebuild
