@@ -11,6 +11,8 @@ and work/plans/TASK-145.md §5. One task in three files (user ruling
 from __future__ import annotations
 
 import ast
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -477,7 +479,13 @@ def test_random_text_raises_only_the_fail_closed_error(src: str) -> None:
 )
 @given(st.lists(st.sampled_from(PIECES), min_size=1, max_size=40).map("".join))
 def test_long_inputs_up_to_16384_chars(unit: str) -> None:
-    _bounded((unit * (16_384 // len(unit) + 1))[:16_384])
+    src = (unit * (16_384 // len(unit) + 1))[:16_384]
+    if _lex_once(src) < 0.1:  # in process: the functional check, and fast
+        return
+    # Over 100 ms here may be this process (a coverage tracer under G5, a
+    # loaded machine): the bound is judged on the lexer's own cost, in a
+    # clean interpreter (lead ruling 2026-10-28, M7 gate).
+    assert _isolated_best(src) < 0.1, len(src)
 
 
 @pytest.mark.parametrize(
@@ -509,7 +517,43 @@ def test_long_inputs_up_to_16384_chars(unit: str) -> None:
 )
 def test_pathological_inputs_bounded(src: str) -> None:
     assert len(src) <= 16_384 + 64
-    _bounded(src)
+    _lex_once(src)  # in process: the right result, or only ShellSyntaxError
+    # REQ-156 (4) bounds the lexer's own cost: timed in a clean interpreter
+    # (python -I, no tracer, no test-process heap), best of 10 thread-CPU
+    # timings. Lead ruling 2026-10-28 (M7 gate): a measurement fix, the 100 ms
+    # bound is unchanged; a super-linear lexer still fails.
+    assert _isolated_best(src) < 0.1, len(src)
+
+
+_TIMER = """
+import sys, time
+sys.path.insert(0, sys.argv[1])
+from bitscan_manager.services.importer.shlex_posix import ShellSyntaxError, lex
+src = sys.stdin.read()
+best = None
+for _ in range(10):
+    t0 = time.thread_time()
+    try:
+        lex(src)
+    except ShellSyntaxError:
+        pass
+    d = time.thread_time() - t0
+    best = d if best is None else min(best, d)
+print(repr(best))
+"""
+
+
+def _isolated_best(src: str) -> float:
+    root = str(Path(__file__).resolve().parents[1])  # the tree under test
+    done = subprocess.run(  # noqa: S603 - fixed argv, input on stdin only
+        [sys.executable, "-I", "-c", _TIMER, root],
+        input=src,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    return float(done.stdout.strip())
 
 
 # CHK-M7-102: the module executes nothing ------------------------------------

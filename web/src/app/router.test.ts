@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   formatHash,
+  isPolicyId,
   isUuid,
   navigate,
   parseHash,
@@ -68,6 +69,11 @@ const ROUTES: Route[] = [
   { name: "hosts" },
   { name: "host", agentId: ID },
   { name: "packages" },
+  { name: "profiles" },
+  { name: "profile", policyId: "7" },
+  { name: "policy-upload" },
+  { name: "imports" },
+  { name: "rebuild" },
   { name: "enrolment-requests" },
   { name: "enrolment-tokens" },
   { name: "totp" },
@@ -80,6 +86,11 @@ describe("formatHash", () => {
       "#/hosts",
       "#/hosts/" + ID,
       "#/packages",
+      "#/profiles",
+      "#/profiles/7",
+      "#/catalog/upload",
+      "#/catalog/imports",
+      "#/catalog/rebuild",
       "#/enrolment/requests",
       "#/enrolment/tokens",
       "#/account/totp",
@@ -133,5 +144,78 @@ describe("navigate and useRoute", () => {
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
     expect(result.current).toEqual({ name: "packages" });
+  });
+});
+
+// TASK-173 TEST (TP-M7-29): CHK-M7-390 (router part).
+// Expected values: the TASK-173 row (every new route parses and prints back to
+// the same hash) and the impl report's hash table; the API path pattern of
+// `/policies/{id}` is `^[0-9]{1,20}$` (manager/openapi.json); TS §6.3 L1139
+// (catalog keys are integers, kept as a digit string so no id is rounded).
+const MAX_ID = "9".repeat(20);
+
+describe("CHK-M7-390 the M7 hashes", () => {
+  it.each([
+    ["#/profiles", { name: "profiles" }],
+    ["#/profiles/7", { name: "profile", policyId: "7" }],
+    ["#/profiles/0", { name: "profile", policyId: "0" }],
+    ["#/profiles/007", { name: "profile", policyId: "007" }],
+    ["#/profiles/" + MAX_ID, { name: "profile", policyId: MAX_ID }],
+    [
+      "#/profiles/9007199254740993",
+      { name: "profile", policyId: "9007199254740993" },
+    ],
+    ["#/catalog/upload", { name: "policy-upload" }],
+    ["#/catalog/imports", { name: "imports" }],
+    ["#/catalog/rebuild", { name: "rebuild" }],
+  ] as const)("%j", (hash, route) => {
+    expect(parseHash(hash)).toEqual(route);
+    expect(formatHash(parseHash(hash))).toBe(hash);
+  });
+
+  it.each([
+    "#/profiles/",
+    "#/profiles/" + MAX_ID + "9",
+    "#/profiles/-1",
+    "#/profiles/+1",
+    "#/profiles/1.0",
+    "#/profiles/1e3",
+    "#/profiles/0x1",
+    "#/profiles/ 1",
+    "#/profiles/1 ",
+    "#/profiles/7/x",
+    "#/profiles/7?x=1",
+    "#/profiles/%37",
+    "#/profiles/١",
+    "#/profiles/７",
+    "#/profiles/" + ID,
+    "#/Profiles",
+    "#/profiles/../catalog/rebuild",
+    "#/catalog",
+    "#/catalog/",
+    "#/catalog/upload/",
+    "#/catalog/Upload",
+    "#/catalog/rebuild?now=1",
+    "#/policies",
+    "#/imports",
+    "#/rebuild",
+  ])("anything else (%j) is the host list", (hash) => {
+    expect(parseHash(hash)).toEqual({ name: "hosts" });
+  });
+
+  it.each([
+    ["7", true],
+    ["0", true],
+    [MAX_ID, true],
+    [MAX_ID + "0", false],
+    ["", false],
+    ["a", false],
+    ["1a", false],
+    ["١", false],
+    ["１", false],
+    ["¹", false],
+    [" 1", false],
+  ])("isPolicyId(%j) -> %s", (value, want) => {
+    expect(isPolicyId(value)).toBe(want);
   });
 });

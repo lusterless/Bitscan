@@ -15,7 +15,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -488,7 +488,10 @@ def test_documented_400_matches_what_the_app_returns() -> None:
     from bitscan_manager.auth.principal import Principal
     from bitscan_manager.auth.tokens import TokenKind
 
-    app = create_app(runtime())
+    # A catalog present, as in `serve` (Runtime.catalog is None only in tests
+    # and the OpenAPI export, where the import route answers 503 first); the
+    # bad body never reaches it.
+    app = create_app(replace(runtime(), catalog=object()))  # type: ignore[arg-type]
     signed_in = Principal(
         user_id=1,
         username="u",

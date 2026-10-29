@@ -42,7 +42,9 @@ EXPECTED_HEADERS = {
 SPEC_CLASS_CAPS = {
     "json": MIB,
     "result_batch": 3 * MIB // 2,
-    "bit": 5 * MIB,
+    # #99 (a) (TASK-162): the body may add a 64 KiB multipart envelope; the
+    # file part itself stays at 5 MiB (checked by the route, TS §6.3 L1138)
+    "bit": 5 * MIB + 64 * 1024,
     "inventory": 10 * MIB,
 }
 OTEL_ENV_KEYS = (
@@ -402,7 +404,7 @@ def test_registry_accepts_each_class_at_its_value(
     [
         [("/t/echo", "json", MIB + 1)],
         [("/t/echo", "result_batch", 3 * MIB // 2 + 1)],
-        [("/t/echo", "bit", 5 * MIB + 1)],
+        [("/t/echo", "bit", 5 * MIB + 64 * 1024 + 1)],
         [("/t/echo", "inventory", 10 * MIB + 1)],
         [("/t/echo", "inventory", 64 * MIB)],
         [("/t/echo", "json", 0)],

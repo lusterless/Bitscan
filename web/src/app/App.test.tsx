@@ -4,6 +4,9 @@
 // enrolment and logout; every user is offered TOTP at first sign-in), L1080
 // (bsu_ in memory), L1093-L1127 (route roles); #85 (a), (c); plan TASK-116
 // navigation table.
+// TASK-173 TEST (TP-M7-29): CHK-M5-280 updated for REQ-183 (3) (Profiles for
+// every role; Upload, Import history and Rebuild for admins, TS §6.2
+// L1100-L1107), plus CHK-M7-390 (shell part), CHK-M7-392, CHK-M7-393.
 import {
   answer,
   bsu,
@@ -75,6 +78,59 @@ const DETAIL = {
     added: [{ name: H, version: "1", architecture: "all", status: H }],
     removed: [],
   },
+};
+
+const PID = "7";
+const POLICY = {
+  policy_id: 7,
+  policy_name: H,
+  policy_description: IMG,
+  policy_status: "enabled",
+  file_status: "enabled",
+  status_overridden: true,
+  family_id: 1,
+  family_name: SCRIPT,
+  format_version: "1.0",
+  version: 1,
+  source_file: H,
+  plugin_count: 1,
+  imported_at: "2026-10-28T00:00:00Z",
+  updated_at: "2026-10-28T00:00:00Z",
+};
+const POLICY_DETAIL = {
+  ...POLICY,
+  deleted_at: null,
+  plugins: [
+    {
+      plugin_uuid: ID,
+      sort_order: 0,
+      display_name: SCRIPT + " - " + H,
+      plugin_name: H,
+      control_ref: IMG,
+      plugin_description: H,
+      execute: H,
+      execute_sha256: "a".repeat(64),
+      operator: IMG,
+      expected_result: H,
+      timeout_s: 30,
+      state: "active",
+      updated_at: "2026-10-28T00:00:00Z",
+    },
+  ],
+};
+const IMPORT_ROW = {
+  import_id: 1,
+  file_name: H,
+  file_sha256: "b".repeat(64),
+  policy_version: null,
+  mode: "manual",
+  outcome: "rejected",
+  plugins_added: 0,
+  plugins_updated: 0,
+  plugins_retired: 0,
+  errors: [{ line: 1, element: H, code: IMG, message: H }],
+  imported_by: 1,
+  imported_at: "2026-10-28T00:00:00Z",
 };
 
 /** One fake manager for every route the shell can reach. */
@@ -158,6 +214,52 @@ function manager(
             revoked_at: null,
           },
         ]);
+      case "GET /api/v1/policies":
+        return page([POLICY]);
+      case "GET /api/v1/policies/" + PID:
+        return json(200, POLICY_DETAIL);
+      case "PATCH /api/v1/policies/" + PID:
+        return json(200, POLICY);
+      case "GET /api/v1/imports":
+        return page([IMPORT_ROW]);
+      case "POST /api/v1/policies/import":
+        return json(200, {
+          import_id: 2,
+          outcome: "rejected",
+          policy_id: null,
+          policy_name: null,
+          policy_version: null,
+          plugins_added: 0,
+          plugins_updated: 0,
+          plugins_retired: 0,
+          errors: [{ line: 1, element: H, code: "BIT001", message: H }],
+        });
+      case "POST /api/v1/policies/rebuild":
+        return json(202, { task_id: ID });
+      case "GET /api/v1/tasks/" + ID:
+        return json(200, {
+          task_id: ID,
+          kind: "rebuild",
+          state: "succeeded",
+          requested_by: 1,
+          result: {
+            files: [
+              {
+                source_file: H,
+                import_id: 1,
+                outcome: "success",
+                policy_id: 7,
+                policy_version: 1,
+              },
+            ],
+            deleted_policy_ids: [],
+            plugins_retired: 0,
+            removed_leftovers: [],
+            not_imported: [],
+          },
+          started_at: "2026-10-28T00:00:00Z",
+          finished_at: "2026-10-28T00:00:01Z",
+        });
       case "GET /api/v1/packages/search":
         return queryOf(call).group_by === "package"
           ? page([
@@ -252,7 +354,12 @@ function requested(): string[] {
 // ------------------------------------------------------------ CHK-M5-280
 
 describe("CHK-M5-280 navigation per role", () => {
-  const common = ["Hosts #/hosts", "Package search #/packages"];
+  // REQ-183 (3): Profiles for every role; the catalog admin screens for admins.
+  const common = [
+    "Hosts #/hosts",
+    "Package search #/packages",
+    "Profiles #/profiles",
+  ];
   const account = ["TOTP #/account/totp", "Password #/account/password"];
   it.each([
     ["viewer", [...common, ...account]],
@@ -261,6 +368,9 @@ describe("CHK-M5-280 navigation per role", () => {
       "admin",
       [
         ...common,
+        "Upload policy #/catalog/upload",
+        "Import history #/catalog/imports",
+        "Rebuild catalog #/catalog/rebuild",
         "Enrolment requests #/enrolment/requests",
         "Enrolment tokens #/enrolment/tokens",
         ...account,
@@ -568,6 +678,229 @@ describe("CHK-M5-287 hostile text on every screen", () => {
       ).toBeTruthy();
     }
     expect(container.textContent).toContain(H);
+    expect(container.querySelectorAll("script, img")).toHaveLength(0);
+    expect(document.querySelectorAll("script, img")).toHaveLength(0);
+  });
+});
+
+// ------------------------------------------------------------ CHK-M7-390
+
+const M7_ADMIN = ["#/catalog/upload", "#/catalog/imports", "#/catalog/rebuild"];
+const M7_ADMIN_PATHS = [
+  "/api/v1/policies/import",
+  "/api/v1/imports",
+  "/api/v1/policies/rebuild",
+  "/api/v1/tasks/",
+];
+
+/** jsdom has no DataTransfer, so a FileList-shaped object stands in. */
+function fileList(file: File): FileList {
+  return {
+    0: file,
+    length: 1,
+    item: (i: number) => (i === 0 ? file : null),
+  } as unknown as FileList;
+}
+
+describe("CHK-M7-390 the M7 routes per role (REQ-183 (3))", () => {
+  it.each(["viewer", "operator"])(
+    "%s on the catalog admin hashes: not available, no request",
+    async (role) => {
+      manager(role, true);
+      render(<App />);
+      await signIn("123456");
+      for (const hash of M7_ADMIN) {
+        await go(hash);
+        expect(
+          screen.getByText("This page is not available for your role."),
+        ).toBeTruthy();
+        for (const h of [
+          "Upload policy",
+          "Import history",
+          "Rebuild catalog",
+        ]) {
+          expect(screen.queryByRole("heading", { name: h })).toBeNull();
+        }
+        expect(screen.queryByRole("button", { name: "Rebuild" })).toBeNull();
+        expect(document.querySelector("input[type=file]")).toBeNull();
+      }
+      expect(
+        requested().filter((r) => M7_ADMIN_PATHS.some((p) => r.includes(p))),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(["viewer", "operator"])(
+    "%s opens Profiles and a profile: plain views, no admin control, no mutation",
+    async (role) => {
+      manager(role, true);
+      render(<App />);
+      await signIn("123456");
+      await go("#/profiles");
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Profiles" }),
+      ).toBeTruthy();
+      await go("#/profiles/" + PID);
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(H);
+      const main = document.querySelector("main") as HTMLElement;
+      for (const b of ["Enable", "Disable", "Clear override", "Delete"]) {
+        expect(within(main).queryByRole("button", { name: b })).toBeNull();
+      }
+      expect(requested()).toContain("GET /api/v1/policies");
+      expect(requested()).toContain("GET /api/v1/policies/" + PID);
+      expect(
+        calls.filter((c) => c.method === "PATCH" || c.method === "DELETE"),
+      ).toEqual([]);
+      // the detail page marks its list's entry
+      const profiles = within(
+        screen.getByRole("navigation", { name: "Main" }),
+      ).getByRole("link", { name: "Profiles" });
+      expect(profiles.getAttribute("aria-current")).toBe("page");
+      expect(document.body.textContent).toContain("Profile detail");
+    },
+  );
+
+  it("an admin gets the three catalog screens and the profile actions", async () => {
+    manager("admin", true);
+    render(<App />);
+    await signIn("123456");
+    await go("#/catalog/upload");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Upload policy" }),
+    ).toBeTruthy();
+    await go("#/catalog/imports");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Import history" }),
+    ).toBeTruthy();
+    expect(requested()).toContain("GET /api/v1/imports");
+    await go("#/catalog/rebuild");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Rebuild catalog" }),
+    ).toBeTruthy();
+    // a screen sends nothing until the admin acts
+    expect(requested()).not.toContain("POST /api/v1/policies/rebuild");
+    await go("#/profiles/" + PID);
+    for (const b of ["Disable", "Clear override", "Delete"]) {
+      expect(screen.getByRole("button", { name: b })).toBeTruthy();
+    }
+  });
+
+  it("each M7 nav entry links to its hash and is marked current there", async () => {
+    manager("admin", true);
+    render(<App />);
+    await signIn("123456");
+    for (const [label, hash, heading] of [
+      ["Profiles", "#/profiles", "Profiles"],
+      ["Upload policy", "#/catalog/upload", "Upload policy"],
+      ["Import history", "#/catalog/imports", "Import history"],
+      ["Rebuild catalog", "#/catalog/rebuild", "Rebuild catalog"],
+    ] as const) {
+      const link = within(
+        screen.getByRole("navigation", { name: "Main" }),
+      ).getByRole("link", { name: label });
+      expect(link.getAttribute("href")).toBe(hash);
+      await go(hash);
+      expect(
+        screen.getByRole("heading", { level: 1, name: heading }),
+      ).toBeTruthy();
+      expect(
+        within(screen.getByRole("navigation", { name: "Main" }))
+          .getByRole("link", { name: label })
+          .getAttribute("aria-current"),
+      ).toBe("page");
+    }
+  });
+});
+
+// ------------------------------------------------------------ CHK-M7-393
+
+describe("CHK-M7-393 the token on the M7 screens: never in a URL or storage", () => {
+  it("profiles, a status change, an upload, the history and a rebuild", async () => {
+    manager("admin", true);
+    const { container } = render(<App />);
+    await signIn("123456");
+    await go("#/profiles");
+    await go("#/profiles/" + PID);
+    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+    await settle();
+    await go("#/catalog/upload");
+    fireEvent.change(screen.getByLabelText(".bit file (at most 5 MiB)"), {
+      target: {
+        files: fileList(new File(["<Policy/>"], "a.bit", { type: "text/xml" })),
+      },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Upload policy" }));
+    await settle();
+    await go("#/catalog/imports");
+    await go("#/catalog/rebuild");
+    fireEvent.click(screen.getByRole("button", { name: "Rebuild" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await settle();
+    expect(screen.getByRole("status").textContent).toBe("Succeeded.");
+    for (const r of [
+      "PATCH /api/v1/policies/" + PID,
+      "POST /api/v1/policies/import",
+      "GET /api/v1/imports",
+      "POST /api/v1/policies/rebuild",
+      "GET /api/v1/tasks/" + ID,
+    ]) {
+      expect(requested()).toContain(r);
+    }
+    const sent = calls.filter((c) => c.path !== "/api/v1/auth/login");
+    expect(sent.every((c) => c.authorization === "Bearer " + TOKEN)).toBe(true);
+    expect(sent.every((c) => !c.url.includes(TOKEN))).toBe(true);
+    expect(sent.every((c) => !c.body.includes(TOKEN))).toBe(true);
+    expect(container.innerHTML).not.toContain(TOKEN);
+    expect(window.location.href).not.toContain(TOKEN);
+    // The afterEach checks storage, cookie, IndexedDB, console and history.
+  });
+});
+
+// ------------------------------------------------------------ CHK-M7-392
+
+describe("CHK-M7-392 hostile text on the M7 screens, inside the shell", () => {
+  it.each([
+    ["#/profiles", "Profiles"],
+    ["#/profiles/" + PID, null],
+    ["#/catalog/imports", "Import history"],
+  ])("%s renders the hostile strings literally", async (hash, heading) => {
+    manager("admin", true);
+    const { container } = render(<App />);
+    await signIn("123456");
+    await go(hash);
+    if (heading !== null) {
+      expect(
+        screen.getByRole("heading", { level: 1, name: heading }),
+      ).toBeTruthy();
+    } else {
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(H);
+      expect(container.textContent).toContain(SCRIPT + " - " + H);
+    }
+    expect(container.textContent).toContain(H);
+    expect(container.querySelectorAll("script, img")).toHaveLength(0);
+    expect(document.querySelectorAll("script, img")).toHaveLength(0);
+  });
+
+  it("an upload's findings and a rebuild's files render literally", async () => {
+    manager("admin", true);
+    const { container } = render(<App />);
+    await signIn("123456");
+    await go("#/catalog/upload");
+    fireEvent.change(screen.getByLabelText(".bit file (at most 5 MiB)"), {
+      target: { files: fileList(new File(["x"], H + ".bit")) },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Upload policy" }));
+    await settle();
+    expect(
+      screen.getByRole("region", { name: "Import outcome" }).textContent,
+    ).toContain(H);
+    await go("#/catalog/rebuild");
+    fireEvent.click(screen.getByRole("button", { name: "Rebuild" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await settle();
+    expect(
+      screen.getByRole("region", { name: "Rebuild task" }).textContent,
+    ).toContain(H);
     expect(container.querySelectorAll("script, img")).toHaveLength(0);
     expect(document.querySelectorAll("script, img")).toHaveLength(0);
   });
