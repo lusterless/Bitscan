@@ -50,3 +50,15 @@ No other file changed. It uses `catalog.policy_by_id_for_update` (TASK-148), `ca
 - "A fault before commit leaves the row and the file": make `emit` or `PgAuditRepo.insert` raise, or plant a failing `on_commit`.
 - "The core called inside another transaction rolls back with it": call `delete_in_tx` inside a transaction that then raises.
 - `PolicyNotFound` and `PolicyAlreadyDeleted` are plain exceptions with no message.
+
+## Revision 1 (impl-manager-m7, taking over delete.py; decisions 2026-10-28, "#102 (c) wiring")
+
+`remove_after_commit` now records each removal in `OWN_CHANGES` (`services/importer/own_changes.py`, TASK-159), so the watcher drops the manager's own deletions (#102 (c)). The record is written **just before** the filesystem call, under the caller's catalog lock. Only `delete.py` changed: 1 import and 1 line.
+- Each path that passes the existing `uploaded/policy-<n>.bit` check gets `OWN_CHANGES.removed(rel)` immediately before `unlink(missing_ok=True)`. A refused path is still skipped with its log line, and gets no record.
+- Every caller gets the record with no change on its side: the delete route, the reconcile's deletion pass (TASK-156), the rebuild (TASK-157) and `import_one`'s move removals (TASK-154).
+- Behaviour is otherwise unchanged. TASK-152 had the user's second approval, so it goes back to the user after re-test and re-review.
+- **Gates:** `ruff check manager` and `ruff format --check manager` pass (295 files), and the CI mypy command gives Success (295 files).
+- **For the tester:**
+  - after `delete_policy` of an uploaded policy, `OWN_CHANGES.drop_removal("uploaded/policy-<id>.bit")` is True once, then False;
+  - a server-folder path passed to `remove_after_commit` is refused and gets no record.
+  - Plant: drop the record line → that row goes red.

@@ -25,3 +25,7 @@ Tester: tester-m7, 2026-10-27. REQ-167 (1), (2), (5), (6), REQ-161 (2); TS §4.3
 | CHK-M7-356 (152 half) | APP | W | plant: delete without the catalog lock | PASS (red) | 1 failed (did not wait) | 2026-10-27 |
 | CHK-M7-152-p | APP | W | plant: path check removed (relative path joined) | PASS (red) | 1 failed | 2026-10-27 |
 | CHK-M7-365 (152 half) | APP | W | hard DELETE / skipped job cancel | covered | planted at the repository (TASK-150: red); the route-path rows above see the cancel and the kept row | 2026-10-27 |
+
+## Revision 1 (2026-10-28): `OWN_CHANGES.removed(rel)` before each unlink in `remove_after_commit`
+
+On a fresh copy of the tree with r1 (`-n 0`, with the 155 r2, 156 r2 and 159 files): `tests/test_policy_delete_pg.py` **11/11 passed** (95/95 for the four files). The watcher row "an API delete adds nothing beyond its own `policy.delete`" in `work/reports/TASK-159-test.md` passes. The hook can't be seen in behaviour, because the deleted policy's path then belongs to no live policy, so an unhooked delete event does nothing; it is defence in depth. Verdict: **PASS**.

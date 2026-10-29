@@ -309,7 +309,21 @@ Owner: tester (`tester-m7`). Written 2026-10-27 from `work/tasks.md` "M7 complia
 | CHK-M7-302 | CODE | The 24.04 sample's first `Plugin` is byte-identical to the SR §1.1 plugin; each `PolicyDescription` ends with the #111 note; `PolicyStatus` `enabled` | W |
 | CHK-M7-303 | CODE | Per-plugin script-rule rows (read-only, prints the value, CDATA, `findmnt --task 1` or `/proc/1/mountinfo` for mounts, no `xargs`/`find -exec`, no uid-0 commands, no user-writable exec, no redaction-hidden comparisons) | L |
 | CHK-M7-305 | APP | README walk (REQ-184) against a WSL manager | W |
+| CHK-M7-306 | CODE | README "Policies": every route, method, field list, enum, status, `curl -F file=@` and `bits rebuild` statement matches `manager/openapi.json` and `bm/cli/bits.py` | L |
+| CHK-M7-307 | CODE | README links resolve (`deploy/tests/check_md_links.py README.md`) | L |
+| CHK-M7-308 | CODE | README: no real token or secret, task, requirement, check or process id, team role or `work/` path | L |
+| CHK-M7-309 | CODE | README covers each REQ-184 item, including the "don't hard-link files into the bits folder" line and rebuild from the UI | L |
 | CHK-M7-310 | APP | Web batch (REQ-181 to REQ-183) | L |
+| CHK-M7-311 | CODE | TASK-168: `policy_managed_on_server` maps at any status; the start-up 503 maps only with 503 + `about:blank` + the exact #102 (d) detail + a numeric Retry-After; each single change falls through; unknown types stay generic (`w/src/app/problems.test.ts`) | L |
+| CHK-M7-312 | CODE | TASK-169 Profiles list: fixture columns, status filter (All sends no `status`), filter resets paging, 121 rows each once (REQ-181 (4)), hostile text (`w/src/screens/Profiles.test.tsx`) | L |
+| CHK-M7-313 | CODE | TASK-170 Profile detail: `<family> - <plugin>` in `sort_order`, every plugin field, Disabled and Deleted states, the REQ-168 bodies exactly, no action for viewer, operator or a deleted policy, delete confirm + one DELETE, 409 server folder, 403 TOTP prompt with no token field, hostile text (`w/src/screens/ProfileDetail.test.tsx`) | L |
+| CHK-M7-314 | CODE | TASK-171 Upload: one `FormData` part `file` with the chosen file's name and bytes, multipart type, success and rejected outcomes with every finding, 413, 409, start-up 503, hostile text (`w/src/screens/PolicyUpload.test.tsx`) | L |
+| CHK-M7-388 | CODE | TASK-172 Import history: columns, server order kept, findings table, 120 rows each once (REQ-182 (4)), hostile text (`w/src/screens/Imports.test.tsx`) | L |
+| CHK-M7-389 | CODE | TASK-172 Rebuild: confirm then one POST; polling with fake timers stops at `succeeded` or `failed`, on a refusal and on unmount; files and result fields; 403 TOTP prompt with no token field or retry; hostile text (`w/src/screens/Rebuild.test.tsx`) | L |
+| CHK-M7-390 | CODE | TASK-173: new hashes parse and print back, id boundaries; nav per role (CHK-M5-280 updated); viewer and operator on the catalog admin hashes get "not available" and send no request; no admin control for them on a profile (`w/src/app/{router,App}.test.ts(x)`) | L |
+| CHK-M7-391 | CODE | No product source uses an HTML sink, storage, or a hand-written HTTP call (`w/src/app/sources.test.ts`) | L |
+| CHK-M7-392 | CODE | Hostile text on every M7 screen inside the shell (`w/src/app/App.test.tsx`) | L |
+| CHK-M7-393 | CODE | The token is never in a URL, a body or storage on the M7 screens (`w/src/app/App.test.tsx` with `watchSecrets`) | L |
 
 ## Gate rows
 
@@ -343,6 +357,16 @@ CHK-M7-320 to -371 exactly as in `work/tasks.md` "M7 mutation table" (each red i
 | CHK-M7-385 | A retired code (BIT006) added to the table, or BIT101 made Reject | CHK-M7-010 | TASK-140 |
 | CHK-M7-386 | A limit off by one (`PolicyName` 129) | CHK-M7-011 | TASK-140 |
 | CHK-M7-387 | The lexer drops `$(` recursion (a substitution's script not lexed) | CHK-M7-100, -116 | TASK-145 (plan TASK-145) |
+| CHK-M7-394 | `Findings` writes the finding message as HTML through `Object.assign(el, {innerHTML})` (a form the lint selectors miss) | CHK-M7-314, -388, -391, -392 | TASK-171, 172 |
+| CHK-M7-395 | The rebuild screen writes the session token (read off a sent request) to `sessionStorage` | CHK-M7-393, -391, G12 | TASK-172 |
+| CHK-M7-396 | The profile detail puts the session token in the page URL (`history.replaceState`) | CHK-M7-393 | TASK-170 |
+| CHK-M7-397 | The import history sends the session token in its query string | CHK-M7-393 | TASK-172 |
+| CHK-M7-398 | The profile detail offers the admin actions to operators (`role !== "viewer"`) | CHK-M7-313, -390 | TASK-170 |
+| CHK-M7-399 | The profile detail offers the admin actions to every role | CHK-M7-313, -390 | TASK-170 |
+| CHK-M7-400 | `ROUTE_ROLES.rebuild` opened to every role | CHK-M5-280, CHK-M7-390 | TASK-173 |
+| CHK-M7-401 | `RouteView` mounts the import history without the role check | CHK-M7-390 | TASK-173 |
+
+Web plants (CHK-M7-370, -371a/b, -394 to -401) are made in a throwaway copy of `web/` outside the tree (`node_modules` by junction), one at a time, and each file is restored before the next; the copy then runs 516/516 again.
 
 The design plans `work/plans/TASK-141.md`, `TASK-145.md`, `TASK-151.md`, `TASK-154.md` and `TASK-162.md` (PD-36) each name the plants of their task and the plan rows they must turn red: TASK-141 → 320, 321, 322, 323, 347; TASK-145 → 332, 387; TASK-151 → 335, 338, 369; TASK-154 → 333, 339, 340, 349, 350, 369; TASK-162 → 324, 345, 358. Each task's TEST also runs every row of its plan's own test table, mapped to the CHK ids above when the task is handed off.
 
