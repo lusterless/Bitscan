@@ -41,11 +41,14 @@ function SignOutButton() {
   );
 }
 
+/** A detail page (host, profile) marks its list's entry. */
 function isActive(entry: Route, route: Route): boolean {
-  return (
-    entry.name === route.name ||
-    (entry.name === "hosts" && route.name === "host")
-  );
+  return entryFor(route)?.route.name === entry.name;
+}
+
+function crumbLabel(route: Route, label: string): string {
+  if (route.name === "host") return "Host detail";
+  return route.name === "profile" ? "Profile detail" : label;
 }
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -259,7 +262,7 @@ function Shell({
                 <span className="crumb-group">{entry.group}</span>
                 <Icon name="chevron" />
                 <span className="crumb-page">
-                  {route.name === "host" ? "Host detail" : entry.label}
+                  {crumbLabel(route, entry.label)}
                 </span>
               </>
             )}

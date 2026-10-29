@@ -1,14 +1,15 @@
-"""GET /api/v1/policies, GET /policies/{id} (viewer) and PATCH /policies/{id}
-(admin, session or API token) (TS §6.2 L1100-L1102, §4.3 L546-L548; REQ-168,
-REQ-169; #9, #98). Lists are {items, next_cursor}. Stored text is returned as
-stored, as JSON strings. No route here edits plugins or commands; every role
-sees `execute` (catalog content, not host output).
+"""GET /api/v1/policies, GET /policies/{id} (viewer), PATCH /policies/{id}
+(admin, session or API token) and DELETE /policies/{id} (admin, TOTP session,
+sink gate) (TS §6.2 L1100-L1102, L1104, L1084, §4.3 L546-L550; REQ-168,
+REQ-169, REQ-171; #1, #9, #98). Lists are {items, next_cursor}. Stored text
+is returned as stored, as JSON strings. No route here edits plugins or
+commands; every role sees `execute` (catalog content, not host output).
 """
 
 from typing import Annotated, Final, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 from pydantic import BaseModel, ConfigDict, StrictBool
 
 from bitscan_manager.api.pagination import (
@@ -18,18 +19,30 @@ from bitscan_manager.api.pagination import (
     page_of,
     page_params,
 )
-from bitscan_manager.api.problems import Problem
+from bitscan_manager.api.problems import ABOUT_BLANK, Problem
 from bitscan_manager.api.timestamps import UtcDatetime
 from bitscan_manager.api.user import problem_responses
-from bitscan_manager.auth.dependencies import require_role
+from bitscan_manager.auth.dependencies import require_role, require_totp_session
 from bitscan_manager.auth.principal import Principal
 from bitscan_manager.repositories.catalog_admin import ProfileItem
 from bitscan_manager.runtime import Runtime, get_runtime
 from bitscan_manager.services.importer import profiles as service
+from bitscan_manager.services.importer.delete import (
+    PolicyAlreadyDeleted as DeleteAlreadyDeleted,
+)
+from bitscan_manager.services.importer.delete import PolicyNotFound as DeleteNotFound
+from bitscan_manager.services.importer.service import (
+    RETRY_AFTER_S,
+    STARTING_DETAIL,
+    CatalogStarting,
+)
+from bitscan_manager.services.importer.store import PolicyManagedOnServer
 
 router = APIRouter(prefix="/policies", tags=["policies"])
 VIEWER = Annotated[Principal, Depends(require_role("viewer"))]
 ADMIN = Annotated[Principal, Depends(require_role("admin"))]
+# A sensitive action (#1): admin, TOTP-verified session, the sink gate.
+TOTP_ADMIN = Annotated[Principal, Depends(require_totp_session())]
 RUNTIME = Annotated[Runtime, Depends(get_runtime)]
 PAGE = Annotated[PageParams, Depends(page_params)]
 # Digits only, so "+1", "1.0" and "1_0" are 400 (REQ-169 (3)).
@@ -39,6 +52,7 @@ SCOPE: Final = "policies"
 _BIGINT_MAX: Final = 2**63 - 1
 _NAME_MAX: Final = 128  # policy.policy_name VARCHAR(128)
 PolicyStatus = Literal["enabled", "disabled"]
+_MANAGED: Final = "This policy is managed in the server folder; change its file there."
 
 
 class PolicyItem(BaseModel):
@@ -197,3 +211,32 @@ def patch_policy(
     if failure is not None:
         raise failure
     return _item(row)
+
+
+@router.delete(
+    "/{id}", status_code=204, responses=problem_responses((*_BASE, 404, 409))
+)
+def delete_policy(id: POLICY_ID, principal: TOTP_ADMIN, runtime: RUNTIME) -> Response:
+    """Soft-delete a policy (TS §4.3 L550, REQ-167) through the catalog
+    service, under the catalog lock; 204. #98 (e): unknown 404, already
+    deleted 409 `conflict`, server folder 409 `policy_managed_on_server`.
+    Before the catalog start-up ends, 503 with Retry-After (#102 (d))."""
+    policy_id = _policy_id(id)
+    catalog = runtime.catalog
+    if catalog is None:
+        raise Problem(503, ABOUT_BLANK, "The service is not ready.")
+    failure: Problem | None = None
+    try:
+        catalog.delete(policy_id, f"user:{principal.user_id}")
+    except CatalogStarting:
+        retry = {"Retry-After": str(RETRY_AFTER_S)}
+        failure = Problem(503, ABOUT_BLANK, STARTING_DETAIL, retry)
+    except DeleteNotFound:
+        failure = _not_found()
+    except DeleteAlreadyDeleted:
+        failure = Problem(409, "conflict", "The policy is deleted.")
+    except PolicyManagedOnServer:
+        failure = Problem(409, "policy_managed_on_server", _MANAGED)
+    if failure is not None:
+        raise failure
+    return Response(status_code=204)

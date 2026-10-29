@@ -66,6 +66,22 @@ function waitText(seconds: number | null): string {
     : "Too many requests. Wait " + String(seconds) + " seconds.";
 }
 
+const CATALOG_STARTING = "The catalog is starting; retry shortly.";
+
+/**
+ * #102 (d): until the catalog start-up ends, upload, delete and rebuild answer
+ * 503 `about:blank` with this exact detail and a numeric Retry-After. Only
+ * that whole match counts; the shown text is still the fixed constant.
+ */
+function isCatalogStarting(problem: ProblemInfo): boolean {
+  return (
+    problem.status === 503 &&
+    problem.type === "about:blank" &&
+    problem.detail === CATALOG_STARTING &&
+    problem.retryAfterS !== null
+  );
+}
+
 /** REQ-126: fixed messages. Screen-specific texts (409, 404) stay in the screens. */
 export function messageFor(problem: ProblemInfo): ProblemMessage {
   switch (problem.type) {
@@ -85,6 +101,12 @@ export function messageFor(problem: ProblemInfo): ProblemMessage {
       return { text: "Your role does not allow this.", action: null };
     case "totp_enrolment_required":
       return { text: "Set up TOTP to continue.", action: "totp-enrol" };
+    case "policy_managed_on_server":
+      // TS §4.3 L550, #98 (e): server-folder policies change on disk only.
+      return {
+        text: "This policy is managed in the server folder. Change or remove its file on the server.",
+        action: null,
+      };
   }
   switch (problem.status) {
     case 401:
@@ -93,7 +115,9 @@ export function messageFor(problem: ProblemInfo): ProblemMessage {
       return { text: waitText(problem.retryAfterS), action: "wait" };
     case 503:
       return {
-        text: "The manager is unavailable. Try again later.",
+        text: isCatalogStarting(problem)
+          ? CATALOG_STARTING
+          : "The manager is unavailable. Try again later.",
         action: null,
       };
     default:

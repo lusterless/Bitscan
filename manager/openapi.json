@@ -1046,6 +1046,229 @@
         "title": "HostGroupItem",
         "type": "object"
       },
+      "ImportFinding": {
+        "description": "One `bit_import.errors` item (SR §3.5), warnings included (#110).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "element": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Element"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "line",
+          "element",
+          "code",
+          "message"
+        ],
+        "title": "ImportFinding",
+        "type": "object"
+      },
+      "ImportItem": {
+        "description": "#98 (h): every `bit_import` column, in table order.",
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ImportFinding"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "file_sha256": {
+            "title": "File Sha256",
+            "type": "string"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "integer"
+          },
+          "imported_at": {
+            "format": "date-time",
+            "title": "Imported At",
+            "type": "string"
+          },
+          "imported_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imported By"
+          },
+          "mode": {
+            "enum": [
+              "auto",
+              "manual",
+              "rebuild"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "success",
+              "skipped",
+              "rejected"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "plugins_added": {
+            "title": "Plugins Added",
+            "type": "integer"
+          },
+          "plugins_retired": {
+            "title": "Plugins Retired",
+            "type": "integer"
+          },
+          "plugins_updated": {
+            "title": "Plugins Updated",
+            "type": "integer"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          }
+        },
+        "required": [
+          "import_id",
+          "file_name",
+          "file_sha256",
+          "policy_version",
+          "mode",
+          "outcome",
+          "plugins_added",
+          "plugins_updated",
+          "plugins_retired",
+          "errors",
+          "imported_by",
+          "imported_at"
+        ],
+        "title": "ImportItem",
+        "type": "object"
+      },
+      "ImportResult": {
+        "additionalProperties": false,
+        "description": "#98 (d): both outcomes answer 200; the policy fields are null when\nrejected; `errors` as stored, warnings included (#110).",
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ImportFinding"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "success",
+              "rejected"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "plugins_added": {
+            "title": "Plugins Added",
+            "type": "integer"
+          },
+          "plugins_retired": {
+            "title": "Plugins Retired",
+            "type": "integer"
+          },
+          "plugins_updated": {
+            "title": "Plugins Updated",
+            "type": "integer"
+          },
+          "policy_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Id"
+          },
+          "policy_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Name"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          }
+        },
+        "required": [
+          "import_id",
+          "outcome",
+          "policy_id",
+          "policy_name",
+          "policy_version",
+          "plugins_added",
+          "plugins_updated",
+          "plugins_retired",
+          "errors"
+        ],
+        "title": "ImportResult",
+        "type": "object"
+      },
       "InventoryBody": {
         "additionalProperties": false,
         "properties": {
@@ -1823,6 +2046,34 @@
         "title": "Page[HostGroupItem]",
         "type": "object"
       },
+      "Page_ImportItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImportItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[ImportItem]",
+        "type": "object"
+      },
       "Page_PackageGroupItem_": {
         "properties": {
           "items": {
@@ -2474,6 +2725,20 @@
           }
         ]
       },
+      "RebuildStarted": {
+        "properties": {
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "RebuildStarted",
+        "type": "object"
+      },
       "RequestItem": {
         "description": "Never the new token or its hash (REQ-063 (5)).",
         "properties": {
@@ -2975,6 +3240,202 @@
           "tags"
         ],
         "title": "TagsItem",
+        "type": "object"
+      },
+      "TaskFailure": {
+        "description": "A `failed` task: the rebuild errored, or start-up found it running.",
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TaskFailure",
+        "type": "object"
+      },
+      "TaskFile": {
+        "description": "One re-imported file; its findings are in `GET /imports`.",
+        "properties": {
+          "import_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Id"
+          },
+          "outcome": {
+            "enum": [
+              "success",
+              "rejected"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "policy_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Id"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          },
+          "source_file": {
+            "title": "Source File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_file",
+          "import_id",
+          "outcome",
+          "policy_id",
+          "policy_version"
+        ],
+        "title": "TaskFile",
+        "type": "object"
+      },
+      "TaskItem": {
+        "description": "#98 (g), in this field order.",
+        "properties": {
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "kind": {
+            "const": "rebuild",
+            "title": "Kind",
+            "type": "string"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskResult"
+              },
+              {
+                "$ref": "#/components/schemas/TaskFailure"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "requested_by",
+          "result",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "TaskItem",
+        "type": "object"
+      },
+      "TaskResult": {
+        "description": "#98 (g) for a `succeeded` rebuild (rejected files included, #20).",
+        "properties": {
+          "deleted_policy_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Deleted Policy Ids",
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/TaskFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "not_imported": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Imported",
+            "type": "array"
+          },
+          "plugins_retired": {
+            "title": "Plugins Retired",
+            "type": "integer"
+          },
+          "removed_leftovers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Leftovers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files",
+          "deleted_policy_ids",
+          "plugins_retired",
+          "removed_leftovers",
+          "not_imported"
+        ],
+        "title": "TaskResult",
         "type": "object"
       },
       "TokenItem": {
@@ -5580,6 +6041,108 @@
         ]
       }
     },
+    "/api/v1/imports": {
+      "get": {
+        "operationId": "list_imports_api_v1_imports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ImportItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Imports",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/api/v1/metrics": {
       "get": {
         "operationId": "metrics_api_v1_metrics_get",
@@ -6336,7 +6899,266 @@
         ]
       }
     },
+    "/api/v1/policies/import": {
+      "post": {
+        "description": "Upload one `.bit` file; 200 for `success` and `rejected` (#98 (d)).",
+        "operationId": "import_policy_api_v1_policies_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Import Policy",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/api/v1/policies/rebuild": {
+      "post": {
+        "description": "Start a rebuild of both policy folders (TS §4.2); poll `GET /tasks/{id}`.\nBefore the catalog start-up ends, 503 with Retry-After (#102 (d)).",
+        "operationId": "start_rebuild_api_v1_policies_rebuild_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebuildStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Start Rebuild",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
     "/api/v1/policies/{id}": {
+      "delete": {
+        "description": "Soft-delete a policy (TS §4.3 L550, REQ-167) through the catalog\nservice, under the catalog lock; 204. #98 (e): unknown 404, already\ndeleted 409 `conflict`, server folder 409 `policy_managed_on_server`.\nBefore the catalog start-up ends, 503 with Retry-After (#102 (d)).",
+        "operationId": "delete_policy_api_v1_policies__id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{1,20}$",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Delete Policy",
+        "tags": [
+          "policies"
+        ]
+      },
       "get": {
         "operationId": "get_policy_api_v1_policies__id__get",
         "parameters": [
@@ -6678,6 +7500,100 @@
         "summary": "Patch Settings",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/v1/tasks/{id}": {
+      "get": {
+        "description": "The `task` row (#98 (g)); 404 for an unknown id.",
+        "operationId": "get_task_api_v1_tasks__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Task",
+        "tags": [
+          "policies"
         ]
       }
     },

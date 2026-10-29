@@ -4,12 +4,13 @@ work/plans/TASK-045.md).
 One process: HTTPS only (TLS 1.2+), SIGHUP reloads the certificate on the
 same socket, proxy headers ignored, no uvicorn access log or log config
 (RequestLog and the JSON handler log instead). The lifecycle opens the app
-pool, starts the audit shipper, the failed-check flusher and the scheduler
-(inventory runs and offline_sweep, REQ-080), and on SIGTERM first stops the
-scheduler (waiting for a running job, so none starts after the pool closed),
-then flushes the failed-check counts, stops the shipper (the queue stays on
-disk) and closes the vault client and the pool. BITSCAN_MIGRATE_DSN_FILE is
-never read.
+pool, starts the audit shipper, the failed-check flusher, the scheduler
+(inventory runs and offline_sweep, REQ-080) and the catalog (its start-up
+sequence, then the folder watcher, and the rebuild worker; #102 (d)), and on
+SIGTERM first stops the catalog (a bounded wait), then the scheduler (waiting
+for a running job, so none starts after the pool closed), then flushes the
+failed-check counts, stops the shipper (the queue stays on disk) and closes
+the vault client and the pool. BITSCAN_MIGRATE_DSN_FILE is never read.
 """
 
 import asyncio
@@ -41,6 +42,7 @@ from bitscan_manager.services.audit import append_entry, raise_alert
 from bitscan_manager.services.audit.disk_queue import DiskQueue, QueueError
 from bitscan_manager.services.audit.shipper import DbOutageAudit, PgAuditTail, Shipper
 from bitscan_manager.services.audit.sink_transport import transport_from_url
+from bitscan_manager.services.importer.service import CatalogService
 from bitscan_manager.services.scheduler.runner import SchedulerRunner
 
 log = logging.getLogger(__name__)
@@ -157,6 +159,7 @@ class ServeLifecycle:
         cipher: VaultCipher,
         tls: tuple[ssl.SSLContext, Path, Path],
         scheduler: SchedulerRunner | None = None,
+        catalog: CatalogService | None = None,
     ) -> None:
         self._db, self._shipper, self._flusher, self._cipher = (
             db,
@@ -166,6 +169,7 @@ class ServeLifecycle:
         )
         self._tls = tls
         self._scheduler = scheduler
+        self._catalog = catalog
 
     async def start(self) -> None:
         self._db.open()  # does not wait for the database
@@ -173,6 +177,8 @@ class ServeLifecycle:
         self._flusher.start()
         if self._scheduler is not None:
             self._scheduler.start()
+        if self._catalog is not None:
+            self._catalog.start()  # in the background: /healthz never waits
         if hasattr(signal, "SIGHUP"):
             asyncio.get_running_loop().add_signal_handler(
                 signal.SIGHUP, reload_certificate, *self._tls
@@ -181,6 +187,8 @@ class ServeLifecycle:
     async def stop(self) -> None:
         if hasattr(signal, "SIGHUP"):
             asyncio.get_running_loop().remove_signal_handler(signal.SIGHUP)
+        if self._catalog is not None:
+            self._catalog.stop()  # bounded; before the pool closes
         if self._scheduler is not None:
             self._scheduler.stop()  # before the pool closes (REQ-080 (3))
         self._flusher.stop()
@@ -199,6 +207,7 @@ def build_runtime(config: ServeConfig, tls: ssl.SSLContext, queue_dir: Path) -> 
     limits = RateLimiter(clock)
     flusher = FailedCheckFlusher(limits, db, shipper)
     scheduler = SchedulerRunner(db, clock, shipper.wake)
+    catalog = CatalogService(db, clock, config.bits_dir, wake=shipper.wake)
     lifecycle = ServeLifecycle(
         db,
         shipper,
@@ -206,8 +215,9 @@ def build_runtime(config: ServeConfig, tls: ssl.SSLContext, queue_dir: Path) -> 
         cipher,
         (tls, config.tls_cert_file, config.tls_key_file),
         scheduler,
+        catalog,
     )
-    return Runtime(clock, db, cipher, shipper, limits, lifecycle)
+    return Runtime(clock, db, cipher, shipper, limits, lifecycle, catalog=catalog)
 
 
 class _Server(uvicorn.Server):

@@ -13,6 +13,7 @@ EPILOG = """commands:
   users create-admin <name>      create an admin (no TOTP yet); asks for a password
   users create-api-token <user>  print a new API token once [--name N] [--days D]
   users reset-totp <user>        clear a user's TOTP and end their sessions
+  bits rebuild re-import both policy folders now (catalog lock, task row, alert)
   db migrate   upgrade the database schema to the latest revision
   db maintain  create upcoming scan_result partitions, drop expired ones"""
 
@@ -86,6 +87,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from bitscan_manager.cli.users import users_main
 
         return users_main(args[1:])
+    if args[:1] == ["bits"] and len(args) > 1:
+        from bitscan_manager.cli.bits import bits_main
+
+        return bits_main(args[1:])
     if args == ["serve"]:
         from bitscan_manager.cli.serve import serve_main
 

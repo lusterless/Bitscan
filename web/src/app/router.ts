@@ -5,6 +5,11 @@ export type Route =
   | { readonly name: "hosts" }
   | { readonly name: "host"; readonly agentId: string }
   | { readonly name: "packages" }
+  | { readonly name: "profiles" }
+  | { readonly name: "profile"; readonly policyId: string }
+  | { readonly name: "policy-upload" }
+  | { readonly name: "imports" }
+  | { readonly name: "rebuild" }
   | { readonly name: "enrolment-requests" }
   | { readonly name: "enrolment-tokens" }
   | { readonly name: "totp" }
@@ -14,12 +19,17 @@ export type RouteName = Route["name"];
 
 const HOSTS: Route = Object.freeze({ name: "hosts" });
 const PACKAGES: Route = Object.freeze({ name: "packages" });
+const PROFILES: Route = Object.freeze({ name: "profiles" });
+const POLICY_UPLOAD: Route = Object.freeze({ name: "policy-upload" });
+const IMPORTS: Route = Object.freeze({ name: "imports" });
+const REBUILD: Route = Object.freeze({ name: "rebuild" });
 const ENROLMENT_REQUESTS: Route = Object.freeze({ name: "enrolment-requests" });
 const ENROLMENT_TOKENS: Route = Object.freeze({ name: "enrolment-tokens" });
 const TOTP: Route = Object.freeze({ name: "totp" });
 const PASSWORD: Route = Object.freeze({ name: "password" });
 
 const HOST_PREFIX = "/hosts/";
+const PROFILE_PREFIX = "/profiles/";
 
 function isHex(ch: string): boolean {
   return (
@@ -44,6 +54,22 @@ export function isUuid(value: string): boolean {
   return true;
 }
 
+/**
+ * A catalog key (TS §6.3 L1139) as the API's path pattern takes it: 1 to 20
+ * ASCII digits. It stays a string, so an id above 2^53 is not rounded.
+ */
+export function isPolicyId(value: string): boolean {
+  if (value.length < 1 || value.length > 20) {
+    return false;
+  }
+  for (const ch of value) {
+    if (ch < "0" || ch > "9") {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Anything unknown or malformed (extra segments, a query, a bad id) is the host list. */
 export function parseHash(hash: string): Route {
   const path = hash.startsWith("#") ? hash.slice(1) : hash;
@@ -54,6 +80,14 @@ export function parseHash(hash: string): Route {
       return HOSTS;
     case "/packages":
       return PACKAGES;
+    case "/profiles":
+      return PROFILES;
+    case "/catalog/upload":
+      return POLICY_UPLOAD;
+    case "/catalog/imports":
+      return IMPORTS;
+    case "/catalog/rebuild":
+      return REBUILD;
     case "/enrolment/requests":
       return ENROLMENT_REQUESTS;
     case "/enrolment/tokens":
@@ -69,6 +103,12 @@ export function parseHash(hash: string): Route {
       return { name: "host", agentId: id.toLowerCase() };
     }
   }
+  if (path.startsWith(PROFILE_PREFIX)) {
+    const id = path.slice(PROFILE_PREFIX.length);
+    if (isPolicyId(id)) {
+      return { name: "profile", policyId: id };
+    }
+  }
   return HOSTS;
 }
 
@@ -80,6 +120,16 @@ export function formatHash(route: Route): string {
       return "#" + HOST_PREFIX + route.agentId;
     case "packages":
       return "#/packages";
+    case "profiles":
+      return "#/profiles";
+    case "profile":
+      return "#" + PROFILE_PREFIX + route.policyId;
+    case "policy-upload":
+      return "#/catalog/upload";
+    case "imports":
+      return "#/catalog/imports";
+    case "rebuild":
+      return "#/catalog/rebuild";
     case "enrolment-requests":
       return "#/enrolment/requests";
     case "enrolment-tokens":

@@ -24,6 +24,7 @@ from bitscan_manager.repositories.catalog_admin import DeleteEffects
 from bitscan_manager.repositories.catalog_lock import catalog_lock
 from bitscan_manager.runtime import Clock, SessionDatabase, Tx
 from bitscan_manager.services.importer.alerts import DeleteReason, deleted, emit
+from bitscan_manager.services.importer.own_changes import OWN_CHANGES
 from bitscan_manager.services.importer.store import (
     PolicyManagedOnServer,
     in_server_folder,
@@ -127,6 +128,7 @@ def remove_after_commit(bits_dir: Path, paths: Sequence[str]) -> None:
             log.warning("upload removal skipped: not an upload path")
             continue
         try:
+            OWN_CHANGES.removed(rel)  # #102 (c): just before the call
             (bits_dir / "uploaded" / name).unlink(missing_ok=True)
         except OSError as exc:
             log.warning("upload removal failed: %s", type(exc).__name__)
