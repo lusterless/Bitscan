@@ -1769,3 +1769,223 @@ All are in `work/open-questions.md` ("M7"), each with a recommended answer. "Nee
 | SR §3.1 to §3.6 mapping and algorithm | REQ-158 to REQ-160 | Covered |
 | SR §4, §4.1 validation rules; §4.2 BIT102 | REQ-150 to REQ-157 | Covered |
 | CLAUDE.md out of scope and owner decisions | none | Nothing planned: no signing, approval or diff workflow, policy editor, plugin edit route or ad-hoc command |
+
+## M8 evaluator (result evaluation and scoring)
+
+Planned 2026-10-29 (planner-m8) in the worktree `Bitscan-m8` (branch `m8-evaluator`, from main `67a6dfa`, M7 merged). Consistency pass done: every TASK links a REQ and every REQ has a TASK; waves are file-disjoint; every task is within 5 files and about 200 hand-written lines; the spine is acyclic; no gate is lowered. Summary for the user: `work/plans/M8-breakdown.md`.
+
+Scope: REQ-186 to REQ-205 in `work/requirements.md`. In this section `bm/` means `manager/bitscan_manager/`.
+
+**No new spec deviation.** Every open item (#112 to #120 new; #11, #12, #13 reused as agreed; PD-38) carries a recommended answer in `work/open-questions.md` ("M8"). **No migration, no route, no agent change, no new dependency.**
+
+Rules every M8 task follows:
+- **Testing by risk (user, 2026-10-25).** The evaluator is a high-risk area (lead's M8 brief): every M8 task gets full rigor per task, with a plant for every security row, every boundary and every race the task's rows name, and a second review round if needed. There is no low-risk batch in M8.
+- **Time-skewing (user, 2026-10-26):** tests never wait out a timer; races are driven by barriers and two sessions, never by sleeps.
+- `api → services → repositories`. The pure modules (`model`, `normalise`, `operators`, `evaluate`, `verdict`, `eval_spec`, `score`) take plain values and import no database, repository or API code (REQ-202); the two services take `runtime.Database`. Parameterised SQL only (ruff S608); RE2 only, through `services/importer/values.py` (ruff bans `re`).
+- **Reuse, don't copy** (M7 interface note): the #13 number grammar (`values.is_number`, `values.parse_number`), the RE2 compile helper (`values.compile_pattern`, which already adds `(?m)` and silences RE2's error log) and the operator tuples (`importer.model.OPERATORS`, `NUMERIC_OPERATORS`, `REGEX_OPERATORS`, `PRESENCE_OPERATORS`) are imported, never re-implemented. No M8 task edits `values.py` or `importer/model.py`.
+- `bm/services/evaluator/__init__.py` holds only a docstring; callers import the submodules (`…evaluator.evaluate`, `…evaluator.verdict`), so no two tasks share it.
+- Nothing in M8 writes `scan_result`, `scan_job` or `scan`; the only writes are `scan_result_reeval` and `audit_log` inserts in TASK-185. No log line, exception message, audit detail or `eval_detail` carries stdout, stderr, an expected value or a pattern.
+- Implementers check `work/reviews/builder-checklist.md` before every hand-off.
+
+### M8 design notes (for the tasks with real design risk)
+
+Written out in `work/plans/TASK-178.md` (D1, D2, and the TASK-176 interface), `work/plans/TASK-182.md` (D3) and `work/plans/TASK-185.md` (D4, and the TASK-183 interface).
+- **D1 classify (TASK-178).** One ordered pre-check list, then normalise, then `operators.compare()`. Order (#112): timed out → no exit code → 126 `cannot run` → 127 `not found` → ≥ 128 or < 0 `killed by signal` → `truncated` `stdout truncated`; then normalise both strings; then `compare()`, whose `CannotEvaluate` signal (operator not one of the 14, a numeric operator with a non-numeric expected value, a pattern RE2 refuses, text RE2 cannot encode) gives `cannot evaluate` and whose `NotNumeric` signal gives `stdout not numeric`. `evaluate()` is `classify(...).code`. A final `except Exception` is **not** used: totality comes from the explicit signals, and the property test (REQ-186 (3)) proves it.
+- **D2 operators (TASK-177).** `compare(operator, expected, stdout) -> bool` on already-normalised text. Text: `==`, `!=`, `in`, `not in`. RE2: `values.compile_pattern(expected).search(stdout) is not None`, the `UnicodeEncodeError` RE2 raises for a lone surrogate turned into `CannotEvaluate`. Numeric: `values.parse_number` on both; `None` for expected is `CannotEvaluate`, for stdout `NotNumeric`; compared as `Decimal`. Presence: `stdout == ""`.
+- **D3 effective verdicts (TASK-182).** `scan_result_reeval` has no index on `(job_id, plugin_uuid)` and none may be added, so the latest row is taken in one pass: `SELECT DISTINCT ON (job_id, plugin_uuid) … FROM scan_result_reeval WHERE job_id = ANY(<the scan's job ids>) ORDER BY job_id, plugin_uuid, reeval_id DESC`, joined to `scan_result` by `(job_id, plugin_uuid)`; `scan_result` is read by `job_id` and `job_created_at` (partition pruning). Not run comes from `jsonb_array_length(payload->'plugins')` of the original jobs (`retry_of IS NULL`).
+- **D4 re-evaluation transaction (TASK-183, TASK-185).** One `db.transaction()`: `pg_advisory_xact_lock(hashtext('scan_reeval'), hashtext(<scan_id text>))` → read the scan (`ScanNotFound`) → one statement for the current version, `deleted_at` and every listed plugin's Operator and ExpectedResult (`PolicyDeleted`) → a server-side cursor over the scan's results, 1,000 at a time → per row keep an intake detail or `classify()` → one `INSERT … SELECT FROM unnest(…)` per chunk → `append_entry(... action="scan.reevaluate" ...)` → commit; `tx.on_commit(wake)` wakes the audit shipper.
+
+### M8 tasks
+
+| TASK | Title | REQ links | Area | Owner | Risk | Files expected | Depends on | Est. LOC | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TASK-176 | Evaluator model and normaliser (interface): `Operator` (the 14 as a `Literal`), `VerdictCode` with `PASS`/`FAIL`/`ERROR`, `Detail` (the #112 vocabulary), `INTAKE_DETAILS`, `STDOUT_CAP`/`STDERR_CAP` (#116), `Verdict` (code and detail with its invariant), `PluginSpec`, the read-only `ResultLike` protocol; `normalise()` (#115) | REQ-187, REQ-193, REQ-202 | manager | impl-manager | **high** | `bm/services/evaluator/__init__.py` (docstring only), `bm/services/evaluator/model.py`, `bm/services/evaluator/normalise.py` | none; #112, #115, #116 | 130 | Unit: `Operator`'s values equal `importer.model.OPERATORS` in order; `Verdict(0, Detail.TIMED_OUT)`, `Verdict(2, None)`, `Verdict(3, None)` raise; `Detail` is exactly the eleven #112 values; the REQ-187 table holds; a `ResultItem` from `api/agent/schemas.py` type-checks as `ResultLike` under `mypy --strict`. |
+| TASK-177 | The 14 operators on normalised text per design note D2: `compare()` with the `NotNumeric` and `CannotEvaluate` signals; numeric through `values.parse_number`, RE2 through `values.compile_pattern` | REQ-188, REQ-189, REQ-190, REQ-191 | manager | impl-manager | **high** | `bm/services/evaluator/operators.py` | TASK-176; #11, #13 | 110 | Unit: every row of the REQ-188 to REQ-191 tables gives the stated boolean or signal, and a lone surrogate in stdout under `regex` and `not_regex` gives `CannotEvaluate`, not an exception. |
+| TASK-178 | `classify()` and `evaluate()` per design note D1: the ERROR pre-checks in #112 order, normalising both strings, `compare()`, signals mapped to `stdout not numeric` and `cannot evaluate`; total over the declared types | REQ-186, REQ-192, REQ-193, REQ-205 | manager | impl-manager | **high** | `bm/services/evaluator/evaluate.py` | TASK-176, TASK-177; #12, #112, #113, #114 | 100 | Unit: REQ-186 (1), (2), (4), REQ-192 (1)–(4), REQ-193 (1)–(3) and REQ-205 (1) hold, and the REQ-186 (3) property test finds no exception in 10,000 inputs. |
+| TASK-179 | `result_verdict()` for intake: UTF-8 byte caps (`oversize`, #116), then the runner error (#12), then `classify()`; `utf8_size()` | REQ-194, REQ-205 | manager | impl-manager | **high** | `bm/services/evaluator/verdict.py` | TASK-178 (TASK-180 for the REQ-205 (2) test only); #12, #112, #116 | 70 | Unit: REQ-194 (1)–(6) and REQ-205 (2) hold. |
+| TASK-180 | `eval_spec` contract (#117): `EvalSpec` with `get()`, `build_eval_spec()` (JSON-ready, payload order), strict `parse_eval_spec()` with a fixed-message `EvalSpecError` | REQ-195 | manager | impl-manager | **high** | `bm/services/evaluator/eval_spec.py` | TASK-176; #117 | 140 | Unit: REQ-195 (1)–(4) hold. |
+| TASK-181 | Pure score and effective-verdict rule: `HostScore` and `host_score()` (#120); `ReevalRow`, `Effective` and `effective()` (latest by `reeval_id`, #119) | REQ-196, REQ-197 | manager | impl-manager | **high** | `bm/services/evaluator/score.py` | TASK-176; #119, #120 | 90 | Unit: REQ-196 (1)–(3) and REQ-197 (1), (2) hold. |
+| TASK-182 | Results read repository per design note D3: `effective_results(conn, scan_id)` (both verdicts per result, with the agent and the latest row's `policy_version`) and `host_counts(conn, scan_id)` (passed, failed, errors, not run per agent) | REQ-197, REQ-198 | manager | impl-manager | **high** | `bm/repositories/results.py` | none (M1 schema); #119 | 170 | PostgreSQL as `bitscan_app` with owner-written rows: REQ-198 (1)–(5) hold. |
+| TASK-183 | Re-evaluation repository (design note D4): `lock_scan()` (the per-scan transaction lock, then the scan row), `current_definitions()` (one statement), `stored_results()` (server-side cursor, chunks of at most `chunk`), `insert_reevals()` (one `unnest` insert per chunk) | REQ-200, REQ-201 | manager | impl-manager | **high** | `bm/repositories/reeval.py` | none (M1 schema); #118 | 160 | PostgreSQL as `bitscan_app`: each function works with only the TS §5.2 grants; the definitions read is one statement (statement spy); chunks never exceed the given size and cover each result exactly once; inserting N rows adds exactly N; two sessions locking one scan serialise and two scans do not; ruff S608 passes and a planted f-string is red. |
+| TASK-184 | Host scores service `scan_host_scores(db, scan_id)` | REQ-197, REQ-199 | manager | impl-manager | **high** | `bm/services/evaluator/scores.py` | TASK-181, TASK-182; #120 | 60 | PostgreSQL: REQ-199 (1)–(4) hold, and the REQ-197 (3) property test shows the SQL and `effective()` agree on 200 random sets. |
+| TASK-185 | Re-evaluation service `reevaluate_scan(db, scan_id, *, user_id, wake)` per design note D4: lock, definitions, chunked `classify()`, intake details kept, rows inserted, the `scan.reevaluate` audit entry in the same transaction, `ScanNotFound` and `PolicyDeleted`, `ReevalResult` | REQ-200, REQ-201, REQ-202 | manager | impl-manager | **high** | `bm/services/evaluator/reevaluate.py` | TASK-176, TASK-178, TASK-183; #12, #118 | 150 | PostgreSQL as `bitscan_app`: REQ-200 (1)–(9) and REQ-201 (1)–(5) hold. |
+
+Totals: 20 REQ (REQ-186 to REQ-205), 10 TASK (TASK-176 to TASK-185), 15 test-plan items (TP-M8-00 to TP-M8-14), 4 waves (W1 to W4) plus the gate. All 10 tasks are high risk. Every task is within 5 files and about 200 hand-written lines; TASK-182 and TASK-183 are the largest (if one grows: TASK-182 splits `host_counts` into `results_counts.py`; TASK-183 splits the read side from `insert_reevals`; one task id each, as in M7).
+
+REQ to TASK: REQ-186 TASK-178; REQ-187 TASK-176; REQ-188 TASK-177; REQ-189 TASK-177; REQ-190 TASK-177; REQ-191 TASK-177; REQ-192 TASK-178; REQ-193 TASK-176, TASK-178; REQ-194 TASK-179; REQ-195 TASK-180; REQ-196 TASK-181; REQ-197 TASK-181, TASK-182, TASK-184; REQ-198 TASK-182; REQ-199 TASK-184; REQ-200 TASK-183, TASK-185; REQ-201 TASK-183, TASK-185; REQ-202 TASK-176, TASK-185 (and every pure-module task by its imports); REQ-203 TASK-176 to TASK-181; REQ-204 TASK-183, TASK-185; REQ-205 TASK-178, TASK-179. REQ-203 and REQ-204 are test requirements: the tester proves them (TP-M8-08, TP-M8-12, TP-M8-13) on the code those tasks deliver. Every M8 REQ has at least one TASK, and every TASK has at least one REQ.
+
+### M8 owner and review notes
+
+- **Owners:** impl-manager: TASK-176 to TASK-185. No impl-web, impl-agent, impl-bits or impl-deploy task (no screen, agent, sample, unit, packaging or workflow change; CI already runs the whole pytest suite, which picks up the new files). The tester owns every test file and fixture: `manager/tests/`, `tests/m8/`.
+- **Approvals (TS §8.2 L1268):** the evaluator is not one of the two-approval areas (importer, auth, agent, runner), and no M8 task edits importer, auth, agent or runner code (it only imports `importer/values.py` and `importer/model.py`). One reviewer approval per task suffices by the spec; PD-38 asks whether you want more.
+- **Shared files:** none. Every file has exactly one task.
+- **Interfaces for M9 and M11** (frozen once W1 and W2 pass): `evaluator.model` (`Verdict`, `Detail`, `INTAKE_DETAILS`, caps, `PluginSpec`, `ResultLike`); `evaluator.eval_spec` (`build_eval_spec` for M9's job builder, `parse_eval_spec` for intake); `evaluator.verdict.result_verdict` (intake stores its code and detail); `evaluator.scores.scan_host_scores` and `repositories.results` (M11's scan summary and results views); `evaluator.reevaluate.reevaluate_scan` (M11's `POST /scans/{id}/reevaluate`, behind `require_totp_session("admin")`, which also applies the sink gate). M11 adds paging and filters to `repositories/results.py` rather than writing a second effective-verdict query.
+- Planted violations are made in a throwaway copy, never left in the tree.
+
+### M8 test-plan items (tester)
+
+Drafted from the acceptance criteria at phase start (`tests/m8/test-plan.md`, check ids `CHK-M8-###`; suggested ranges: 001–019 model and normaliser, 020–099 operators, `classify`, `evaluate`, details and the SR §1.1 example, 100–139 `result_verdict`, `eval_spec`, score and the property suite, 140–219 PostgreSQL repositories, services and races, 220–259 security and boundaries, 300–319 gate rows, 320 on the mutation table). PostgreSQL items run in WSL with `CI=true` and pytest-xdist; on the Windows box they are reported NOT RUN. Races use barriers and two sessions, never sleeps (decisions 2026-10-26).
+
+| TP | What | REQ | Runs in | Files (tester) | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| TP-M8-00 | Phase test plan and the M8 index row | all M8 | phase start; report at the gate | `tests/m8/test-plan.md`, `tests/test-plan.md` | none |
+| TP-M8-01 | PostgreSQL fixture builder: owner-written `scan`, original and retry `scan_job` rows (payload in the TS §6.5 shape, `eval_spec` per #117), `scan_result` rows with matching `job_created_at`, `scan_result_reeval` rows; row checksums; a stdout, stderr and expected canary | REQ-198 to REQ-201, REQ-204 | W1 (before TASK-182 TEST) | `manager/tests/evaluator_pg_fixtures.py` | none |
+| TP-M8-02 | Model and normaliser | REQ-187, REQ-193 | TASK-176 TEST | `manager/tests/test_evaluator_model.py`, `manager/tests/test_evaluator_normalise.py` | TASK-176 IMPL |
+| TP-M8-03 | Operators: the REQ-188 to REQ-191 tables | REQ-188 to REQ-191 | TASK-177 TEST | `manager/tests/test_evaluator_operators.py` | TP-M8-02 |
+| TP-M8-04 | `classify` and `evaluate`: ERROR rules, exit-code boundaries, detail order, SR §1.1 | REQ-186, REQ-192, REQ-193, REQ-205 | TASK-178 TEST | `manager/tests/test_evaluate.py` | TP-M8-03 |
+| TP-M8-05 | `result_verdict`: caps in bytes, runner errors, stdout only | REQ-194, REQ-205 | TASK-179 TEST | `manager/tests/test_evaluator_verdict.py` | TP-M8-04 |
+| TP-M8-06 | `eval_spec` build and parse | REQ-195 | TASK-180 TEST | `manager/tests/test_eval_spec.py` | TASK-180 IMPL |
+| TP-M8-07 | Score and effective rule | REQ-196, REQ-197 | TASK-181 TEST | `manager/tests/test_evaluator_score.py` | TASK-181 IMPL |
+| TP-M8-08 | Property suite (hypothesis): totality, normaliser idempotence for inputs with no CR directly before a CRLF (REQ-187 (2); decisions 2026-10-29, "Normaliser: one-pass CRLF → LF"; `"a\r\r\nb"` is the pinned counterexample), `Decimal` oracle, `evaluate` = `classify` = `result_verdict` codes, score bounds, `eval_spec` round trip | REQ-186, REQ-187, REQ-190, REQ-195, REQ-196, REQ-203 | TASK-178 TEST (grown in TASK-179, 180, 181 TEST) | `manager/tests/test_evaluator_property.py` | TP-M8-04 |
+| TP-M8-09 | Results repository on PostgreSQL | REQ-197, REQ-198 | TASK-182 TEST | `manager/tests/test_results_repo_pg.py` | TP-M8-01 |
+| TP-M8-10 | Re-evaluation repository on PostgreSQL: grants, one statement, chunks, insert, lock | REQ-200, REQ-201 | TASK-183 TEST | `manager/tests/test_reeval_repo_pg.py` | TP-M8-01 |
+| TP-M8-11 | Host scores service, SQL-versus-`effective()` property test | REQ-197, REQ-199 | TASK-184 TEST | `manager/tests/test_scores_pg.py` | TP-M8-07, TP-M8-09 |
+| TP-M8-12 | Re-evaluation service: REQ-200 cases, the races, the memory row, audit entry and chain | REQ-200, REQ-201, REQ-204 | TASK-185 TEST | `manager/tests/test_reevaluate_pg.py`, `manager/tests/test_reevaluate_race_pg.py` | TP-M8-04, TP-M8-10 |
+| TP-M8-13 | M8 security and boundary suite: import graph, canary over the M8 suites, grant probes, statement spies, `re` and S608 plants | REQ-189, REQ-202, REQ-204 | each M8 TEST that touches a row; whole at the gate | `manager/tests/test_security_m8.py` | TP-M8-02 to TP-M8-12 |
+| TP-M8-14 | M8 gate and mutation table | all M8 | M8 gate | `tests/m8/report.md` (folded by the lead, decisions 2026-10-27) | all above |
+
+### M8 waves and dependency spine
+
+Spine: `TASK-176 → TASK-177 → TASK-178 → {TASK-179, TASK-185}`; `TASK-176 → TASK-180` (and TASK-180 → TASK-179's REQ-205 (2) test); `TASK-176 → TASK-181 → TASK-184`; `TASK-182 → TASK-184`; `TASK-183 → TASK-185`. The graph is acyclic.
+
+Interface first: TASK-176 fixes `Verdict`, `Detail`, `PluginSpec`, `ResultLike` and the caps before every other evaluator task; TASK-180 fixes the `eval_spec` JSON before M9 builds jobs; TASK-182 and TASK-183 fix the repository signatures (`work/plans/TASK-182.md` §2, `work/plans/TASK-185.md` §2) in W1, before the services that use them.
+
+| Wave | Tasks (parallel) | Files touched (disjoint within the wave) |
+| --- | --- | --- |
+| W1 | TASK-176, 182, 183; tester TP-M8-00, TP-M8-01 | `bm/services/evaluator/{__init__,model,normalise}.py` · `bm/repositories/results.py` · `bm/repositories/reeval.py` · `tests/m8/test-plan.md`, `tests/test-plan.md`, `manager/tests/evaluator_pg_fixtures.py` |
+| W2 | TASK-177, 180, 181 | `bm/services/evaluator/operators.py` · `eval_spec.py` · `score.py` |
+| W3 | TASK-178, 184 | `bm/services/evaluator/evaluate.py` · `scores.py` |
+| W4 | TASK-179, 185 | `bm/services/evaluator/verdict.py` · `reevaluate.py` |
+| Gate | tester TP-M8-13 (whole) and TP-M8-14; reviewer's M8 closing review | tester files only |
+
+Every task is high risk, so each is tested and reviewed on its own (no batches). With one impl-manager instance a wave's tasks run one after another; a second instance can take the repository tasks (TASK-182, 183) in W1 and TASK-184, 185, whose files are disjoint from the pure modules.
+
+### M8 gate
+
+On a clean tree every command is green, and each gate turns red on its planted violation. G7 to G11, G17, G35 to G41 (agent, units, packaging) and the web gates G12 to G16 are not re-run: M8 changes no agent, unit, package or web file. G6 and G34 are re-run to show M8 added no route.
+
+| Gate | Command (summary) | Planted violation that must turn it red | Where |
+| --- | --- | --- | --- |
+| G1–G4 | ruff (S608, the `re` ban), ruff format, `mypy --strict --config-file manager/pyproject.toml manager`, hashed locks | CHK-M8-320, -349, -350; an untyped function in `evaluate.py` | local; CI |
+| G5 | services coverage ≥ 85 % (now including `services/evaluator`), Linux run | an untested function in `bm/services/evaluator/reevaluate.py` sized from the clean report | WSL; CI |
+| G6 | OpenAPI export byte-identical (unchanged by M8) | a route added without re-export | local; CI |
+| G18 | full manager suite, 0 skipped, `-n auto` | any of G62 to G65 | WSL; CI |
+| G34 | `pytest tests/test_invariants_m3.py` (route walk; no new operation) | a planted `POST /scans/{id}/reevaluate` stub | local; CI |
+| G62 | evaluator unit suite: `test_evaluator_model.py`, `test_evaluator_normalise.py`, `test_evaluator_operators.py`, `test_evaluate.py`, `test_evaluator_verdict.py`, `test_eval_spec.py`, `test_evaluator_score.py` (every operator, every ERROR case, every detail, the normaliser, SR §1.1) | the G62 rows | local; WSL; CI |
+| G63 | evaluator property suite: `test_evaluator_property.py` | CHK-M8-338, -364 | local; WSL; CI |
+| G64 | evaluator integration on PostgreSQL: `test_results_repo_pg.py`, `test_reeval_repo_pg.py`, `test_scores_pg.py`, `test_reevaluate_pg.py`, `test_reevaluate_race_pg.py` | the G64 rows | WSL; CI |
+| G65 | M8 security and boundary suite: `test_security_m8.py` | the G65 rows | local (unit part); WSL; CI |
+
+**No gate is lowered.** NOT RUN at the M8 gate, with reasons: the TS §8.3 Integration item "verdict uses the queued `eval_spec` after a catalog change" end to end (needs result intake, **M9**; M8 proves the API-level half, REQ-204); the end-to-end scan → results step (**M11** nightly); load tests (deferred by the user).
+
+### M8 mutation table (tester; CHK-M8-320 onwards)
+
+Each row is planted in a throwaway copy and must turn the named gate red. Security rows (S) run as targeted mini-runs; every row is full rigor (evaluator is high risk).
+
+| CHK | Plant | Red in | Target | S |
+| --- | --- | --- | --- | --- |
+| CHK-M8-320 | `import re` in `operators.py` and `regex` evaluated with `re.search` | G1; G62 (`(?=x)` gives PASS/FAIL instead of `cannot evaluate`) | TASK-177 | S |
+| CHK-M8-321 | `regex` compiled with its own `re2.compile` without `(?m)` | G62 (multiline row) | TASK-177 | |
+| CHK-M8-322 | `regex` uses `fullmatch`/`match` instead of `search` | G62 (`foo` in `xfoo`) | TASK-177 | |
+| CHK-M8-323 | `not_regex` returns PASS when the pattern does not compile | G62 | TASK-177 | S |
+| CHK-M8-324 | Normaliser does not replace CRLF | G62 | TASK-176 | |
+| CHK-M8-325 | Normaliser uses `str.strip()` (Unicode whitespace) | G62 (U+00A0 rows) | TASK-176 | |
+| CHK-M8-326 | Comparison case-folded | G62 | TASK-177 | |
+| CHK-M8-327 | Numeric comparison through `float()` | G62 (2⁵³ + 1 row) | TASK-177 | |
+| CHK-M8-328 | Numeric parse through `Decimal()` without the #13 grammar (accepts `1e3`, `nan`) | G62 | TASK-177 | |
+| CHK-M8-329 | `ne` returns PASS on non-numeric stdout | G62 | TASK-177 | S |
+| CHK-M8-330 | Exit code decides: exit 1 gives FAIL | G62 (`grep` row) | TASK-178 | |
+| CHK-M8-331 | `exit_code > 128` instead of `>= 128` | G62 (128 row) | TASK-178 | |
+| CHK-M8-332 | 126 or 127 not ERROR | G62 | TASK-178 | |
+| CHK-M8-333 | Negative or None exit code compared normally (against #114) | G62 | TASK-178 | |
+| CHK-M8-334 | `timed_out` ignored | G62 | TASK-178 | S |
+| CHK-M8-335 | `truncated` ignored | G62 | TASK-178 | S |
+| CHK-M8-336 | Detail order changed (`stdout truncated` before `timed out`) | G62 | TASK-178 | |
+| CHK-M8-337 | `Verdict` invariant removed (PASS with a detail, ERROR without one) | G62 | TASK-176 | |
+| CHK-M8-338 | `classify` raises on an unknown operator (no totality) | G63 | TASK-177, 178 | S |
+| CHK-M8-339 | Caps measured in characters, not UTF-8 bytes | G62 (multi-byte row) | TASK-179 | S |
+| CHK-M8-340 | Caps compared with `>=` instead of `>` | G62 (65,536 row) | TASK-179 | |
+| CHK-M8-341 | Oversize decided from the agent's `truncated` flag only | G62 | TASK-179 | S |
+| CHK-M8-342 | Runner error still evaluated (`classify` called) | G62 (spy row) | TASK-179 | S |
+| CHK-M8-343 | stderr compared instead of, or as well as, stdout | G62 | TASK-179 | |
+| CHK-M8-344 | `parse_eval_spec` accepts an extra key or a duplicate `plugin_uuid` | G62 | TASK-180 | S |
+| CHK-M8-345 | `build_eval_spec` writes `execute` | G62 | TASK-180 | S |
+| CHK-M8-346 | Score counts ERROR in the denominator | G62 | TASK-181 | |
+| CHK-M8-347 | Score 0 ÷ 0 returns 0.0 instead of None | G62 | TASK-181 | |
+| CHK-M8-348 | Effective rule takes the lowest `reeval_id`, or orders by `reevaluated_at` | G62, G64 | TASK-181, 182 | S |
+| CHK-M8-349 | An f-string query in `repositories/results.py` | G1 (S608) | TASK-182 | S |
+| CHK-M8-350 | An f-string query in `repositories/reeval.py` | G1 (S608) | TASK-183 | S |
+| CHK-M8-351 | Counts query looks up the latest re-evaluation per result (a lateral or correlated subquery over `scan_result_reeval`) | G64 (EXPLAIN row) | TASK-182 | |
+| CHK-M8-352 | Not run ignores the retry's results, or counts retry plugins twice | G64 | TASK-182 | |
+| CHK-M8-353 | Re-evaluation UPDATEs `scan_result.eval_code` (the grant refuses it; the test must see the failure) | G64, G65 | TASK-185 | S |
+| CHK-M8-354 | Definitions read per plugin in separate statements (no single snapshot) | G64 (race row) | TASK-183 | S |
+| CHK-M8-355 | Intake-decided ERRORs re-evaluated (`oversize` row becomes PASS for `empty`) | G64 | TASK-185 | S |
+| CHK-M8-356 | Rows added for plugins the current version no longer lists | G64 | TASK-185 | |
+| CHK-M8-357 | Re-evaluation allowed for a deleted policy | G64 | TASK-185 | |
+| CHK-M8-358 | The per-scan lock removed | G64 (concurrent row) | TASK-183 | S |
+| CHK-M8-359 | Audit entry missing, or written in its own transaction (survives the injected fault) | G64 | TASK-185 | S |
+| CHK-M8-360 | All results fetched at once (`fetchall`, no chunks) | G64 (memory row) | TASK-183, 185 | |
+| CHK-M8-361 | A pure module imports `repositories.catalog` (evaluation reads the current plugin row) | G65 (import graph) | TASK-178 | S |
+| CHK-M8-362 | stdout logged at DEBUG in `classify`, or carried in an exception message | G65 (canary) | TASK-178, 185 | S |
+| CHK-M8-363 | `eval_detail` built as `"stdout not numeric: " + stdout` | G62, G65 | TASK-178 | S |
+| CHK-M8-364 | `Verdict` accepts code 3 ("anything else" not stored as 2) | G62, G63 | TASK-176 | |
+
+### Open items for M8
+
+All are in `work/open-questions.md` ("M8"), each with a recommended answer. "Needed by" is the start of the wave whose task or test cannot finish without it.
+
+| Item | Blocks | Needed by |
+| --- | --- | --- |
+| #112 (new): `eval_detail` vocabulary, where it comes from, order, totality | TASK-176, 178 | W1 |
+| #115 (new): normaliser whitespace set | TASK-176 | W1 |
+| #116 (new): server-side caps (bytes, boundary, order, what M9 stores) | TASK-176 (constants), 179 | W1 |
+| #119 (new): "latest" re-evaluation and the effective pair | TASK-181, 182 | W1 |
+| #118 (new): re-evaluation scope, deleted or disabled policies, audit, concurrency | TASK-183, 185 | W1 |
+| #117 (new): `eval_spec` JSON shape | TASK-180 | W2 |
+| #120 (new): score value and scope | TASK-181, 184 | W2 |
+| #113 (new; the `evaluator.md:28` own question): stderr-only truncation | TASK-178 (W3); the runner in M10 | W3 |
+| #114 (new): null and negative exit codes | TASK-178 | W3 |
+| #11, #12, #13 (agreed, reused) | TASK-176 (`INTAKE_DETAILS`, #12), 177, 178, 179, 185 | W1 |
+| PD-38 (new): approvals and second looks for M8 | each task's REVIEW | W1 |
+
+### Coverage matrix (M8)
+
+| Spec section | Covered by | Status in M8 |
+| --- | --- | --- |
+| TS §1.1 G4 (L16) compliance profiles | REQ-200 (re-evaluation against the profile's current version) | Covered for evaluation; scans are **M9** |
+| TS §2.1 L105 result evaluator ("compare stdout … compute scores", "in the API process, on result arrival") | REQ-186 to REQ-199 | Covered; the call on arrival is **M9** intake |
+| TS §2.2 L114 immutable results, re-evaluation adds rows | REQ-200, REQ-204 | Covered |
+| TS §2.3 compliance flow step 6 (L137) | REQ-194, REQ-195 | Pure verdict and `eval_spec` covered; "stored with its verdict in one insert" is **M9** |
+| TS §3.3 L226 `spool_overflow` | REQ-194 | Covered (manager side) |
+| TS §3.5 L248 Operator and ExpectedResult stay on the manager | REQ-195 | Covered (the contract keeps them out of the payload); the pull is unchanged (M3) |
+| TS §3.5 L251–L252 caps and flags | REQ-194, #113 | Manager side covered; runner truncation and the flag are **M10** |
+| TS §4.4 L577–L579 retry, late results, score updates | REQ-198, REQ-199 | Read side covered (scores computed on read); first-result-wins and late intake are **M9** |
+| TS §4.4 L583 *Not run* left out of the score | REQ-196, REQ-198 | Covered |
+| TS §4.5 L587 evaluate against the queued `eval_spec` | REQ-195, REQ-202, REQ-204 | API-level covered; end to end through intake **M9** |
+| TS §4.5 L589–L593 return codes and ERROR cases | REQ-186, REQ-192, REQ-193, REQ-194 | Covered (#12, #112, #113, #114) |
+| TS §4.5 L595 operators | REQ-188 to REQ-191 | Covered (#11: as written) |
+| TS §4.5 L596 input is the redacted stdout | REQ-194 | Covered (stdout taken as received); redaction is **M10** |
+| TS §4.5 L597 normalisation | REQ-187 | Covered (#115) |
+| TS §4.5 L598 exit code does not decide | REQ-192 | Covered (#114) |
+| TS §4.5 L599 server-side caps | REQ-194 | Decision covered (#116); storing the result is **M9** |
+| TS §4.5 L600 one pure function, unit tests, RE2 | REQ-186, REQ-189, REQ-203 | Covered |
+| TS §4.5 L601 re-evaluation; latest row used; `result` and `original_result` | REQ-197, REQ-198, REQ-200, REQ-201 | Computation and rule covered (#118, #119); the route, TOTP session, sink gate and response are **M11** |
+| TS §4.5 L602 score; "n/a"; error count beside it | REQ-196, REQ-199 | Value covered (#120); display is **M11** |
+| TS §4.5 L603 snapshots | REQ-195 (`name`, `operator`, `expected` in `eval_spec`) | Snapshot columns written by intake, **M9** |
+| TS §5.2 L880, L888 `eval_spec` | REQ-195 | Covered (#117) |
+| TS §5.2 L892–L927 `scan_result`; L929–L938 `scan_result_reeval` | REQ-198, REQ-200 | Read and insert as migrated; **no schema change** |
+| TS §5.2 L1005–L1006 the app never changes results or re-evaluations | REQ-200, REQ-204 | Covered (grant probes, statement spies) |
+| TS §5.3 L1049 re-evaluations added only through the admin route | REQ-200 | Service covered; the admin route is **M11** |
+| TS §5.3 L1052 no results in logs | REQ-202 | Covered |
+| TS §6.2 L1120–L1123 scan summary, results, re-evaluate routes | none | **M11** |
+| TS §6.5 L1184 Results fields | REQ-194 (`ResultLike`) | Read only; contract unchanged |
+| TS §8.1 L1243 tampering with verdicts; L1249 sensitive output; L1252 SQL injection | REQ-200, REQ-202, REQ-198 | Covered |
+| TS §8.3 Unit (normaliser, evaluator) | REQ-203 / G62, G63 | Covered |
+| TS §8.3 Integration ("re-evaluation adds rows only"; "verdict uses the queued `eval_spec` after a catalog change") | REQ-204 / G64 | First covered; second API-level only, end to end **M9** |
+| TS §8.3 Security ("first result wins under concurrent retries") | none | **M9** |
+| TS §8.4 L1287 logs; L1288 "plugin ERROR rate" metric | REQ-202 | Logs covered; the metric is counted at intake, **M9** |
+| TS §8.5 L1296 confirm the 14 operators and normalisation | #11, #115 | Kept as written |
+| SR §1.1 L87 canonical PASS and FAIL | REQ-205 | Covered |
+| SR §2.4 L124–L154 operators, return codes, normalisation, stdout only, numbers, who evaluates | REQ-186 to REQ-195 | Covered |
+| SR §2.4 L155–L162 script rules | none | Authoring rules (M7 samples); nothing to evaluate |
+| CLAUDE.md out of scope and owner decisions | none | Nothing planned: no CVE matching, remediation, signing or approval workflow; the evaluator only reads and reports |
