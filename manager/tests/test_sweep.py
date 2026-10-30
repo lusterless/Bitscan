@@ -6,6 +6,13 @@ PostgreSQL, what run_sweep asks of its stores: the TS §3.3 L218 thresholds
 for decommission (0 = never, TS §3.3 L220), one audit entry per decommissioned
 agent (#73 (d)), the jobs-expired metric only on commit (REQ-086 (2)) and one
 transaction per step (REQ-078 (5)).
+
+M9 (TASK-202; REQ-218, REQ-219; decisions "M9 builder rulings": PD-40's rule
+applied to the sweep) appends three steps, so a sweep is now seven
+transactions. Their database behaviour is tests/test_sweep_compliance_pg.py;
+here a fake ComplianceRepos with no candidates records what they ask. Old →
+new: CHK-M3-185's "4 commits" (and 3 + 1 when a step fails) → CHK-M9-217
+"7 commits" (6 + 1); every other assertion of this file is unchanged.
 """
 
 from collections.abc import Callable, Iterator, Mapping
@@ -18,7 +25,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from bitscan_manager.services.audit.metrics import REGISTRY
-from bitscan_manager.services.scheduler.sweep import Stores, run_sweep
+from bitscan_manager.services.scheduler.sweep import ComplianceRepos, Stores, run_sweep
 
 NOW = datetime(2026, 10, 23, 12, 0, 0, tzinfo=UTC)
 SEEDED = {
@@ -65,6 +72,33 @@ class FakeDb:
             hook()
 
 
+class FakeCompliance(ComplianceRepos):
+    """The three M9 steps' SQL, with nothing to do: no deadline or
+    never-started candidate and no scan to refresh (CHK-M9-217)."""
+
+    def __init__(self, world: "World") -> None:
+        self._world = world
+
+    def past_deadline(self, now: datetime) -> list[UUID]:
+        self._world.compliance.append(("past_deadline", now))
+        self._world._maybe("compliance_deadline")
+        return []
+
+    def never_started(self, now: datetime, after: timedelta) -> list[UUID]:
+        self._world.compliance.append(("never_started", now, after))
+        self._world._maybe("never_started")
+        return []
+
+    def refresh_candidates(self, now: datetime) -> list[UUID]:
+        self._world.compliance.append(("refresh_candidates", now))
+        self._world._maybe("scan_states")
+        return []
+
+    def unit_facts(self, scan_ids: Any) -> dict[UUID, Any]:
+        self._world.compliance.append(("unit_facts", list(scan_ids)))
+        return {}
+
+
 @dataclass
 class World:
     days: int = 7
@@ -72,6 +106,7 @@ class World:
     expired: int = 2
     raise_in: str | None = None
     calls: list[tuple[Any, ...]] = field(default_factory=list)
+    compliance: list[tuple[Any, ...]] = field(default_factory=list)
     entries: list[tuple[str, str, str, dict[str, object]]] = field(default_factory=list)
 
     def _maybe(self, name: str) -> None:
@@ -118,7 +153,7 @@ class World:
         self.entries.append((actor, action, target, dict(detail)))
 
     def stores(self, tx: Any) -> Stores:
-        return Stores(tx, self, self, self, self)
+        return Stores(tx, self, self, self, self, FakeCompliance(self))
 
 
 def test_one_sweep_asks_for_the_spec_thresholds() -> None:
@@ -131,7 +166,13 @@ def test_one_sweep_asks_for_the_spec_thresholds() -> None:
         ("expire", NOW),
         ("timeout", NOW - timedelta(minutes=30), NOW),
     ]
-    assert (db.commits, db.rollbacks) == (4, 0)
+    assert (db.commits, db.rollbacks) == (7, 0)  # CHK-M9-217 (was 4, CHK-M3-185)
+    assert w.compliance == [
+        ("past_deadline", NOW),
+        ("never_started", NOW, timedelta(hours=24)),  # TS §4.4 L575
+        ("refresh_candidates", NOW),
+        ("unit_facts", []),
+    ]
     assert (got.statuses_changed, got.decommissioned, got.expired) == (5, 2, 2)
     assert (got.inventory_failed, got.failed_steps) == (1, [])
     assert w.entries == [
@@ -149,7 +190,16 @@ def test_zero_days_never_calls_decommission() -> None:
 
 
 @pytest.mark.parametrize(
-    "step", ["statuses", "decommission", "expire", "inventory_timeout"]
+    "step",
+    [
+        "statuses",
+        "decommission",
+        "expire",
+        "inventory_timeout",
+        "compliance_deadline",
+        "never_started",
+        "scan_states",
+    ],
 )
 def test_one_failing_step_rolls_back_alone(
     step: str, caplog: pytest.LogCaptureFixture
@@ -158,7 +208,7 @@ def test_one_failing_step_rolls_back_alone(
     counted = expired_counted()
     got = run_sweep(db, NOW, stores=w.stores)  # type: ignore[arg-type]
     assert got.failed_steps == [step]
-    assert (db.commits, db.rollbacks) == (3, 1)
+    assert (db.commits, db.rollbacks) == (6, 1)  # CHK-M9-217 (was 3 + 1)
     assert len(w.calls) == 4  # every step was still attempted
     assert expired_counted() == counted + (0 if step == "expire" else 2)
     if step == "decommission":

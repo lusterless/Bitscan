@@ -332,7 +332,12 @@ def test_concurrent_queue_calls_give_one_open_job(db: PgServer) -> None:
 
 
 def test_pull_ten_oldest_then_the_rest(conn: Conn, db: PgServer) -> None:
-    """REQ-072 (1), (3), (4): own, queued, before pickup_by, inventory, at most 10."""
+    """REQ-072 (1), (3): own, queued, before pickup_by, at most 10, oldest first.
+
+    PD-40 (a): REQ-072 (4) ("inventory only in M3", CHK-M3-081's kind half and
+    plant CHK-M3-351) is superseded by REQ-213 (1), (2) → CHK-M9-235: the
+    planted compliance job (the oldest) now comes first, as its stored
+    payload, and is dispatched; every other assertion is unchanged."""
     with conn.transaction():
         a = new_agent(conn)
         b = new_agent(conn)
@@ -361,19 +366,20 @@ def test_pull_ten_oldest_then_the_rest(conn: Conn, db: PgServer) -> None:
     assert PULL_LIMIT == 10
     with conn.transaction():
         first = repo.pull(a, T0)
-    assert [UUID(p["job_id"]) for p in first] == mine[:10]
-    for p in first:
+    assert [UUID(p["job_id"]) for p in first] == [comp, *mine[:9]]
+    assert first[0]["kind"] == "compliance" and first[0] == job(conn, comp)["payload"]
+    for p in first[1:]:
         assert set(p) == {"job_id", "agent_id", "kind", "pickup_by"}
         assert p["agent_id"] == str(a)
     with conn.transaction():
         second = repo.pull(a, T0)
-    assert [UUID(p["job_id"]) for p in second] == mine[10:]
+    assert [UUID(p["job_id"]) for p in second] == mine[9:]
     with conn.transaction():
         assert repo.pull(a, T0) == []
-    for jid in mine:
+    for jid in (*mine, comp):
         j = job(conn, jid)
         assert j["state"] == "dispatched" and j["dispatched_at"] == T0
-    for jid in (other, at_bound, past, comp):
+    for jid in (other, at_bound, past):
         assert job(conn, jid)["state"] == "queued"
     assert job(conn, dispatched)["dispatched_at"] == T0 - timedelta(hours=3)
     assert job(conn, completed)["state"] == "completed"
@@ -382,13 +388,16 @@ def test_pull_ten_oldest_then_the_rest(conn: Conn, db: PgServer) -> None:
         assert [UUID(p["job_id"]) for p in repo.pull(b, T0)] == [other]
 
 
-def test_pull_never_returns_eval_spec_or_compliance(conn: Conn, db: PgServer) -> None:
+def test_pull_returns_compliance_but_never_eval_spec(conn: Conn, db: PgServer) -> None:
+    """PD-40 (a): was test_pull_never_returns_eval_spec_or_compliance (REQ-072
+    (4), superseded by REQ-213 (2)) → CHK-M9-236: the compliance job is
+    returned as its stored payload; still no eval_spec, operator or expected."""
     with conn.transaction():
         a = new_agent(conn)
-    plant_compliance(db, a, created=T0 - MIN)
+    comp = plant_compliance(db, a, created=T0 - MIN)
     with conn.transaction():
         got = JobRepo(conn).pull(a, T0)
-    assert got == []
+    assert got == [job(conn, comp)["payload"]]
     text = json.dumps(got)
     for key in ("eval_spec", "operator", "expected"):
         assert key not in text

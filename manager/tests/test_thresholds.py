@@ -245,7 +245,9 @@ def test_metric_families_and_labels() -> None:
         "bitscan_jobs_queued",
         "bitscan_jobs_expired",
         "bitscan_import_failures",  # M7 (#101)
+        "bitscan_plugin_results",  # M9 (REQ-226, #129 (c)): CHK-M9-238
     }
+    assert families["bitscan_plugin_results"].type == "counter"
     assert families["bitscan_agents"].type == "gauge"
     assert families["bitscan_jobs_queued"].type == "gauge"
     assert families["bitscan_heartbeat_latency_seconds"].type == "histogram"
@@ -259,6 +261,7 @@ def test_metric_families_and_labels() -> None:
         "bitscan_jobs_queued": set(),
         "bitscan_jobs_expired": set(),
         "bitscan_import_failures": {"mode"},
+        "bitscan_plugin_results": {"result"},
     }
     for name, fam in families.items():
         for sample in fam.samples:
@@ -285,12 +288,15 @@ def test_every_status_exported_from_zero_and_names_on_the_wire() -> None:
 
 
 def test_no_unbounded_label_names_anywhere() -> None:
-    """REQ-086 (3): the only label names on the wire are kind, status, le and
-    (M7, #101) mode, each from a fixed set."""
+    """REQ-086 (3): the only label names on the wire are kind, status, le,
+    (M7, #101) mode and (M9, REQ-226 (3)) result, each from a fixed set.
+    Old → new: the M7 name set → CHK-M9-239 (+ result ∈ PASS/FAIL/ERROR)."""
     text = generate_latest(REGISTRY).decode()
     names = {m.group(1) for m in re2.finditer(r'[{,]([a-zA-Z_]+)="', text)}
-    assert names <= {"kind", "status", "le", "mode"}, names
-    assert names >= {"kind", "status", "le", "mode"}
+    assert names <= {"kind", "status", "le", "mode", "result"}, names
+    assert names >= {"kind", "status", "le", "mode", "result"}
+    results = {m.group(1) for m in re2.finditer(r'[{,]result="([^"]*)"', text)}
+    assert results == {"PASS", "FAIL", "ERROR"}
     modes = {m.group(1) for m in re2.finditer(r'[{,]mode="([^"]*)"', text)}
     assert modes == {"auto", "manual", "rebuild"}  # bit_import.mode, TS §5.2 L699
 

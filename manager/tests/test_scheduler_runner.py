@@ -10,6 +10,14 @@ every interval; an interval change picked up within one offline_sweep run and
 the timer restarted), TS §5.2 L832 (seeded intervals 21,600 and 60 s), the
 TASK-068 carry-over (FleetAlerts built once, run after run_sweep) and the
 TASK-065 nit (each job transaction wakes the shipper on commit).
+
+M9 (TASK-203; REQ-225; decisions "M9 builder rulings": PD-40's rule applied
+to the scheduler) adds a third job, scan_schedules, every 30 s (#128 (e)).
+Old → new: CHK-M3-230's job sets {inventory, offline_sweep} → CHK-M9-218
+{inventory, offline_sweep, scan_schedules} (30 s, run at start, one
+instance); every other assertion of this file is unchanged. Here the tick
+is a fake recording its calls; its database behaviour is
+tests/test_scan_schedules_pg.py.
 """
 
 import ast
@@ -119,6 +127,7 @@ class Calls:
     fleets: list[Any] = field(default_factory=list)
     sweep_error: list[Exception] = field(default_factory=list)
     inventory_error: list[Exception] = field(default_factory=list)
+    schedules_error: list[Exception] = field(default_factory=list)
 
 
 @pytest.fixture
@@ -153,6 +162,12 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
                 stores(tx)
             return []
 
+    def run_due_schedules(db: Any, now: datetime, wake: Callable[[], None]) -> None:
+        c.order.append(("schedules", now))
+        if c.schedules_error:
+            raise c.schedules_error.pop(0)
+
+    monkeypatch.setattr(runner_mod, "run_due_schedules", run_due_schedules)
     monkeypatch.setattr(runner_mod, "run_inventory", run_inventory)
     monkeypatch.setattr(runner_mod, "run_sweep", run_sweep)
     monkeypatch.setattr(runner_mod, "FleetAlerts", FakeFleet)
@@ -192,11 +207,13 @@ def test_start_adds_both_jobs_from_system_schedule_running_now(calls: Calls) -> 
     runner.start()
     assert fake.started == 1
     by_id = {j["id"]: j for j in fake.jobs}
-    assert set(by_id) == {"inventory", "offline_sweep"}
+    assert set(by_id) == {"inventory", "offline_sweep", "scan_schedules"}  # CHK-M9-218
     assert (by_id["inventory"]["seconds"], by_id["offline_sweep"]["seconds"]) == (
         7_200,
         90,
     )
+    assert by_id["scan_schedules"]["seconds"] == 30  # REQ-225, #128 (e)
+    assert by_id["scan_schedules"]["func"] == runner.run_scan_schedules
     for job in by_id.values():
         assert job["trigger"] == "interval"
         assert job["max_instances"] == 1
@@ -215,7 +232,7 @@ def test_start_uses_the_seeded_intervals_when_the_database_is_unreadable(
     with caplog.at_level(logging.DEBUG):
         runner.start()
     by_id = {j["id"]: j["seconds"] for j in fake.jobs}
-    assert by_id == {"inventory": 21_600, "offline_sweep": 60}
+    assert by_id == {"inventory": 21_600, "offline_sweep": 60, "scan_schedules": 30}
     assert fake.started == 1
     assert CANARY not in caplog.text
     recs = [r for r in caplog.records if r.name == "bitscan_manager.scheduler"]
@@ -226,7 +243,7 @@ def test_start_uses_the_seeded_intervals_when_the_database_is_unreadable(
 # ------------------------------------------------------------ CHK-M3-231
 
 
-@pytest.mark.parametrize("job", ["inventory", "offline_sweep"])
+@pytest.mark.parametrize("job", ["inventory", "offline_sweep", "scan_schedules"])
 def test_a_failing_run_is_logged_by_type_and_the_next_run_happens(
     calls: Calls, caplog: pytest.LogCaptureFixture, job: str
 ) -> None:
@@ -234,8 +251,14 @@ def test_a_failing_run_is_logged_by_type_and_the_next_run_happens(
     no traceback); the run does not raise into APScheduler; the next run
     happens and does its work."""
     runner, _, _, _ = make(FakeScheduler())
-    run = runner.run_inventory if job == "inventory" else runner.run_sweep
-    errors = calls.inventory_error if job == "inventory" else calls.sweep_error
+    run, errors = {
+        "inventory": (runner.run_inventory, calls.inventory_error),
+        "offline_sweep": (runner.run_sweep, calls.sweep_error),
+        "scan_schedules": (
+            runner.run_scan_schedules,
+            calls.schedules_error,
+        ),  # REQ-225 (8)
+    }[job]
     errors.append(ValueError(f"secret {CANARY}"))
     with caplog.at_level(logging.DEBUG):
         run()  # must not raise
@@ -245,7 +268,7 @@ def test_a_failing_run_is_logged_by_type_and_the_next_run_happens(
     assert failed[0].data == {"job": job, "exc_type": "ValueError"}  # type: ignore[attr-defined]
     assert failed[0].exc_info is None and failed[0].levelno >= logging.ERROR
     assert CANARY not in caplog.text
-    kind = "inventory" if job == "inventory" else "sweep"
+    kind = {"inventory": "inventory", "offline_sweep": "sweep"}.get(job, "schedules")
     assert [n for n, _ in calls.order].count(kind) == 2
     if job == "offline_sweep":
         assert [n for n, _ in calls.order].count("fleet") == 1  # the good run

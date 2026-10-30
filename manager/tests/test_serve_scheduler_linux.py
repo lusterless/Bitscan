@@ -420,7 +420,10 @@ def test_sigterm_waits_for_the_running_sweep_and_nothing_runs_after_close(
         assert rec["exc_type"] == "SchedulerStopping", rec
         extra = set(rec) - {"time", "level", "logger", "message"}
         assert extra == {"request_id", "agent_id", "job_id", "job", "exc_type"}, rec
-        assert rec["job"] in ("offline_sweep", "inventory"), rec
+        # M9 (REQ-225; decisions "M9 builder rulings"): the scan_schedules tick
+        # gives up the same way. Old → new: CHK-M3-233-r1's job set
+        # (offline_sweep, inventory) → CHK-M9-219 (plus scan_schedules).
+        assert rec["job"] in ("offline_sweep", "inventory", "scan_schedules"), rec
     assert "PoolClosed" not in t.output()
 
 

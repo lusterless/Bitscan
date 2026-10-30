@@ -32,6 +32,7 @@ import zlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -596,17 +597,27 @@ def test_pickup_by_must_still_be_ahead(env: Env) -> None:
     assert states[ahead] == "dispatched"
 
 
-def test_a_compliance_job_is_never_returned_in_m3(env: Env) -> None:
-    """REQ-072 (4), CHK-M3-346, -351: a queued compliance row planted as owner
-    (with an eval_spec) is not returned and stays queued; no answer holds
-    eval_spec, operator, expected, plugins or redaction_patterns."""
+def test_a_compliance_job_is_returned_with_the_inventory_job(env: Env) -> None:
+    """PD-40 (a): REQ-072 (4) ("not returned in M3") is superseded by REQ-213
+    (1), (2) (CHK-M3-247's compliance half → CHK-M9-221). A queued compliance
+    row planted as owner (with an eval_spec) is now returned with the
+    inventory job, oldest first, as its stored payload, and dispatched; no
+    answer holds eval_spec, operator or expected (CHK-M3-346 kept)."""
     a = env.agent()
     comp = env.compliance(a, created=T0 - timedelta(minutes=20))
     inv = env.job(a, created=T0 - timedelta(minutes=10))
     r = env.pull(a)
-    assert [j["job_id"] for j in pulled(r)] == [str(inv)]
-    assert "compliance" not in r.text
-    assert env.job_row(comp)[0] == "queued"
+    assert r.status_code == 200 and not pull_schema_errors(r.json())
+    schemas.JobsResponse.model_validate_json(r.content)
+    jobs = r.json()["jobs"]
+    assert [j["job_id"] for j in jobs] == [str(comp), str(inv)]
+    want = dict(env.job_row(comp)[5])  # pickup_by: the same instant (ruling 10-23)
+    assert parse(jobs[0]["pickup_by"]) == parse(want.pop("pickup_by"))
+    assert {k: v for k, v in jobs[0].items() if k != "pickup_by"} == want
+    assert jobs[0]["kind"] == "compliance"
+    for word in ("eval_spec", "operator", "expected"):
+        assert f'"{word}"' not in r.text, word
+    assert env.job_row(comp)[:2] == ("dispatched", T0)
     assert pulled(env.pull(a)) == []
 
 
@@ -653,30 +664,30 @@ def test_openapi_documents_the_pull_operation() -> None:
 # ------------------------------------------------------------ CHK-M3-249
 
 
-def test_every_well_formed_batch_is_409_with_one_entry_and_nothing_stored(
-    env: Env,
+def test_well_formed_batches_for_jobs_that_cannot_take_them_are_409(
+    env: Env, tmp_path: Path
 ) -> None:
-    """REQ-073 (1), (2), TS §6.1 L1071, CHK-M3-359: a valid batch for the
-    agent's own dispatched and queued inventory jobs, its own dispatched
-    compliance job, an unknown job and another agent's job, and an empty start
-    notice: each 409 job_not_acceptable, one agent.result_refused entry (actor
-    agent:<id>, target job:<job_id>, no stdout or stderr), no scan_result row
-    and no job change."""
+    """REQ-073 (2), TS §6.1 L1071: a valid batch for the agent's own
+    dispatched and queued inventory jobs, an unknown job and another agent's
+    job, and an empty start notice: each 409 job_not_acceptable, one
+    agent.result_refused entry (actor agent:<id>, target job:<job_id>, no
+    stdout or stderr), no scan_result row and no job change.
+
+    PD-40 (a): REQ-073 (1) ("every well-formed post answers 409", CHK-M3-249's
+    own-compliance case and plant CHK-M3-359) is superseded by REQ-214 (2):
+    a well-formed batch for the agent's own dispatched compliance job is now
+    200 and stored (→ CHK-M9-225); the other cases are unchanged."""
     a, b = env.agent(), env.agent()
     canary_out = f"CANARY-{secrets.token_hex(8)}"
     canary_err = f"CANARY-{secrets.token_hex(8)}"
     own_dispatched = env.job(a, created=T0 - timedelta(minutes=5), state="dispatched")
     own_queued = env.job(a, created=T0 - timedelta(minutes=4))
-    own_compliance = env.compliance(
-        a, created=T0 - timedelta(minutes=3), state="dispatched"
-    )
     theirs = env.job(b, created=T0 - timedelta(minutes=2), state="dispatched")
     unknown = uuid4()
     loud = batch(item(stdout=canary_out, stderr=canary_err), item(), final=True)
     cases: list[tuple[UUID, dict[str, Any]]] = [
         (own_dispatched, loud),
         (own_queued, loud),
-        (own_compliance, loud),
         (unknown, loud),
         (theirs, loud),
         (own_dispatched, {"results": [], "final": False}),  # the start notice
@@ -712,6 +723,27 @@ def test_every_well_formed_batch_is_409_with_one_entry_and_nothing_stored(
             (f"%{canary_out}%", f"%{canary_err}%"),
         ).fetchone()
     assert row == (0,)
+    # REQ-214 (2): the agent's own dispatched compliance job takes the batch.
+    from . import scan_pg_fixtures as sf
+
+    cat = sf.make_catalog(env.db, sf.Clock(env.clock.now()), tmp_path)
+    pol = cat.policy(1)
+    with sf.owner(env.server) as o:
+        sid = sf.owner_scan(o, pol, state="running")
+        own = sf.owner_job(
+            o,
+            sid,
+            a.agent_id,
+            pol,
+            state="dispatched",
+            created_at=T0 - timedelta(minutes=3),
+        )
+    env.clock.at += timedelta(seconds=10)
+    mark = env.last_audit()
+    r = env.post(a, own.job_id, batch(item(plugin_uuid=str(pol.uuids[0]))))
+    assert r.status_code == 200 and r.json() == {"accepted": 1, "duplicates": 0}, r.text
+    assert refused_entries(env, mark) == []
+    assert env.results_count() == results_before + 1
 
 
 def test_refusal_entry_counts_the_batch_without_its_content(env: Env) -> None:
