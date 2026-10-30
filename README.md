@@ -6,7 +6,7 @@ Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs
 
 The manager runs:
 
-- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), fleet package search and its CSV export (`/api/v1/packages/search`), the policy catalog (`/api/v1/policies`, `/api/v1/imports`, `/api/v1/tasks`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; the scheduler (inventory runs and `offline_sweep`); and the [web UI](#web-ui);
+- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), fleet package search and its CSV export (`/api/v1/packages/search`), the policy catalog (`/api/v1/policies`, `/api/v1/imports`, `/api/v1/tasks`), compliance scans and scan schedules (`/api/v1/scans`, `/api/v1/scan-schedules`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; the scheduler (inventory runs, `offline_sweep` and scheduled scans); and the [web UI](#web-ui);
 - the folder watcher, which imports `.bit` policy files as they change (see [Policies](#policies));
 - the server commands `users create-admin`, `users create-api-token`, `users reset-totp` and `bits rebuild`;
 - `db migrate` and `db maintain`.
@@ -264,6 +264,8 @@ Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, 
   - `GET /agents/{agent_id}/packages` lists the host's packages by name, architecture and version (Debian version order).
   - No response holds a token or a token hash.
 - **Package search:** `GET /packages/search` and `GET /packages/search.csv` (viewer). See [Package search](#package-search).
+- **Scans:** `POST /scans` and `POST /scans/{scan_id}/cancel` (operator, session or API token). See [Scans](#scans).
+- **Scan schedules:** `/scan-schedules` (operator, session or API token, also for reading). See [Schedules](#schedules).
 - **Tags:** `PUT /agents/{agent_id}/tags` (operator) with `{"tags": [...]}` replaces the whole set: up to 32 distinct tags, each 1–64 characters from `A–Z a–z 0–9 . _ : -`. `[]` clears them.
 - **Revoke:**
   - `POST /agents/{agent_id}/revoke` (admin, TOTP-verified session) ends the agent's token at once, including a token still inside its rotation overlap. It answers 204.
@@ -287,7 +289,8 @@ Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, 
   - Each item can be re-checked: `row_hash` is the lowercase hex SHA-256 of the UTF-8 JSON array `[prev_hash, audit_id, actor, action, target, detail_text, at]`, with `detail_text` and `at` used as the strings returned, written compactly (`,` and `:` with no spaces) and with non-ASCII characters left unescaped. Use `detail_text`, not `detail` written back as JSON: number forms such as `1e-07` would not match. Each item's `prev_hash` is the `row_hash` of the entry before it.
 - **Metrics:**
   - `GET /api/v1/metrics` (viewer) returns the Prometheus text format (version 0.0.4). Give Prometheus a viewer API token as its bearer token.
-  - The metrics are `bitscan_alerts_total{kind}`, `bitscan_agents{status}`, `bitscan_heartbeat_latency_seconds`, `bitscan_jobs_queued` and `bitscan_jobs_expired_total`.
+  - The metrics are `bitscan_alerts_total{kind}`, `bitscan_agents{status}`, `bitscan_heartbeat_latency_seconds`, `bitscan_jobs_queued`, `bitscan_jobs_expired_total` and `bitscan_plugin_results_total{result}`.
+  - `bitscan_plugin_results_total` counts stored check results by `result` (`PASS`, `FAIL` or `ERROR`). The plugin ERROR rate is `rate(bitscan_plugin_results_total{result="ERROR"}[5m]) / sum(rate(bitscan_plugin_results_total[5m]))`.
   - The agent and job counts are read from the database at each scrape. Labels never hold a hostname, token or agent id.
 - **Limits:**
   - 600 requests a minute per user.
@@ -430,6 +433,68 @@ A rebuild re-imports every file in both folders, without skipping any, and delet
 - If a policy was deleted just before a crash, its uploaded file is removed and listed in that alert, and the policy stays deleted. To bring it back, upload it again.
 - Until start-up has finished, upload, delete and rebuild answer 503 with `Retry-After: 10`.
 
+## Scans
+
+A scan runs one compliance profile on a set of hosts. The manager builds one job per host from the profile's active checks, and each agent picks its job up at its next job pull (within `job_pull_seconds` plus 30 seconds). Nothing is pushed to an agent, and there is no route that runs any other command.
+
+**Starting a scan (operator, session or API token).** `POST /api/v1/scans` with `{"policy_id", "target"}`:
+
+```sh
+curl -s https://manager.example:8443/api/v1/scans \
+  -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: nightly-web-2026-10-30' \
+  -d '{"policy_id": 3, "target": {"tags": ["prod-web"]}}'
+```
+
+- **`target`** is exactly one of:
+  - `{"agents": [...]}`: 1–10,000 distinct agent ids, in the hyphenated form;
+  - `{"tags": [...]}`: 1–32 distinct tags (each 1–64 characters from `A–Z a–z 0–9 . _ : -`); a host with **any** of them is included;
+  - `{"all": true}`: every host.
+- The target is resolved when the scan is queued, to hosts that are not decommissioned or awaiting approval. Offline hosts still get a job; it runs if the host comes back within 24 hours. Unknown agent ids are left out. The scan records the request, the resolved host list and the profile `version` its jobs were built from.
+- **The answer** is 202 `{scan_id, state: "queued", policy_version, jobs}`; `jobs` is the number of hosts.
+- **Refusals** (nothing is written): a malformed target or any other body key gets 400 (`Invalid request: target…`); an unknown profile 404; a disabled or deleted profile, or one with no active check, 409 `conflict`; a target with no eligible host 422; a body over 1 MiB 413.
+- **One job per host and profile.** A new scan cancels the still-queued jobs of earlier scans of the same profile on the same hosts. Jobs already handed out keep running, and inventory jobs are never touched.
+- **Commands are fixed when queued.** A job keeps the commands it was built with, even if the profile is imported again; scans queued afterwards use the new version. Disabling a profile blocks new scans; its queued and running jobs still run.
+- **`Idempotency-Key`** (optional, 1–255 printable ASCII characters, else 400): repeating the request with the same key and the same body returns the first 202 answer and starts no second scan. The same key with a different body gets 409. Keys are kept per user, in memory, for 24 hours, and are forgotten when the manager restarts. Only a 202 is remembered, so a refused request can be retried with the same key. A repeat sent while the first is still running waits for its answer.
+- **Alert:** an all-hosts scan (`{"all": true}`) started with an API token writes an `all_hosts_scan_api_token` alert. Every scan writes one `scan.create` audit entry.
+
+**Cancelling (operator).** `POST /api/v1/scans/{scan_id}/cancel`, no body, answers 200 `{scan_id, state, cancelled_jobs}`. The scan's queued, handed-out and running jobs become `cancelled`; hosts are not contacted. A host still running its job may finish it, but its results are refused (409) and not stored. Cancelling again answers `cancelled_jobs: 0`. An unknown scan gets 404, and an id not in the hyphenated form 400. Each cancel writes one `scan.cancel` audit entry.
+
+**How a scan proceeds.**
+
+- A job is `queued`, then `dispatched` when its host pulls it, then `running` when the host starts it. It ends `completed` (a result for every check), `partial` (some missing) or `failed` (none). A job not picked up within 24 hours `expires`. A handed-out job that never starts fails 24 hours after it was handed out.
+- A started job has a deadline: start + the sum of its checks' timeouts divided by `max_parallel_plugins` (rounded up) + 10 minutes. A job past its deadline ends `partial` or `failed` (or `completed` if every check already has a result); a `partial` or `failed` one gets **one** retry holding only the checks with no result, with the same commands. A retry is never retried, and none is made for a deleted profile or a decommissioned host.
+- Results are accepted for 7 days after a job was handed out, so a host that was offline can still deliver them; they can still turn a `failed` or `partial` job into `partial` or `completed`. For each host and check, the first result to arrive is kept, from the job or from its retry.
+- The scan's own state is `queued`, `running`, `completed`, `partial` (some results, not all), `failed` (no results) or `cancelled` (cancelled before any result). It is finished once no job is queued, handed out or running. It is updated by `offline_sweep`, so it can lag up to a minute behind its jobs.
+
+**Results.** The routes and pages that list scans and show their results and scores are not part of this version yet.
+
+### Schedules
+
+A schedule queues a scan of one profile on a cron timetable. Every `/api/v1/scan-schedules` route needs an operator (session or API token), reading included, and any operator may change any schedule.
+
+```sh
+curl -s https://manager.example:8443/api/v1/scan-schedules \
+  -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"name": "Nightly web", "policy_id": 3, "target": {"tags": ["prod-web"]}, "cron": "30 2 * * *", "timezone": "Europe/London"}'
+```
+
+- **Create:** `POST /scan-schedules` with `{name, policy_id, target, cron, timezone?, enabled?}` answers 201 with the schedule. `timezone` defaults to `UTC` and `enabled` to `true`. `name` is 1–128 characters; `target` takes the same forms as a scan and is resolved again at each run.
+- **Read and list:** `GET /scan-schedules` (ordered by `schedule_id`, with `limit` and `cursor`) and `GET /scan-schedules/{schedule_id}`. Items are `{schedule_id, name, policy_id, target, cron, timezone, enabled, last_run_at, next_run_at, created_by}`.
+- **Change:** `PATCH /scan-schedules/{schedule_id}` with any non-empty subset of `name`, `target`, `cron`, `timezone` and `enabled`. `policy_id` cannot change; create a new schedule instead. `{"enabled": false}` stops the runs.
+- **Delete:** `DELETE /scan-schedules/{schedule_id}` answers 204. The scans it started are kept.
+- **Profiles:** a schedule of a deleted profile can be neither created nor enabled (409). A schedule of a disabled profile is accepted, but its runs are skipped. Deleting a profile disables its schedules.
+- **`cron`** is the five-field crontab format (minute, hour, day of month, month, day of week), at most 64 characters, with `*`, lists, ranges, steps, and month and weekday names. Weekday `0` and `7` are Sunday. A cron that restricts both the day of month and the day of week, uses `@` macros or a seconds field, or never fires (`0 0 30 2 *`) gets 400.
+- **`timezone`** is an IANA zone name such as `Europe/London` or `Asia/Kolkata`, at most 64 characters; the cron is read in that zone. Across a daylight-saving change, a run whose local time is skipped in spring runs just after the jump, and a run in the hour repeated in autumn runs once, at its first occurrence; so a schedule that fires more often than hourly makes no runs during the repeated hour.
+- `next_run_at` is the next fire time after now. It is set on create, when `cron` or `timezone` changes and when the schedule is enabled. `last_run_at` is when the schedule last queued a scan.
+- Each create, change and delete writes one `scan_schedule.*` audit entry. A run queues its scan as `system`, with one `scan.create` entry; it never raises the API-token alert.
+
+**When runs happen.** The scheduler checks for due schedules every 30 seconds.
+
+- **No back-fill:** a run more than 2 minutes late (for example while the manager was down) is not made up; the schedule waits for its next time.
+- **Skips:** a run is skipped when the previous scan from the schedule has not finished, when the profile is disabled, or when the target resolves to no host. A skipped run queues nothing and writes no audit entry; the manager logs `scheduled run skipped` with the schedule id and the reason (`missed`, `previous_unfinished`, `policy_disabled`, `no_target_agents`, `policy_has_no_plugins`, or `invalid` for a stored schedule that no longer validates, which is tried again a day later).
+- Because a scan's finished state can lag a minute behind its jobs, a schedule that fires every minute may skip runs.
+
 ## Users
 
 The `users` commands run on the server as root (`sudo bitscan-manager users …`). They read the `bitscan_app` DSN from `/etc/bitscan/secrets/app.dsn`, with the same checks as the server's DSN (readable, at most 64 KiB, and `sslmode` set to `require`, `verify-ca` or `verify-full`). They contact only PostgreSQL. Each writes an audit entry with actor `cli:root`; a running `serve` sends it to the audit sink.
@@ -487,7 +552,7 @@ The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_`
 | `POST /agent/enroll` | Exchange a `bse_` token for `agent_id` and an agent token (`bsa_`), with `issued_at`, `expires_at` and `status` (`enrolled` or `awaiting_approval`) |
 | `POST /agent/{id}/heartbeat` | Report status; the answer is only `job_pull_seconds`, `max_parallel_plugins` and `server_time` |
 | `GET /agent/{id}/jobs` | Pull up to 10 queued jobs, each handed out once |
-| `POST /agent/{id}/jobs/{job_id}/results` | Return results; every batch answers 409 `job_not_acceptable` until compliance scans exist |
+| `POST /agent/{id}/jobs/{job_id}/results` | Return results of a compliance job, at most 50 per batch; answers `{accepted, duplicates}` |
 | `PUT /agent/{id}/inventory[?job_id=...]` | Upload `os_info` and the package list, gzip-compressed; answers 204 |
 | `POST /agent/{id}/token/rotate` | Get a new agent token inside the rotation window |
 
@@ -513,6 +578,12 @@ The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_`
   - An upload with the `job_id` of an inventory job that already failed or completed is stored as an unscheduled upload, and the job is unchanged.
   - Any other `job_id` gets 409 `job_not_acceptable` and nothing is stored: unknown, another agent's, a compliance job, or one that is queued, running, expired or cancelled.
   - Unscheduled uploads (no `job_id`, or a failed or completed one) are accepted at most once per agent every 10 minutes (429 otherwise).
+- **Compliance jobs and results:**
+  - A pull returns inventory and compliance jobs together, oldest first. A compliance job carries `plugins` (`plugin_uuid`, `execute`, `timeout_s`) and `redaction_patterns`; the expected values never leave the manager.
+  - An empty batch is the start notice: it moves the job to `running` and starts its deadline. Later start notices change nothing.
+  - A batch is accepted for this agent's own compliance job that was handed out, running, `failed`, `partial` or `completed`, until 7 days after it was handed out. `accepted` counts the stored results; `duplicates` counts results the job or its retry already had, or that came earlier in the same batch.
+  - Every other batch gets 409 `job_not_acceptable` and nothing of it is stored: an unknown job, another agent's, an inventory job, one that is queued, expired or cancelled, one past the 7 days, and a batch naming any check that is not in the job. Each 409 is audit-logged. More than 20 within 10 minutes write a `result_409_flood` alert; 409s for the agent's own cancelled job do not count toward it.
+  - A result whose `stdout` is over 65,536 UTF-8 bytes, or whose `stderr` is over 16,384, is stored as `ERROR` (`oversize`) with both texts empty. U+0000 and lone surrogates in `stdout` and `stderr` are stored, and compared, as U+FFFD.
 - **Heartbeat:**
   - A clock more than 5 minutes away from the manager's writes a `clock_skew` alert, at most once an hour per host.
   - A change in `runner_helpers` writes a `runner_helper_changed` alert.
@@ -527,7 +598,7 @@ The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_`
 
 ## Scheduler
 
-`serve` runs two scheduled jobs in its own process. Neither ever runs twice at once.
+`serve` runs three scheduled jobs in its own process. None ever runs twice at once.
 
 - **Inventory** (mandatory):
   - At start-up, and then every `inventory_interval_s` (default 6 hours, range 1–24 hours), it queues one inventory job for each host that is not decommissioned or awaiting approval and has no open inventory job.
@@ -538,6 +609,9 @@ The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_`
   - It sets each host `online` (a heartbeat in the last 10 minutes), `stale` (10–30 minutes) or `offline` (over 30 minutes). A host that has never sent a heartbeat ages from its enrolment or approval.
   - An offline host with no heartbeat for more than `decommission_after_days` is `decommissioned` and its token revoked; 0 means never.
   - Queued jobs past their pick-up time expire. An inventory job not uploaded within 30 minutes of being handed out fails. Inventory jobs are never retried.
+  - Compliance jobs past their deadline end `partial` or `failed`, and those handed out more than 24 hours ago that never started fail; each such job gets its single retry (see [Scans](#scans)).
+  - It updates the state of every scan that can still change.
   - It raises the fleet alerts: more than 5 % of hosts offline; a job of an online host queued for over an hour; a heartbeating host whose inventory is older than twice the interval; and rows in the default `scan_result` partition.
+- **Scan schedules** (every 30 seconds): runs each due [schedule](#schedules) once.
 
 A failed run is logged by its kind of error, and the next run happens as usual. On `SIGTERM` the scheduler stops first; a run waiting on an unavailable database gives up within seconds.

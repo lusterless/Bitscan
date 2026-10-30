@@ -1,21 +1,25 @@
-"""The scheduler inside serve (TS §2.1 L103, §3.3 L218, §3.4 L230, §8.7
-L1343; REQ-080; #67; plan work/plans/TASK-061.md, "Scheduler wiring").
+"""The scheduler inside serve (TS §2.1 L103, §3.3 L218, §3.4 L230, §4.4 L557,
+§8.7 L1343; REQ-080, REQ-225; #67, #128 (e); plan work/plans/TASK-061.md,
+"Scheduler wiring", and work/plans/TASK-203.md §5).
 
-APScheduler 3 (BackgroundScheduler) runs two jobs, each at most one at a time:
+APScheduler 3 (BackgroundScheduler) runs three jobs, each at most one at a
+time, on three worker threads:
 - inventory: at start-up, then every system_schedule interval for
   'inventory' (#67). Each sweep re-reads that interval and restarts the timer
   when it changed, so a PATCH /settings takes effect within one sweep.
 - offline_sweep: every system_schedule interval for 'offline_sweep' (read at
   start-up only; it is not a runtime setting), running run_sweep() and then
   the fleet threshold alerts.
+- scan_schedules: every 30 s, running each due scan schedule once
+  (run_due_schedules; not a runtime setting, no system_schedule row).
 A run that raises is logged by job name and exception type only, and the
 next run still happens. Every transaction a job opens wakes the audit shipper
 on commit. On stop, a flag makes every further transaction a job asks for
 fail at once (SchedulerStopping), so a run gives up at its next sweep step,
-fleet check, interval read or inventory run instead of waiting on a refusing
-database each time; stop() then waits for the run, so nothing touches the
-pool after it closed. Retention is not scheduled until M11. Nothing here opens a
-connection other than the manager's database.
+fleet check, interval read, inventory run or schedule row instead of waiting
+on a refusing database each time; stop() then waits for the run, so nothing
+touches the pool after it closed. Retention is not scheduled until M11.
+Nothing here opens a connection other than the manager's database.
 """
 
 import logging
@@ -37,12 +41,17 @@ from bitscan_manager.repositories.settings import SettingsRepo
 from bitscan_manager.runtime import Clock, Database, Tx
 from bitscan_manager.services.scheduler.fleet_alerts import FleetAlerts, pg_fleet_stores
 from bitscan_manager.services.scheduler.inventory import run_inventory
+from bitscan_manager.services.scheduler.scan_schedules import (
+    TICK_S,
+    run_due_schedules,
+)
 from bitscan_manager.services.scheduler.sweep import pg_stores, run_sweep
 
 log = logging.getLogger("bitscan_manager.scheduler")
 
 INVENTORY: Final = "inventory"
 SWEEP: Final = "offline_sweep"
+SCAN_SCHEDULES: Final = "scan_schedules"
 # The seeded intervals (TS §5.2 L832), used only if system_schedule cannot be
 # read at start-up; the sweep then re-reads the inventory interval.
 DEFAULT_INTERVAL_S: Final = {INVENTORY: 21_600, SWEEP: 60}
@@ -82,7 +91,7 @@ class SchedulerRunner:
         self._clock, self._wake = clock, wake
         self._fleet = FleetAlerts(clock)  # built once per process
         self._scheduler = scheduler or BackgroundScheduler(
-            executors={"default": ThreadPoolExecutor(2)}, timezone=UTC
+            executors={"default": ThreadPoolExecutor(3)}, timezone=UTC
         )
         self._inventory_s = DEFAULT_INTERVAL_S[INVENTORY]
 
@@ -125,6 +134,12 @@ class SchedulerRunner:
 
         self._guarded(SWEEP, run)
 
+    def run_scan_schedules(self) -> None:
+        def run() -> None:
+            run_due_schedules(self._db, self._clock.now(), self._wake)
+
+        self._guarded(SCAN_SCHEDULES, run)
+
     def start(self) -> None:
         intervals = dict(DEFAULT_INTERVAL_S)
         try:
@@ -136,7 +151,13 @@ class SchedulerRunner:
             )
         self._inventory_s = intervals[INVENTORY]
         first = self._clock.now()  # #67: one inventory run at start-up
-        for job_id, func in ((INVENTORY, self.run_inventory), (SWEEP, self.run_sweep)):
+        intervals[SCAN_SCHEDULES] = TICK_S
+        jobs = (
+            (INVENTORY, self.run_inventory),
+            (SWEEP, self.run_sweep),
+            (SCAN_SCHEDULES, self.run_scan_schedules),
+        )
+        for job_id, func in jobs:
             self._scheduler.add_job(
                 func,
                 "interval",

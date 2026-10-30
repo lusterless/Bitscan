@@ -1989,3 +1989,263 @@ All are in `work/open-questions.md` ("M8"), each with a recommended answer. "Nee
 | SR §2.4 L124–L154 operators, return codes, normalisation, stdout only, numbers, who evaluates | REQ-186 to REQ-195 | Covered |
 | SR §2.4 L155–L162 script rules | none | Authoring rules (M7 samples); nothing to evaluate |
 | CLAUDE.md out of scope and owner decisions | none | Nothing planned: no CVE matching, remediation, signing or approval workflow; the evaluator only reads and reports |
+
+## M9 scan engine (jobs, scans, schedules, result intake)
+
+Planned 2026-10-30 (planner-m9) in the worktree `Bitscan-m9` (branch `m9-scan-engine`, from main `d09c537`, M8 merged). Consistency pass done: every TASK links a REQ and every REQ has a TASK (or is a named test requirement); waves are file-disjoint; every task is within 5 files and about 200 hand-written lines; the spine is acyclic; no gate is lowered. Summary for the user: `work/plans/M9-breakdown.md`.
+
+Scope: REQ-206 to REQ-233 in `work/requirements.md`. In this section `bm/` means `manager/bitscan_manager/`.
+
+**No new spec deviation.** Every open item (#121 to #129 new; #3, #18, #22, #12, #116, #117, #54 (c), #66 reused as agreed; PD-39, PD-40) carries a recommended answer in `work/open-questions.md` ("M9"). **No migration, no agent change, no contract change, no new dependency.** Seven user operations are added, all TS §6.2 routes; the two agent job routes change behaviour, not shape.
+
+Rules every M9 task follows:
+- **Testing by risk (user, 2026-10-25).** High risk, full rigor per task (a plant for every security row, boundary and race the task names): every task touching the agent routes, result intake, first-result-wins, job building, or RBAC on the scan routes. Low risk, batched TEST and REVIEW allowed: TASK-207 (web regeneration) and TASK-208 (README).
+- **Time-skewing (user, 2026-10-26):** clock control only; races driven by barriers and two sessions, never sleeps.
+- `api → services → repositories`. The pure modules (`states`, `scan_state`, `targets`, `build`, `intake_plan`, `cron`, `api/user/idempotency`) take plain values and import no database, repository or API code. Parameterised SQL only (ruff S608); RE2 only (ruff bans `re`).
+- **Reuse, don't copy:** M8's `evaluator.eval_spec` (`EvalSpec`, `build_eval_spec`, `parse_eval_spec`), `evaluator.verdict.result_verdict` and `over_caps`, `evaluator.model.PluginSpec`; M3's `TxAudit`, `refuse_results`, `agent_windows`, `read_settings`, `PICKUP_WINDOW`; M3's tag constants in `services/agents/admin.py` (`MAX_TAGS`, `MAX_TAG_LENGTH`, `TAG_CHARACTERS`); M2's `require_role`, `page_params`, `page_of`. No M9 task edits an M7 importer file, an M8 evaluator file or an auth file.
+- Lock order everywhere a unit is touched: the root job (`COALESCE(retry_of, job_id)`) `FOR UPDATE`, then the job `FOR UPDATE` (#124 (c)). The scan queue: queue lock, then the policy row `FOR SHARE` (#125 (d)).
+- Nothing in M9 writes `payload`, `eval_spec`, `agent_id`, `scan_id` or `retry_of` of an existing job, or updates or deletes a `scan_result`. No log line, exception message or audit detail carries stdout, stderr, `execute` or an expected value.
+- Implementers check `work/reviews/builder-checklist.md` before every hand-off.
+
+### M9 design notes (for the tasks with real design risk)
+
+Written out in `work/plans/TASK-198.md` (D1, with the TASK-188, 189 and 193 interfaces), `work/plans/TASK-199.md` (D2, with the TASK-186, 190 and 195 interfaces), `work/plans/TASK-202.md` (D3, with the TASK-187, 194 and 196 interfaces) and `work/plans/TASK-203.md` (D4, with the TASK-191, 197 and 201 interfaces).
+- **D1 queue a scan (TASK-198).** One `db.transaction()`: `pg_advisory_xact_lock(hashtext('scan_queue:' || policy_id))` → policy row `FOR SHARE` → one snapshot statement (version, status, `deleted_at`, active plugins in `sort_order` with display names) → refusals → `build.plugins_and_spec()` (unstorable-text check) → target resolved (one statement) → INSERT `scan` → INSERT every job in one `INSERT … SELECT FROM unnest(job_ids, agent_ids)` with the payload composed in SQL from one `plugins` JSONB parameter → cancel older queued jobs of the policy for those agents (uses `ix_job_pending`) → `scan.create` entry (or the alert entry) → commit.
+- **D2 result intake (TASK-199).** The route caps and decodes (unchanged M3 code). Then one transaction: root `FOR UPDATE` → job `FOR UPDATE` → acceptance (`states.accepts_results`, the agent, the kind) → `parse_eval_spec` (fails closed, #124 (h)) → result uuids of the unit (the sibling looked up through `retry_of` only when the posted job is a `failed`, `partial` or `completed` original, #127 (f); decisions 2026-10-30, "First result wins includes completed originals") → `intake_plan.plan()` (membership, #121 text rule, in-batch and unit duplicates, `result_verdict`, snapshots) → one INSERT → `states.after_batch()` → UPDATE progress columns → commit → `bitscan_plugin_results_total` on commit. A refusal leaves the transaction and is written by M3's `refuse_results` in its own.
+- **D3 sweep and scan refresh (TASK-202).** Three new steps after the M3 ones, each its own transaction: `compliance_deadline` and `never_started` (candidates `FOR UPDATE SKIP LOCKED` on the root, then the job; outcome by `states.after_deadline`; retry built by `build.retry()` and inserted in the same transaction, #126 (c)); then `scan_states` (one grouped read of unit facts for the #127 (f) candidates, `scan_state.derive()`, UPDATE only the changed scans).
+- **D4 schedules (TASK-203).** A `scan_schedules` APScheduler interval job every 30 s: due rows `FOR UPDATE SKIP LOCKED`; a due time older than 2 min is `missed`; skip rules (#128 (f)); `queue_scan(trigger='scheduled')`; `next_run_at` from `cron.next_fire()` strictly after now. Cron is crontab(5) translated for APScheduler 3 (weekday numbers to names; both day fields restricted refused).
+
+### M9 tasks
+
+| TASK | Title | REQ links | Area | Owner | Risk | Files expected | Depends on | Est. LOC | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TASK-186 | Job state rules (interface, pure): transitions, `deadline_at()`, `after_batch()`, `after_deadline()`, `accepts_results()`, `FINAL` (plan TASK-199 §2) | REQ-206, REQ-217 | manager | impl-manager | **high** | `bm/services/jobs/states.py` | none; #124 (a), #127 (a)–(c) | 120 | Unit: REQ-206 (1)–(5) hold. |
+| TASK-187 | Scan state derivation (interface, pure): `Unit` facts and `derive()` returning state and finished (plan TASK-202 §2) | REQ-207, REQ-219 | manager | impl-manager | **high** | `bm/services/jobs/scan_state.py` | none; #22, #127 (d), (e) | 80 | Unit: REQ-207 (1)–(3) hold. |
+| TASK-188 | Scan targets (interface, pure): `Target`, `parse_target()`, `InvalidTarget`, `stored_target()` (plan TASK-198 §2) | REQ-208 | manager | impl-manager | **high** | `bm/services/jobs/targets.py` | none; #122 (b)–(d) | 90 | Unit: REQ-208 (1), (2) and (4) hold. |
+| TASK-189 | Job and retry builder (interface, pure): `CatalogPlugin`, `plugins_and_spec()`, `payload()`, `retry()`, `UnstorableText` (plan TASK-198 §2) | REQ-209, REQ-210, REQ-212 | manager | impl-manager | **high** (second look, PD-39) | `bm/services/jobs/build.py` | none (M8 `eval_spec`); #117, #125 (a)–(c), (g), #126 (a), (b) | 150 | Unit: REQ-209 (1)–(4) and (6) and REQ-210 (1)–(4) hold for plugins given as values. |
+| TASK-190 | Intake plan (interface, pure): #121 text rule, plugin membership, in-batch and unit duplicates, verdict and snapshot values per row (plan TASK-199 §2) | REQ-214, REQ-215, REQ-216 | manager | impl-manager | **high** (TS §8.2 second approval, PD-39) | `bm/services/jobs/intake_plan.py` | none (M8 `result_verdict`); #12, #116 (d), #121, #124 (a), (b) | 130 | Unit: for a given `eval_spec`, payload, set of existing result uuids and batch, the plan lists exactly the rows to insert with their verdicts and snapshots and the duplicates count, or refuses a batch naming a plugin outside the job; REQ-215 (2), (4), (6) hold at plan level. |
+| TASK-191 | Cron and time zone (interface, pure): `parse_schedule()`, `next_fire()`, `InvalidSchedule` on APScheduler 3 `CronTrigger` with crontab(5) weekday translation (plan TASK-203 §2) | REQ-223 | manager | impl-manager | **high** | `bm/services/scheduler/cron.py` | none; #128 (a)–(c) (DST per the user's decision of 2026-10-30, r1) | 100 | Unit: REQ-223 (1)–(4) hold, the DST rows giving the decided behaviour (gap shifted, repeat run once). |
+| TASK-192 | Idempotency store (pure, in memory): per user and key, 24 h, 100,000 entries, per-key lock, body comparison | REQ-222 | manager | impl-manager | **high** | `bm/api/user/idempotency.py` | none; #123 | 90 | Unit with a fake clock and two threads: REQ-222 (1)–(3) hold. |
+| TASK-193 | Scan queue repository: queue lock, policy snapshot `FOR SHARE` in one statement, target resolution, scan insert, one-statement job insert, older queued jobs cancelled (plan TASK-198 §3) | REQ-208, REQ-211, REQ-230 | manager | impl-manager | **high** | `bm/repositories/scan_queue.py` | none (M1 schema); #125 (d)–(f) | 180 | PostgreSQL as `bitscan_app`: REQ-208 (3) holds; the snapshot is one statement and a concurrent policy delete waits for the scan's commit; N jobs are one INSERT; the older-queued cancel touches only queued compliance jobs of that policy for the listed agents; G1 is red on a planted f-string. |
+| TASK-194 | Scan progress repository: unit facts for many scans in one statement, refresh candidates (#127 (f)), scan state update, a scan's open jobs cancelled (plan TASK-202 §3) | REQ-219, REQ-220, REQ-230 | manager | impl-manager | **high** | `bm/repositories/scan_progress.py` | none; #127 (d)–(f) | 160 | PostgreSQL as `bitscan_app`: unit facts match owner-written fixtures (originals with retries, results, every state); candidates exclude `completed` scans and finished scans older than 8 days; cancel moves only `queued`, `dispatched` and `running` jobs of that scan; only `state` and `finished_at` of `scan` are updated. |
+| TASK-195 | Intake repository: root then job `FOR UPDATE`, job read with payload and `eval_spec`, unit result uuids, sibling lookup, one-statement result insert, progress updates (plan TASK-199 §3) | REQ-215, REQ-216, REQ-217, REQ-230 | manager | impl-manager | **high** (TS §8.2 second approval, PD-39) | `bm/repositories/job_intake.py` | none; #124 (c), #127 (f) | 170 | PostgreSQL as `bitscan_app`: a second session locking the same root waits; N rows insert in one statement with `job_created_at` accepted by the trigger; `started_at` and `deadline_at` are written only while NULL; G1 is red on a planted f-string. |
+| TASK-196 | Compliance sweep repository: deadline and never-started candidates, root-first `SKIP LOCKED`, unit results, state update, retry insert (plan TASK-202 §3) | REQ-218, REQ-230 | manager | impl-manager | **high** | `bm/repositories/job_sweep.py` | none; #126, #127 (b) | 160 | PostgreSQL as `bitscan_app`: candidates follow the strict boundaries; a root held by another session is skipped; the retry row has the given payload, `eval_spec` and `retry_of`; only progress columns of the original change. |
+| TASK-197 | Schedules repository: CRUD SQL, cursor page, due rows `FOR UPDATE SKIP LOCKED`, the previous scan's `finished_at`, run bookkeeping, the policy row `FOR SHARE` for create and enable (r1, decisions 2026-10-30 "M9 builder rulings" (5)) (plan TASK-203 §3) | REQ-224, REQ-225, REQ-230 | manager | impl-manager | **high** | `bm/repositories/schedules.py` | none; #122 (h), #128 (d) | 150 | PostgreSQL as `bitscan_app`: CRUD round trip; due selection skips rows another session holds; the policy read for create and enable holds `FOR SHARE`, so a concurrent policy delete waits for its commit; DELETE leaves that schedule's scans with `schedule_id` NULL. |
+| TASK-198 | Queue service `queue_scan()` per design note D1, with `scan.create` and the all-hosts alert | REQ-209, REQ-211, REQ-212, REQ-227 | manager | impl-manager | **high** (second look, PD-39) | `bm/services/jobs/queue.py` | TASK-188, 189, 193; #3, #18, #122 (f), #125, #129 (a), (b) | 150 | PostgreSQL as `bitscan_app`: REQ-211 (1)–(6), REQ-209 (5), REQ-212 (2) and REQ-227 (1), (2) for `scan.create` and the alert hold. |
+| TASK-199 | Intake service `accept_results()` per design note D2, and the `bitscan_plugin_results_total` counter | REQ-214, REQ-215, REQ-216, REQ-217, REQ-226, REQ-227 | manager | impl-manager | **high** (TS §8.2 second approval, PD-39) | `bm/services/jobs/intake.py`, `bm/services/audit/metrics.py` | TASK-186, 190, 195; #12, #116 (d), #121, #124, #127 (a), (c), #129 (c) | 170 | PostgreSQL service-level: REQ-214 (1)–(3), (5), (6), REQ-215 (1)–(6), REQ-216 (1)–(5), REQ-217 (1)–(6) and REQ-226 (1)–(3) hold. |
+| TASK-200 | Cancel service `cancel_scan()` | REQ-219, REQ-220, REQ-227 | manager | impl-manager | **high** | `bm/services/jobs/cancel.py` | TASK-187, 194; #122 (g), #127 (d), #129 (a) | 70 | PostgreSQL: REQ-220 (1), (3)–(5) hold. |
+| TASK-201 | Schedule management service: create, update, delete, get, list; validation; `next_run_at`; audit; create and enable lock the policy `FOR SHARE` before the not-deleted check (r1, decisions 2026-10-30 "M9 builder rulings" (5)) | REQ-224, REQ-227 | manager | impl-manager | **high** | `bm/services/scheduler/schedules_admin.py` | TASK-188, 191, 197; #122 (h), (i), #128 (d), #129 (a) | 150 | PostgreSQL service-level: REQ-224 (1)–(4), (6), (7) hold, including the create and enable races with a policy delete. |
+| TASK-202 | `offline_sweep` compliance steps and the scan state refresh per design note D3 | REQ-218, REQ-219, REQ-228, REQ-229 | manager | impl-manager | **high** | `bm/services/scheduler/sweep.py` | TASK-186, 187, 189, 194, 196; #126, #127 | 140 | Clock control on PostgreSQL: REQ-218 (1)–(8), REQ-219 (1)–(5), REQ-228 (1), (2) and REQ-229 (1), (2) hold. |
+| TASK-203 | Scheduled runs and the scheduler tick per design note D4 | REQ-225, REQ-227 | manager | impl-manager | **high** | `bm/services/scheduler/scan_schedules.py`, `bm/services/scheduler/runner.py` | TASK-191, 197, 198; #3, #128 (e)–(g) | 150 | Clock control on PostgreSQL: REQ-225 (1)–(8) hold, and `SchedulerRunner` starts the 30 s tick and still waits for a running job on `stop()`. |
+| TASK-204 | Agent job routes for compliance jobs: pull returns compliance jobs; the results route calls `accept_results()`; re-export `manager/openapi.json` only if it changes | REQ-213, REQ-214, REQ-215, REQ-216, REQ-229 | manager | impl-manager | **high** (TS §8.2 second approval, PD-39) | `bm/repositories/jobs.py`, `bm/services/jobs/pull.py`, `bm/services/jobs/__init__.py`, `bm/api/agent/jobs.py`, (`manager/openapi.json`) | TASK-199; #124, PD-40 | 110 | A simulated agent through the real routes on PostgreSQL: REQ-213 (1)–(5), REQ-214 (1)–(6), REQ-215 (3)–(5) and REQ-216 (1)–(3) hold end to end, gzip, 400 and 413 behave as REQ-066, and REQ-229 (3) holds. |
+| TASK-205 | Scan routes `POST /scans` (with `Idempotency-Key`) and `POST /scans/{id}/cancel`; re-export `manager/openapi.json` | REQ-212, REQ-220, REQ-221, REQ-222 | manager | impl-manager | **high** (second look, PD-39) | `bm/api/user/scans.py`, `bm/api/user/__init__.py`, `manager/openapi.json` | TASK-192, 198, 200; #122, #123 | 160 (+1 generated) | Through the API on PostgreSQL: REQ-221 (1)–(5), REQ-222 (4), REQ-212 (1) and REQ-220 (2) hold. |
+| TASK-206 | Schedule routes CRUD `/scan-schedules`; re-export `manager/openapi.json` | REQ-212, REQ-224 | manager | impl-manager | **high** | `bm/api/user/scan_schedules.py`, `bm/api/user/__init__.py`, `manager/openapi.json` | TASK-201; #122 (h), (i) | 170 (+1 generated) | Through the API on PostgreSQL: REQ-224 (1)–(7) and REQ-212 (1) for the schedule bodies hold. |
+| TASK-207 | Web: regenerate `schema.d.ts` from the M9 `openapi.json` | REQ-232 | web | impl-web | low | `web/src/api/schema.d.ts` | TASK-204, 205, 206; PD-20 | 0 (+1 generated) | G16 shows no diff, every new path starts with `/api/v1/`, and `npm run typecheck` passes. |
+| TASK-208 | README: scans and schedules (REQ-233) | REQ-233 | manager | impl-manager | low (docs) | `README.md` | TASK-205, 206 | 120 (docs) | The tester follows each new section against a WSL manager and each step behaves as written; no secret, token or process note. |
+
+Totals: 28 REQ (REQ-206 to REQ-233), 23 TASK (TASK-186 to TASK-208), 21 test-plan items (TP-M9-00 to TP-M9-20), 6 waves (W1 to W6) plus the gate. 21 tasks are high risk, 2 low. Every task is within 5 files and about 200 hand-written lines; TASK-193 and TASK-195 are the largest (if one grows: TASK-193 splits target resolution into `bm/repositories/scan_targets.py`; TASK-199 moves the metric to its own task; one task id each, as in M7).
+
+REQ to TASK: REQ-206 TASK-186; REQ-207 TASK-187; REQ-208 TASK-188, 193; REQ-209 TASK-189, 198; REQ-210 TASK-189; REQ-211 TASK-193, 198; REQ-212 TASK-189, 198, 205, 206; REQ-213 TASK-204; REQ-214 TASK-190, 199, 204; REQ-215 TASK-190, 195, 199, 204; REQ-216 TASK-190, 195, 199, 204; REQ-217 TASK-186, 195, 199; REQ-218 TASK-196, 202; REQ-219 TASK-187, 194, 200, 202; REQ-220 TASK-194, 200, 205; REQ-221 TASK-205; REQ-222 TASK-192, 205; REQ-223 TASK-191; REQ-224 TASK-197, 201, 206; REQ-225 TASK-197, 203; REQ-226 TASK-199; REQ-227 TASK-198, 199, 200, 201, 203; REQ-228 TASK-202 (and TASK-199 for the flood; test requirement); REQ-229 TASK-202, 204; REQ-230 TASK-193 to TASK-197; REQ-231 every M9 task (test requirement, proven by the tester); REQ-232 TASK-207 (G6 by TASK-204, 205, 206); REQ-233 TASK-208. Every M9 REQ has at least one TASK, and every TASK has at least one REQ.
+
+### M9 owner and review notes
+
+- **Owners:** impl-manager: TASK-186 to TASK-206 and TASK-208; impl-web: TASK-207. No impl-agent, impl-bits or impl-deploy task (no agent, sample, unit, package or workflow change; CI already runs the whole pytest suite). The tester owns every test file and fixture: `manager/tests/`, `tests/m9/`.
+- **Approvals (TS §8.2 L1268; PD-39):** two approvals for TASK-204 (agent job routes) and TASK-190, 195, 199 (the intake path behind it), applied under the pre-authorisation on a clean TEST PASS and "APPROVED, no open blocking or should-fix findings". A lead's second look for TASK-189 and TASK-198 (commands that run on every host) and TASK-205 (RBAC and the API-token alert). No M9 task edits auth code.
+- **Shared files (never in one wave):** `bm/api/user/__init__.py` (TASK-205 in W4, TASK-206 in W5); `manager/openapi.json` (TASK-204 in W3 only if its export changes, TASK-205 W4, TASK-206 W5; PD-24). Every other file has exactly one task: `bm/services/jobs/__init__.py` (TASK-204), `bm/services/audit/metrics.py` (TASK-199), `bm/services/scheduler/sweep.py` (TASK-202), `bm/services/scheduler/runner.py` (TASK-203), `bm/repositories/jobs.py` (TASK-204).
+- **M3 tests replaced by requirement (PD-40):** in TASK-204 TEST the tester rewrites REQ-072 (4) and REQ-073 (1) checks only, and lists each old CHK id with its replacement in `tests/m9/report.md`.
+- **Interfaces for M10 and M11** (frozen once W1 passes): `states`, `scan_state`, `targets`, `build`, `intake_plan`, `cron`; `repositories/scan_progress.py` (M11's `GET /scans/{id}` reads scan state from `scan`, not by re-deriving); `queue_scan()` and `cancel_scan()`.
+- Planted violations are made in a throwaway copy, never left in the tree.
+
+### M9 test-plan items (tester)
+
+Drafted from the acceptance criteria at phase start (`tests/m9/test-plan.md`, check ids `CHK-M9-###`; suggested ranges: 001–079 pure modules, 080–099 property suite, 100–219 PostgreSQL repositories, services, sweep, schedules and races, 220–279 API, contract and security, 300–319 gate rows, 320 on the mutation table). PostgreSQL items run in WSL with `CI=true` and pytest-xdist; on the Windows box they are reported NOT RUN.
+
+| TP | What | REQ | Runs in | Files (tester) | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| TP-M9-00 | Phase test plan and the M9 index row | all M9 | phase start; report at the gate | `tests/m9/test-plan.md`, `tests/test-plan.md` | none |
+| TP-M9-01 | Fixtures: catalog through M7's store (policies enabled, disabled, deleted; the SR §1.1 plugin), agents in all six statuses with tags, owner-written scans, jobs (originals and retries, every state), results; a clock double; a simulated agent built from `manager/tests/contract/fixtures/{jobs,results}` with a real `bsa_` token; a canary | REQ-208 to REQ-230 | W1 (before TASK-193 TEST) | `manager/tests/scan_pg_fixtures.py`, `manager/tests/agent_sim.py` | none |
+| TP-M9-02 | Job state rules | REQ-206, REQ-217 | TASK-186 TEST | `manager/tests/test_job_states.py` | TASK-186 IMPL |
+| TP-M9-03 | Scan state derivation | REQ-207 | TASK-187 TEST | `manager/tests/test_scan_state.py` | TASK-187 IMPL |
+| TP-M9-04 | Targets | REQ-208 | TASK-188 TEST | `manager/tests/test_scan_targets.py` | TASK-188 IMPL |
+| TP-M9-05 | Job and retry builder | REQ-209, REQ-210, REQ-212 | TASK-189 TEST | `manager/tests/test_job_build.py` | TASK-189 IMPL |
+| TP-M9-06 | Intake plan | REQ-214 to REQ-216 | TASK-190 TEST | `manager/tests/test_intake_plan.py` | TASK-190 IMPL |
+| TP-M9-07 | Cron and time zone | REQ-223 | TASK-191 TEST | `manager/tests/test_cron.py` | TASK-191 IMPL |
+| TP-M9-08 | Idempotency store | REQ-222 | TASK-192 TEST | `manager/tests/test_idempotency.py` | TASK-192 IMPL |
+| TP-M9-09 | Property suite (hypothesis): state-machine invariants, derivation, intake-plan accounting (accepted + duplicates = items for an accepted batch), `next_fire` strictly increasing | REQ-206, REQ-207, REQ-216, REQ-223 | TASK-186 TEST (grown in 187, 190, 191 TEST) | `manager/tests/test_jobs_property.py` | TP-M9-02 |
+| TP-M9-10 | Repositories on PostgreSQL: grants, one-statement checks, locks and SKIP LOCKED with two sessions | REQ-208, REQ-211, REQ-216 to REQ-220, REQ-224, REQ-225, REQ-230 | TASK-193 to 197 TEST | `manager/tests/test_scan_queue_repo_pg.py`, `test_scan_progress_repo_pg.py`, `test_job_intake_repo_pg.py`, `test_job_sweep_repo_pg.py`, `test_schedules_repo_pg.py` | TP-M9-01 |
+| TP-M9-11 | Queue service and its races | REQ-209, REQ-211, REQ-212, REQ-227 | TASK-198 TEST | `manager/tests/test_queue_scan_pg.py`, `manager/tests/test_queue_scan_race_pg.py` | TP-M9-10 |
+| TP-M9-12 | Intake service; first result wins under concurrent retries (200 barrier repetitions; the M8 double count with the lock planted away) | REQ-214 to REQ-217, REQ-226 | TASK-199 TEST | `manager/tests/test_intake_pg.py`, `manager/tests/test_first_result_wins_race_pg.py` | TP-M9-06, TP-M9-10 |
+| TP-M9-13 | Cancel | REQ-219, REQ-220 | TASK-200 TEST | `manager/tests/test_cancel_pg.py` | TP-M9-10 |
+| TP-M9-14 | Schedule management and scheduled runs with clock control | REQ-224, REQ-225 | TASK-201, 203 TEST | `manager/tests/test_schedules_admin_pg.py`, `manager/tests/test_scan_schedules_pg.py` | TP-M9-07, TP-M9-10 |
+| TP-M9-15 | Sweep compliance steps, retries and scan refresh with clock control; M3 sweep regression | REQ-218, REQ-219, REQ-228, REQ-229 | TASK-202 TEST | `manager/tests/test_sweep_compliance_pg.py` | TP-M9-10 |
+| TP-M9-16 | Agent job routes end to end with the simulated agent: pull, start notice, batches, final, late results, 409 cases, 0.1.0 `runner_unavailable`, NUL fixture, catalog change after queue | REQ-213 to REQ-216, REQ-229 | TASK-204 TEST | `manager/tests/test_agent_jobs_api_pg.py` | TP-M9-12 |
+| TP-M9-17 | Scan and schedule routes: bodies, refusals, RBAC, token groups, alert, idempotency | REQ-212, REQ-220 to REQ-222, REQ-224 | TASK-205, 206 TEST | `manager/tests/test_scans_api_pg.py`, `manager/tests/test_scan_schedules_api_pg.py` | TP-M9-11, TP-M9-14 |
+| TP-M9-18 | M9 security and boundary suite: canary, import graph, grant probes, statement spies, S608 and `re` plants, payload-writer grep, no-ad-hoc and inventory invariants | REQ-212, REQ-229, REQ-230 | each M9 TEST that touches a row; whole at the gate | `manager/tests/test_security_m9.py` | TP-M9-02 to TP-M9-17 |
+| TP-M9-19 | M3 checks replaced by requirement (PD-40), old → new CHK list | REQ-213, REQ-214 | TASK-204 TEST | the affected M3 test files; `tests/m9/report.md` | TP-M9-16 |
+| TP-M9-20 | M9 gate and mutation table | all M9 | M9 gate | `tests/m9/report.md` | all above |
+
+### M9 waves and dependency spine
+
+Spine: `TASK-186, 190, 195 → TASK-199 → TASK-204`; `TASK-188, 189, 193 → TASK-198 → {TASK-203, TASK-205}`; `TASK-187, 194 → TASK-200 → TASK-205`; `TASK-186, 187, 189, 194, 196 → TASK-202`; `TASK-188, 191, 197 → TASK-201 → TASK-206`; `TASK-191, 197, 198 → TASK-203`; `TASK-192 → TASK-205`; `TASK-204, 205, 206 → TASK-207`; `TASK-205, 206 → TASK-208`. The graph is acyclic.
+
+Interface first: W1 fixes every pure interface (states, scan derivation, targets, builder, intake plan, cron, idempotency) and every repository signature (the plans' §2 and §3) before any service or route uses them.
+
+| Wave | Tasks (parallel) | Files touched (disjoint within the wave) |
+| --- | --- | --- |
+| W1 | TASK-186, 187, 188, 189, 190, 191, 192 (pure); TASK-193, 194, 195, 196, 197 (SQL); tester TP-M9-00, 01 | `bm/services/jobs/{states,scan_state,targets,build,intake_plan}.py` · `bm/services/scheduler/cron.py` · `bm/api/user/idempotency.py` · `bm/repositories/{scan_queue,scan_progress,job_intake,job_sweep,schedules}.py` · tester files |
+| W2 | TASK-198, 199, 200, 201 | `bm/services/jobs/queue.py` · `bm/services/jobs/intake.py`, `bm/services/audit/metrics.py` · `bm/services/jobs/cancel.py` · `bm/services/scheduler/schedules_admin.py` |
+| W3 | TASK-202, 203, 204 | `bm/services/scheduler/sweep.py` · `bm/services/scheduler/{scan_schedules,runner}.py` · `bm/repositories/jobs.py`, `bm/services/jobs/{pull,__init__}.py`, `bm/api/agent/jobs.py`, (`manager/openapi.json`) |
+| W4 | TASK-205 | `bm/api/user/scans.py`, `bm/api/user/__init__.py`, `manager/openapi.json` |
+| W5 | TASK-206 | `bm/api/user/scan_schedules.py`, `bm/api/user/__init__.py`, `manager/openapi.json` |
+| W6 | TASK-207, 208 | `web/src/api/schema.d.ts` · `README.md` |
+| Gate | tester TP-M9-18 (whole), TP-M9-20; reviewer's M9 closing review | tester files only |
+
+W1 is wide on purpose (12 independent files). Two impl-manager instances split it as pure (186–192) and SQL (193–197); W2 to W5 then follow the spine. Every high-risk task is tested and reviewed on its own; TASK-207 and TASK-208 may be batched.
+
+### M9 gate
+
+On a clean tree every command is green, and each gate turns red on its planted violation. G7 to G11, G17, G35 to G41 (agent, units, packaging) and G12 to G15 are not re-run: M9 changes no agent, unit, package or web source file (only the generated `schema.d.ts`, covered by G16).
+
+| Gate | Command (summary) | Planted violation that must turn it red | Where |
+| --- | --- | --- | --- |
+| G1–G4 | ruff (S608, the `re` ban), ruff format, `mypy --strict --config-file manager/pyproject.toml manager`, hashed locks | CHK-M9-376; an untyped function in `intake.py` | local; CI |
+| G5 | services coverage ≥ 85 % (now including `services/jobs` and the new scheduler modules), Linux run | an untested function in `bm/services/jobs/intake.py` sized from the clean report | WSL; CI |
+| G6 | OpenAPI export byte-identical | a route added without re-export | local; CI |
+| G16 | web client regenerated with no diff | a hand edit to `schema.d.ts` | local; CI |
+| G18 | full manager suite, 0 skipped, `-n auto` | any of G66 to G70 | WSL; CI |
+| G19 | schema diff (no migration) | a throwaway migration adding `ix_job_scan` | WSL; CI |
+| G30 | agent contract suite unchanged | `operator` added to `ComplianceJob`; the NUL fixture made invalid | local |
+| G31, G33 | M3 agent-auth and sweep/inventory suites | CHK-M9-365, -381 | WSL; CI |
+| G34 | route walk with the seven M9 operations | a planted `POST /scans/{id}/run` with an `execute` body | local; CI |
+| G66 | M9 unit suite: `test_job_states.py`, `test_scan_state.py`, `test_scan_targets.py`, `test_job_build.py`, `test_intake_plan.py`, `test_cron.py`, `test_idempotency.py` | the G66 rows | local; WSL; CI |
+| G67 | property suite: `test_jobs_property.py` | CHK-M9-338, -362 | local; WSL; CI |
+| G68 | M9 integration on PostgreSQL (TP-M9-10 to 15) | the G68 rows | WSL; CI |
+| G69 | races and security: `test_first_result_wins_race_pg.py`, `test_queue_scan_race_pg.py`, `test_security_m9.py` | the G69 rows | WSL; CI |
+| G70 | API suites: `test_agent_jobs_api_pg.py`, `test_scans_api_pg.py`, `test_scan_schedules_api_pg.py` | the G70 rows | WSL; CI |
+
+**No gate is lowered.** NOT RUN at the M9 gate, with reasons: a real runner executing plugins and redacting (**M10**); the nightly end-to-end scan → results on VMs and the read views (**M11**); load tests (deferred by the user).
+
+### M9 mutation table (tester; CHK-M9-320 onwards)
+
+Each row is planted in a throwaway copy and must turn the named gate red. S = security row (targeted mini-run).
+
+| CHK | Plant | Red in | Target | S |
+| --- | --- | --- | --- | --- |
+| CHK-M9-320 | Root lock removed (no `FOR UPDATE` on `COALESCE(retry_of, job_id)`) | G69 (double count in `host_counts`) | TASK-195, 199 | S |
+| CHK-M9-321 | The posted job locked instead of the root | G69 | TASK-195 | S |
+| CHK-M9-322 | Duplicate check ignores the sibling job | G68, G69 | TASK-190, 199 | S |
+| CHK-M9-323 | Second item for one plugin in a batch stored (PK error → 500) | G66, G68 | TASK-190 | |
+| CHK-M9-324 | Batch with a plugin outside the job: the other items stored | G66, G68 | TASK-190 | S |
+| CHK-M9-325 | `cancelled` job accepted | G66, G70 | TASK-186, 199 | S |
+| CHK-M9-326 | 7-day window `<` instead of `≤` | G66 | TASK-186 | |
+| CHK-M9-327 | Window measured from `created_at` | G68 | TASK-199 | |
+| CHK-M9-328 | Inventory job accepted on the results route | G70 | TASK-199, 204 | S |
+| CHK-M9-329 | Verdict from the current catalog plugin, not `eval_spec` | G68 (catalog-change row) | TASK-199 | S |
+| CHK-M9-330 | `oversize` stored with its streams | G66, G68 | TASK-190 | S |
+| CHK-M9-331 | NUL replaced after evaluation, or stored raw | G66, G70 | TASK-190 | |
+| CHK-M9-332 | `execute_snap` from the catalog, not the payload | G68 | TASK-190 | |
+| CHK-M9-333 | `received_at` from the item's `finished_at` | G68 | TASK-199 | |
+| CHK-M9-334 | Second start notice resets `started_at`/`deadline_at` | G66, G68 | TASK-186, 195 | |
+| CHK-M9-335 | Deadline with floor division, or `max_parallel_plugins` ignored | G66 | TASK-186 | |
+| CHK-M9-336 | Deadline adds 10 s instead of 10 min | G66 | TASK-186 | |
+| CHK-M9-337 | `partial` on a non-final batch | G66 | TASK-186 | |
+| CHK-M9-338 | A late batch changes a `completed` job | G66, G67 | TASK-186 | |
+| CHK-M9-339 | Sweep deadline `≤` instead of `<` | G68 | TASK-196 | |
+| CHK-M9-340 | Never-started 24 h measured from `created_at` | G68 | TASK-196 | |
+| CHK-M9-341 | A retry is retried | G68 | TASK-202 | S |
+| CHK-M9-342 | Retry for a job that ended `partial` by a final batch | G68 | TASK-202 | |
+| CHK-M9-343 | Retry holds every plugin | G66, G68 | TASK-189 | |
+| CHK-M9-344 | Retry rebuilt from the current catalog | G66, G68 | TASK-189, 202 | S |
+| CHK-M9-345 | Retry inserted in its own transaction (fault leaves `failed` without a retry) | G68 | TASK-202 | |
+| CHK-M9-346 | State guard removed: two sweeps make two retries | G68 | TASK-196 | |
+| CHK-M9-347 | `operator`/`expected` copied into the payload | G66, G70, G30 | TASK-189 | S |
+| CHK-M9-348 | `eval_spec` built from a different plugin order | G66 | TASK-189 | |
+| CHK-M9-349 | Builder accepts U+0000 | G66 | TASK-189 | S |
+| CHK-M9-350 | `pickup_by` + 25 h, or without `Z` | G66 | TASK-189 | |
+| CHK-M9-351 | `redaction_patterns` empty instead of the setting | G66, G68 | TASK-189, 198 | S |
+| CHK-M9-352 | Retired plugin included, or a disabled policy queued | G68 | TASK-193, 198 | S |
+| CHK-M9-353 | Policy `FOR SHARE` removed (delete race leaves queued jobs) | G69 | TASK-193 | S |
+| CHK-M9-354 | Resolution includes decommissioned or awaiting agents | G68 | TASK-193 | |
+| CHK-M9-355 | Offline agents excluded | G68 | TASK-193 | |
+| CHK-M9-356 | Tags matched all-of | G68 | TASK-193 | |
+| CHK-M9-357 | Zero agents writes an empty scan | G68, G70 | TASK-198 | |
+| CHK-M9-358 | Newer-cancels-older hits a dispatched job, another policy, or is run by a retry | G68 | TASK-193, 202 | |
+| CHK-M9-359 | Cancel leaves dispatched jobs | G68 | TASK-194 | |
+| CHK-M9-360 | Scan cancelled after results stays `cancelled` | G66 | TASK-187 | |
+| CHK-M9-361 | Derivation per job, not per unit | G66 | TASK-187 | |
+| CHK-M9-362 | Derivation can return `dispatched` | G66, G67 | TASK-187 | |
+| CHK-M9-363 | Refresh skips finished non-completed scans (late results lost) | G68 | TASK-194, 202 | |
+| CHK-M9-364 | `POST /scans` role check removed (viewer 202) | G70 | TASK-205 | S |
+| CHK-M9-365 | `bsa_` accepted on `/scans` | G70, G31 | TASK-205 | S |
+| CHK-M9-366 | All-hosts alert missing for `bsk_`, or raised for a session | G70 | TASK-198 | S |
+| CHK-M9-367 | Idempotency: another body gets the first answer; no per-key lock | G66, G69 | TASK-192 | |
+| CHK-M9-368 | Weekday 0 passed raw to APScheduler (Monday) | G66 | TASK-191 | |
+| CHK-M9-369 | Day of month and day of week both accepted | G66 | TASK-191 | |
+| CHK-M9-370 | Time zone ignored (UTC used) | G66, G68 | TASK-191, 203 | |
+| CHK-M9-371 | Missed runs back-filled after a restart | G68 | TASK-203 | |
+| CHK-M9-372 | Unfinished-previous skip removed | G68 | TASK-203 | |
+| CHK-M9-373 | `SKIP LOCKED` removed: two ticks make two scans | G68 | TASK-197 | |
+| CHK-M9-374 | Result counter incremented before commit, or counts duplicates | G68 | TASK-199 | |
+| CHK-M9-375 | stdout logged at DEBUG in intake | G69 (canary) | TASK-199 | S |
+| CHK-M9-376 | An f-string query in a new repository | G1 | TASK-193 to 197 | S |
+| CHK-M9-377 | `UPDATE scan_job SET payload` in the sweep (grant refusal must surface) | G68, G69 | TASK-196 | S |
+| CHK-M9-378 | Pull still inventory-only | G70 | TASK-204 | |
+| CHK-M9-379 | Pull returns `eval_spec` | G70, G30 | TASK-204 | S |
+| CHK-M9-380 | Flood counts cancelled-job 409s, or stops counting the others | G70 | TASK-199 | |
+| CHK-M9-381 | A compliance scan cancels the agent's inventory job | G68, G33 | TASK-193 | S |
+| CHK-M9-382 | `POST /scans` accepts an extra `execute` key | G70, G69 | TASK-205 | S |
+
+### Open items for M9
+
+All are in `work/open-questions.md` ("M9"), each with a recommended answer. "Needed by" is the start of the wave whose task or test cannot finish without it.
+
+| Item | Blocks | Needed by |
+| --- | --- | --- |
+| #121 (new): stdout/stderr NUL and lone surrogates | TASK-190 | W1 |
+| #124 (new): intake acceptance, counts, locks, flood exclusion | TASK-186, 190, 195 | W1 |
+| #125 (new): job building | TASK-189, 193 | W1 |
+| #126 (new): retries | TASK-189, 196 | W1 |
+| #127 (new): job and scan state rules, refresh timing | TASK-186, 187, 194, 196 | W1 |
+| #128 (new): cron, time zones, ticks, skips | TASK-191, 197 | W1 |
+| #122 (new): route bodies and statuses, targets | TASK-188 (W1), 198, 201, 205, 206 | W1 |
+| #123 (new): `Idempotency-Key` | TASK-192 | W1 |
+| #129 (new): audit actions, alert kind, metric | TASK-198, 199, 200, 201, 203 | W2 |
+| #3, #18, #22, #12, #116, #117, #54 (c), #66 (agreed, reused) | TASK-186, 187, 198, 199, 203 | W1 |
+| PD-39 (new): approvals and second looks | each task's REVIEW | W1 |
+| PD-40 (new): M3 checks replaced by requirement | TASK-204 TEST | W3 |
+
+### Coverage matrix (M9)
+
+| Spec section | Covered by | Status in M9 |
+| --- | --- | --- |
+| TS §1.1 G4, G6 (profiles; scheduled and manual scans per host, tag or fleet) | REQ-208, REQ-211, REQ-225 | Covered |
+| TS §1.1 G2 inventory cannot be disabled | REQ-229 | Covered (regression) |
+| TS §2.1 L103 scheduler (APScheduler) | REQ-223, REQ-225 | Covered |
+| TS §2.1 L105 evaluator "on result arrival" | REQ-215 | Covered (M8's `result_verdict`) |
+| TS §2.2 L111 pull-only; L112 first result wins; L114 immutable results | REQ-212, REQ-216, REQ-215, REQ-230 | Covered |
+| TS §2.3 compliance flow steps 1–6 | REQ-211, REQ-213, REQ-214, REQ-215 | Covered; step 4 (runner) **M10**; step 7 (views) **M11** |
+| TS §3.3 L203, L210–L214 pull rules | REQ-212, REQ-213 | Covered (manager side) |
+| TS §3.3 L218 sweep timeouts and retries | REQ-218 | Covered |
+| TS §3.3 L222 start notice | REQ-217 | Covered |
+| TS §3.3 L224 answers to result posts | REQ-214 | Covered |
+| TS §3.4 inventory | REQ-229 | Unchanged, regression only |
+| TS §3.5 L248 job content; L251–L253 truncation, redaction, batches | REQ-209; REQ-214 | Job content covered; runner side **M10** |
+| TS §4.1 L530 queued jobs keep commands | REQ-210, REQ-211 | Covered |
+| TS §4.3 L547 disable; L550 delete cancels and disables | REQ-211, REQ-218, REQ-219, REQ-224 | Covered (#18); the delete itself is M7's, its scan effect is refreshed here |
+| TS §4.4 L555–L583 | REQ-206 to REQ-211, REQ-216 to REQ-220, REQ-225 | Covered (#3, #22, #122, #124 to #128) |
+| TS §4.5 L587, L593, L599, L603 | REQ-215 | Covered; L601 re-evaluation route **M11** |
+| TS §5.2 L846–L913 scanning tables; L1005–L1013 grants | REQ-209, REQ-215, REQ-224, REQ-230 | Covered; **no schema change** |
+| TS §5.3 L1047 scan retention | none | **M11** (retention task) |
+| TS §5.3 L1052 no results in logs | REQ-230 | Covered |
+| TS §6.1 L1064, L1065, L1071, L1072 | REQ-213, REQ-214, REQ-216 | Covered |
+| TS §6.2 L1119 `POST /scans`, L1122 cancel, L1124 schedules | REQ-221, REQ-224 | Covered |
+| TS §6.2 L1111, L1118, L1120, L1121, L1123 (read views, re-evaluate) | none | **M11** (no M9 acceptance test needs them) |
+| TS §6.2 L1129 no ad-hoc command, no inventory disable | REQ-212, REQ-229 | Covered |
+| TS §6.3 L1133–L1139 (problems, paging, `Idempotency-Key`, caps, ids) | REQ-221, REQ-222, REQ-224 | Covered; CSV **M11** |
+| TS §6.4 manual scan example | REQ-221 | Covered |
+| TS §6.5 Job and Results contracts | REQ-209, REQ-213, REQ-232 | Unchanged contract, used by M9 |
+| TS §8.1 L1239 (unintended command), L1248 (rogue agent), L1252 (SQL injection) | REQ-212, REQ-214, REQ-230 | Covered |
+| TS §8.3 Unit, Integration, Security ("first result wins under concurrent retries"), Contract | REQ-231, REQ-216, REQ-232 | Covered; End-to-end **M11**; Load deferred |
+| TS §8.4 L1288 plugin ERROR rate; L1290 all-hosts API-token alert; L1291 thresholds | REQ-226, REQ-227, REQ-228 | Covered |
+| SR §2.3 `@timeout` used in the deadline | REQ-206 | Covered |
+| CLAUDE.md out of scope and owner decisions | none | Nothing planned: no job signing, push channel, ad-hoc command, remediation or inventory switch |

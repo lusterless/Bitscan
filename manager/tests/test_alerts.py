@@ -61,7 +61,11 @@ M7_KINDS = {
     "policy_reenabled",
     "catalog_integrity_failed",
 }
-SPEC_KINDS = M2_KINDS | M3_KINDS | M7_KINDS
+# M9 (TASK-198): the TS §8.4 L1290 all-hosts API-token scan alert, kind per
+# #129 (b), approved 2026-10-30 (REQ-227). Old → new: CHK-M7's 34 kinds →
+# CHK-M9-232, 35 kinds; every other assertion is unchanged.
+M9_KINDS = {"all_hosts_scan_api_token"}
+SPEC_KINDS = M2_KINDS | M3_KINDS | M7_KINDS | M9_KINDS
 # REQ-086 (TS §8.4 L1288): the registry the #70 route serves.
 REGISTRY_FAMILIES = {
     "bitscan_alerts",
@@ -70,6 +74,9 @@ REGISTRY_FAMILIES = {
     "bitscan_jobs_queued",
     "bitscan_jobs_expired",
     "bitscan_import_failures",  # M7 (#101)
+    # M9 (REQ-226, #129 (c)): the plugin ERROR-rate counter (TS §8.4 L1288).
+    # Old → new: the M7 family set → CHK-M9-233 (plus this one).
+    "bitscan_plugin_results",
 }
 
 
@@ -142,13 +149,15 @@ def test_kinds_are_exactly_the_50_and_71_lists() -> None:
         M2_ALERT_KINDS,
         M3_ALERT_KINDS,
         M7_ALERT_KINDS,
+        M9_ALERT_KINDS,
     )
 
     assert set(M2_ALERT_KINDS) == M2_KINDS
     assert set(M3_ALERT_KINDS) == M3_KINDS
     assert set(M7_ALERT_KINDS) == M7_KINDS
+    assert set(M9_ALERT_KINDS) == M9_KINDS
     assert set(ALERT_KINDS) == SPEC_KINDS
-    assert len(ALERT_KINDS) == 34
+    assert len(ALERT_KINDS) == 35
 
 
 @pytest.mark.parametrize("kind", sorted(SPEC_KINDS))

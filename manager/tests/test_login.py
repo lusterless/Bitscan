@@ -450,7 +450,13 @@ def test_openapi_error_contract(source: str) -> None:
         for path, method, op in all_operations(doc)
         if "422" in op["responses"]
     ]
-    assert with_422 == [("put", "/api/v1/agent/{id}/inventory")], with_422
+    # M9 (REQ-221 (2), #3, #122 (f)): POST /scans answers 422 about:blank for
+    # a target with no host. Old → new: the one-operation list → CHK-M9-237
+    # (two operations; order is the document's, so compared as a set).
+    assert set(with_422) == {
+        ("put", "/api/v1/agent/{id}/inventory"),
+        ("post", "/api/v1/scans"),
+    }, with_422
     schemas = doc["components"]["schemas"]
     assert "HTTPValidationError" not in schemas and "ValidationError" not in schemas
     problem = schemas["Problem"]

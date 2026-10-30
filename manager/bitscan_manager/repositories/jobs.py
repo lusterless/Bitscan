@@ -1,11 +1,12 @@
-"""scan_job SQL for inventory jobs (TS §5.2, §3.4, §4.4, §6.1). Parameterised
-statements only.
+"""scan_job SQL for inventory jobs and the job pull (TS §5.2, §3.4, §4.4,
+§6.1). Parameterised statements only.
 
 Runs inside the caller's transaction; never commits. bitscan_app may INSERT
 scan_job rows and UPDATE only state, dispatched_at, started_at, deadline_at and
-finished_at; it can never DELETE a job or change its agent_id or payload. Jobs
-are built only here, from the scheduler: no caller supplies a payload, so no
-path can queue a command (TS §3.3). eval_spec is never selected.
+finished_at; it can never DELETE a job or change its agent_id or payload.
+Inventory jobs are built here, from the scheduler, and compliance jobs in
+scan_queue and job_sweep: no caller supplies a payload, so no path can queue
+a command (TS §3.3). eval_spec is never selected.
 """
 
 from dataclasses import dataclass
@@ -76,14 +77,15 @@ class JobRepo:
         return bool(row is not None and row[0])
 
     def pull(self, agent_id: UUID, now: datetime) -> list[dict[str, Any]]:
-        """Marks at most PULL_LIMIT of the agent's queued jobs whose pickup_by
-        is still ahead dispatched and returns their payloads, oldest first.
-        Locked rows are skipped and the state re-checked, so two concurrent
-        pulls never return one job. Inventory only in M3."""
+        """Marks at most PULL_LIMIT of the agent's queued jobs, inventory and
+        compliance together, whose pickup_by is still ahead dispatched and
+        returns their payloads, oldest first (TS §6.1 L1064, REQ-213). Locked
+        rows are skipped and the state re-checked, so two concurrent pulls
+        never return one job. Only the stored payload is returned."""
         rows = self._conn.execute(
             "UPDATE scan_job j SET state = 'dispatched', dispatched_at = %(now)s"
             " FROM (SELECT job_id FROM scan_job WHERE agent_id = %(agent)s"
-            " AND state = 'queued' AND pickup_by > %(now)s AND kind = 'inventory'"
+            " AND state = 'queued' AND pickup_by > %(now)s"
             " ORDER BY created_at, job_id LIMIT %(limit)s FOR UPDATE SKIP LOCKED) d"
             " WHERE j.job_id = d.job_id AND j.state = 'queued'"
             " RETURNING j.created_at, j.job_id, j.payload",

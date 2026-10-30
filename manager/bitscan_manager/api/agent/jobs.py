@@ -1,14 +1,17 @@
 """GET /api/v1/agent/{id}/jobs and POST /api/v1/agent/{id}/jobs/{job_id}/
 results (TS §6.1 L1064–L1065, L1071–L1072, §6.3 L1138, §6.5 L1165–L1184;
-REQ-072, REQ-073, REQ-066, REQ-087, REQ-088).
+REQ-072, REQ-073, REQ-066, REQ-087, REQ-088, REQ-213, REQ-214; #124).
 
 The results route reads its own body after the token check (after-auth cap,
 1.5 MiB as sent), so it declares no FastAPI body parameter: nothing is read
-before a 401. A gzip body is inflated as a stream to at most 1.5 MiB. Every
-well-formed batch answers 409 job_not_acceptable in M3 and stores nothing.
+before a 401. A gzip body is inflated as a stream to at most 1.5 MiB. A
+well-formed batch goes to the intake service; a refused one answers 409
+job_not_acceptable, stores nothing and writes one refusal entry in its own
+transaction. The log line of an accepted batch carries counts only.
 """
 
 import json
+import logging
 from typing import Annotated, Final
 from uuid import UUID
 
@@ -37,8 +40,10 @@ from bitscan_manager.repositories.jobs import JobRepo
 from bitscan_manager.runtime import Runtime, get_runtime
 from bitscan_manager.services import jobs as service
 from bitscan_manager.services.inventory.decode import InventoryRefused, gunzip_capped
+from bitscan_manager.services.jobs import intake
 from bitscan_manager.services.users import TxAudit
 
+log = logging.getLogger("bitscan_manager.jobs")
 router = APIRouter()
 RUNTIME = Annotated[Runtime, Depends(get_runtime)]
 AGENT = Annotated[AuthenticatedAgent, Depends(current_agent)]
@@ -67,6 +72,7 @@ def _refuse(
     job_id: UUID,
     reason: str,
     detail: dict[str, object],
+    count_flood: bool = True,
 ) -> None:
     flood = agent_windows(request).result_409
     with runtime.db.transaction() as tx:
@@ -79,7 +85,20 @@ def _refuse(
             job_id=job_id,
             reason=reason,
             detail=detail,
+            count_flood=count_flood,
         )
+
+
+def _accept(
+    runtime: Runtime, agent_id: UUID, job_id: UUID, batch: ResultsRequest
+) -> intake.Accepted | intake.Refused:
+    return intake.accept_results(
+        runtime.db,
+        agent_id=agent_id,
+        job_id=job_id,
+        batch=batch,
+        now=runtime.clock.now(),
+    )
 
 
 def _batch(body: bytes, encoding: str | None) -> ResultsRequest:  # lowercased
@@ -100,7 +119,7 @@ def _batch(body: bytes, encoding: str | None) -> ResultsRequest:  # lowercased
 )
 async def post_results(
     id: str, job_id: str, request: Request, agent: AGENT, runtime: RUNTIME
-) -> ResultsResponse:  # M9; in M3 every batch is refused
+) -> ResultsResponse:
     job = agent_uuid(job_id, "path.job_id")
     job_id_var.set(str(job))
     agent_id = agent.caller.agent_id
@@ -114,8 +133,23 @@ async def post_results(
             _refuse, request, runtime, agent_id, job, "too_large", {}
         )
         raise TooLarge from None
-    detail: dict[str, object] = {"results": len(batch.results), "final": batch.final}
-    await run_in_threadpool(
-        _refuse, request, runtime, agent_id, job, "job_not_acceptable", detail
-    )
-    raise Problem(409, "job_not_acceptable", "This job does not accept results.")
+    outcome = await run_in_threadpool(_accept, runtime, agent_id, job, batch)
+    if isinstance(outcome, intake.Refused):
+        detail: dict[str, object] = {
+            "results": len(batch.results),
+            "final": batch.final,
+        }
+        await run_in_threadpool(
+            _refuse,
+            request,
+            runtime,
+            agent_id,
+            job,
+            outcome.reason,
+            detail,
+            not outcome.own_cancelled,  # #124 (f): not a flood
+        )
+        raise Problem(409, "job_not_acceptable", "This job does not accept results.")
+    counts = {"accepted": outcome.accepted, "duplicates": outcome.duplicates}
+    log.info("result batch accepted", extra={"data": counts})
+    return ResultsResponse.model_validate(counts)

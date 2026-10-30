@@ -348,10 +348,16 @@ def test_no_label_holds_an_unbounded_value(env: Env) -> None:
         if not fam.name.startswith("bitscan_"):
             continue
         for s in fam.samples:
-            assert set(s.labels) <= {"kind", "status", "le", "mode"}, (
+            # M9 (REQ-226 (3), #129 (c)): "result" on the plugin results
+            # counter, PASS/FAIL/ERROR only. Old → new: CHK-M3's label set →
+            # CHK-M9-234 (plus "result"); every other assertion is unchanged.
+            assert set(s.labels) <= {"kind", "status", "le", "mode", "result"}, (
                 s.name,
                 s.labels,
             )
+            if "result" in s.labels:
+                assert s.name.startswith("bitscan_plugin_results_")  # _total, _created
+                assert s.labels["result"] in {"PASS", "FAIL", "ERROR"}
             if "mode" in s.labels:  # M7 (#101): bit_import.mode only
                 assert s.labels["mode"] in {"auto", "manual", "rebuild"}
             if "status" in s.labels:
