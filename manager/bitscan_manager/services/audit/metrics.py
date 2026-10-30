@@ -1,7 +1,7 @@
 """Prometheus metrics (TS §8.4 L1288-L1289), in one registry that the metrics
 route serves (#70). Every label value comes from a fixed set: alert kinds,
-agent statuses and import modes only, never a hostname, token or agent id
-(REQ-086 (3)).
+agent statuses, import modes and result verdicts only, never a hostname,
+token or agent id (REQ-086 (3)).
 """
 
 from collections.abc import Mapping
@@ -74,6 +74,19 @@ IMPORT_FAILURES: Final = Counter(
 )
 for _mode in IMPORT_MODES:
     IMPORT_FAILURES.labels(mode=_mode)  # every mode is exported, from zero
+
+# scan_result.result (TS §5.2 check_result); the plugin ERROR rate (TS §8.4
+# L1288, #129 (c)) is rate(ERROR) / rate(all).
+PLUGIN_RESULT_LABELS: Final = ("PASS", "FAIL", "ERROR")
+
+PLUGIN_RESULTS: Final = Counter(
+    "bitscan_plugin_results",
+    "Stored plugin results, by verdict, counted when their batch commits.",
+    ["result"],
+    registry=REGISTRY,
+)
+for _result in PLUGIN_RESULT_LABELS:
+    PLUGIN_RESULTS.labels(result=_result)  # every verdict is exported, from zero
 
 
 class FleetCounts(Protocol):  # repositories.agents.AgentRepo

@@ -61,7 +61,10 @@ M7_ALERT_KINDS: Final = frozenset(
         "catalog_integrity_failed",
     }
 )
-ALERT_KINDS: Final = M2_ALERT_KINDS | M3_ALERT_KINDS | M7_ALERT_KINDS
+# The M9 alert kind (#129 (b)): an all-hosts scan queued with an API token
+# (TS §8.4 L1290); the scan.create entry itself carries it.
+M9_ALERT_KINDS: Final = frozenset({"all_hosts_scan_api_token"})
+ALERT_KINDS: Final = M2_ALERT_KINDS | M3_ALERT_KINDS | M7_ALERT_KINDS | M9_ALERT_KINDS
 
 for _kind in sorted(ALERT_KINDS):
     ALERTS_TOTAL.labels(kind=_kind)  # every kind is exported, from zero
