@@ -148,3 +148,16 @@ Throwaway copy `/root/bstest-m9b-mut-G5` (removed after the run), web build pres
 - Load tests: deferred by the user. CI (GitHub Actions): not run here (no push).
 - G7 to G15, G17, G35 to G41: not re-run; M9 changes no agent, unit, package or web source file other than the generated `schema.d.ts`, which G16 covers.
 - `tests/m9/report.md`: the harness refused my write of a file named `report.md`. Its content (the per-task table, the old → new list, the security rows) is in this file and the TASK reports, for `main` to fold.
+
+## PR #17 CI fix (2026-10-30, test-only)
+
+`tests/test_serve_scheduler_linux.py::test_slow_runs_never_execute_twice_at_once` failed once in CI at L380: `assert len(got) <= in_flight` with `got` 1 and `in_flight` 0. All `got` records were `SchedulerStopping`. Cause: the oracle counted in-flight runs of `sweep` and `inventory` only, but M9 adds the 30 s `scan_schedules` tick (REQ-225). SIGTERM landing during a tick makes that run log one `SchedulerStopping` failure, which is correct (TASK-071 r1). The failure depends on timing, so it was green locally.
+
+Fix (exact, not a wider count): the test launcher now also traces `run_due_schedules` runs (`start/end schedules n`). Each failure record is matched to its job (`offline_sweep` → sweep, `inventory`, `scan_schedules` → schedules) and compared with that job's own runs in flight at SIGTERM. Every failure must still be `SchedulerStopping` and belong to a known job. The REQ-080 (2) overlap and open-run checks are unchanged. The G27 test in the same file only checks the type and the job set (already updated for `scan_schedules`, CHK-M9-219), so it needs no change.
+
+| Check | Command (W) | Result |
+| --- | --- | --- |
+| repeat | the node id, 10 separate runs | **10/10 passed** |
+| file | `pytest tests/test_serve_scheduler_linux.py` | **9/9 passed** |
+| plant | a `ValueError` raised in the first `scan_schedules` run (throwaway copy) | **red**: 1 failed (the non-stopping failure) |
+| static | `ruff check`, `ruff format --check`, `mypy --strict` default and `--platform linux` on `manager` | clean (385 files) |

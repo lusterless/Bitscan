@@ -82,7 +82,7 @@ def interval(self, kind):
 
 
 r.SchedulerRunner._interval = interval
-counts = {"sweep": 0, "inventory": 0}
+counts = {"sweep": 0, "inventory": 0, "schedules": 0}
 
 
 def wrap(kind, real):
@@ -104,6 +104,9 @@ def wrap(kind, real):
 
 r.run_sweep = wrap("sweep", r.run_sweep)
 r.run_inventory = wrap("inventory", r.run_inventory)
+# M9 (REQ-225): the 30 s scan_schedules tick is traced too, so a run of it in
+# flight at SIGTERM can be told apart from one that should not have failed.
+r.run_due_schedules = wrap("schedules", r.run_due_schedules)
 real_close = pool.AppDatabase.close
 
 
@@ -365,19 +368,30 @@ def test_slow_runs_never_execute_twice_at_once(launch: Any) -> None:
     )
     signalled = time.monotonic()  # CLOCK_MONOTONIC is shared by processes
     assert t.stop() == 0
-    in_flight = 0
-    for kind in ("sweep", "inventory"):
+    # The job name a failure record carries -> its traced kind. M9 adds the
+    # scan_schedules tick (REQ-225), which can be in flight at SIGTERM too
+    # (CI, PR #17); each job's failures are compared with its own runs.
+    traced = {
+        "offline_sweep": "sweep",
+        "inventory": "inventory",
+        "scan_schedules": "schedules",
+    }
+    in_flight: dict[str, int] = {}
+    for kind in traced.values():
         spans = t.runs(kind)
         assert overlaps(spans) == [], (kind, spans)
         open_runs = [k for k, v in spans.items() if len(v) != 2]
         assert open_runs == [], (kind, spans)  # stop waited for the last one
-        in_flight += sum(v[0] < signalled < v[1] for v in spans.values())
+        in_flight[kind] = sum(v[0] < signalled < v[1] for v in spans.values())
     # TASK-071 r1 (lead ruling 2026-10-23), as in the G27 test below: a run
     # still in progress at SIGTERM gives up its later steps with
     # SchedulerStopping. Only such a run may log a failure; nothing else fails.
     got = failures(t)
     assert [r["exc_type"] for r in got] == ["SchedulerStopping"] * len(got), got
-    assert len(got) <= in_flight, (got, in_flight)
+    for job, kind in traced.items():
+        mine = [r for r in got if r.get("job") == job]
+        assert len(mine) <= in_flight[kind], (job, got, in_flight)
+    assert all(r.get("job") in traced for r in got), got
 
 
 # ------------------------------------------------------------ CHK-M3-233 (G27)
