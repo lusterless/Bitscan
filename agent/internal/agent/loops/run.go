@@ -47,7 +47,7 @@ type InventoryRunner interface {
 	Unscheduled(ctx context.Context)
 }
 
-// ComplianceHandler handles one accepted compliance job (TASK-103, #74).
+// ComplianceHandler handles one accepted compliance job; *Compliance.
 type ComplianceHandler interface {
 	Handle(ctx context.Context, job wire.Job)
 }
@@ -66,6 +66,9 @@ type Deps struct {
 	JobPullSeconds     int
 	MaxParallelPlugins int
 	CapreadSock        string // empty: CapreadSock
+	// SpoolBytes is the spool's size on disk, the heartbeat's spool_bytes
+	// (#78 (d)); the spool's Size. Nil reports 0.
+	SpoolBytes func() int64
 }
 
 // Run is the state the loops share. Its context ends on a 401 (Stop) or when

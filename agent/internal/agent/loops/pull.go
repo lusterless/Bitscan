@@ -20,7 +20,8 @@ type Seen interface {
 }
 
 // Puller is the job pull loop and its dispatch. Run, Seen and Inventory are
-// required; a nil Compliance is the 0.x handler, Unavailable (#74).
+// required. A nil Compliance is refused: every compliance job is refused and
+// logged, and inventory jobs still run (TS §1.1 G2).
 type Puller struct {
 	Run        *Run
 	Seen       Seen
@@ -36,7 +37,7 @@ type Puller struct {
 func (p *Puller) Loop() {
 	r := p.Run
 	if p.Compliance == nil {
-		p.Compliance = Unavailable{Run: r}
+		r.Log().Error("no compliance handler: compliance jobs are refused; inventory is unaffected")
 	}
 	select {
 	case <-r.FirstHeartbeat():
