@@ -180,3 +180,32 @@ Same file, `.github/workflows/agent.yml`, job `go-test-ubuntu`, step "Runner del
 - **Plant D:** drop the `-p WorkingDirectory=` line. The cwd becomes `/`, so `../../../docs/spec` doesn't resolve, `TestDelegatedJobRedaction` can't extract the TS patterns, and the step goes red.
 - **The chmods may not be strictly needed, so don't plant them.** The unit's ambient `CAP_DAC_READ_SEARCH` already bypasses read and search checks once the test runs, so dropping the chmods may well stay green. I don't know whether systemd's `chdir` to `WorkingDirectory` happens before that capability is effective. The chmods make the step independent of that order and of the hosted image's home mode.
 - Plants A and B from r1 still apply.
+
+## Revision 3 (2026-11-01)
+
+Implementer: impl-deploy-m10c. Lead ruling: decisions row "PR #18 CI fixes accepted" (2026-11-01), item (1). Step text: `work/reports/PR18-ci-fix-test.md` §1, the YAML block under "agent.yml change needed (impl-deploy)".
+
+### Change
+
+Same file, `.github/workflows/agent.yml`, job `go-test-ubuntu`. One new step, **"Root-only tests (sudo)"** (comment and step L202–L232, +32 lines, nothing removed). It sits right after `go test (linux/amd64)` and before the delegated step. I inserted the block exactly as given in §1, with no edits. No other step changed.
+
+What it does:
+- Builds `runnerclient`, `capread` and `sdsock` test binaries as the job user (`go test -c -race`) into a 0755 `mktemp -d` directory.
+- Runs each one under `sudo` from its package directory, with `-test.run "^<Test>$" -test.count=1 -test.v`.
+- Is red when any of these holds: the binary exits non-zero; there is no `^--- PASS: <Test> (` line for `TestConnectPermissionDeniedLinux`, `TestPeerCheckThroughSdsock` or `TestPeerCheck`; or any `--- FAIL` or `--- SKIP` line appears.
+
+### How I checked it
+
+- **YAML parse** (PyYAML 6.0.1, WSL):
+  - the `go-test-ubuntu` matrix is `['ubuntu-22.04', 'ubuntu-24.04']` with `runs-on: ${{ matrix.os }}`, so the step runs on both images;
+  - the steps are checkout, setup-go, fixtures, `go test`, **Root-only tests (sudo)**, then the delegated step;
+  - the new step's `working-directory` is `agent`.
+- **Identical to the report:** the YAML block from `PR18-ci-fix-test.md` §1 appears in `agent.yml` exactly once, byte-identical.
+- **`bash -n`** on the extracted `run:` block: OK.
+- `git diff` on `agent.yml`: the 32 added lines only.
+
+### NOT RUN
+
+- **The step itself:** I didn't run it locally. tester-m10d ran the same body in WSL (R3: exit 0 as root; R4: exit 1 when every row skips; R6: exit 1 with the plants).
+- **The hosted run:** it happens on the PR. Only CI confirms that `sudo`, `setpriv` and `python3` behave there as in WSL.
+- **`actionlint` and `shellcheck`:** not installed.

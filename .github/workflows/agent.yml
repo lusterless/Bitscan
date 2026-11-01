@@ -199,6 +199,38 @@ jobs:
         working-directory: agent
         run: GOOS=linux GOARCH=amd64 go test ./...
 
+      # Root-only rows (named skips in the non-root go test above): the
+      # sdsock and capread peer checks and the runner client's EACCES case
+      # run peers or the client as other uids through setpriv, which needs
+      # root. Built as this user, run under sudo. Red unless each named test
+      # passed; a skip, a missing row or any FAIL is red.
+      - name: Root-only tests (sudo)
+        working-directory: agent
+        run: |
+          dir="$(mktemp -d)"
+          chmod 0755 "$dir"
+          rc=0
+          for spec in \
+            "internal/agent/runnerclient:TestConnectPermissionDeniedLinux" \
+            "internal/capread:TestPeerCheckThroughSdsock" \
+            "internal/sdsock:TestPeerCheck"; do
+            pkg="${spec%%:*}"
+            test="${spec#*:}"
+            name="$(basename "$pkg")"
+            GOOS=linux GOARCH=amd64 go test -c -race -o "$dir/$name.test" "./$pkg/"
+            log="$RUNNER_TEMP/root-$name.log"
+            (cd "$pkg" && sudo "$dir/$name.test" -test.run "^$test\$" -test.count=1 -test.v) 2>&1 | tee "$log" || rc=1
+            if ! grep -qE "^--- PASS: $test \(" "$log"; then
+              echo "root-only row $test did not pass as root"
+              rc=1
+            fi
+            if grep -qE -- '--- (FAIL|SKIP)' "$log"; then
+              echo "$name: a root-only row failed or skipped (above)"
+              rc=1
+            fi
+          done
+          exit "$rc"
+
       # The runner's delegated cgroup tests (build tag delegated) need a
       # delegated cgroup v2 subtree, so go test ./... never runs them. They run
       # as bitscan-runner.service runs (TS §3.7): user bitscan-runner, only
