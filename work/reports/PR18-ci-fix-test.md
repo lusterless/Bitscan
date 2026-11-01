@@ -21,6 +21,7 @@ Every Go run used `-race -count=1` unless a count is given. Plants were made onl
 | 3 | `TestPD45Batches/50_plugins`: "the retry after a 503 sent different bytes" | TASK-220 r1 rebuilds the batch with `Next` after each failed attempt, so a full 50-item batch posted before `Finish` (final=false) comes back as the final (final=true) | test (expected behaviour) | old → new assertion: same plugins, each once, each the same result or its marker; a final copy stays final |
 | 4 | manager `test_default_partition_is_empty_after_migrate`: `scan_result_default` holds 1 row (both attempts) | an M9 test, `test_jobs_api_pg.py::test_well_formed_batches_for_jobs_that_cannot_take_them_are_409`, commits a result for a job dated 2026-10-23. Since 2026-11-01, `db migrate` creates no October partition, so the row lands in the default partition of the shared session database | test, date-dependent (not M10, not product) | the culprit removes its stored row in a `finally`, as `planted_default_row` does; the assertion is unchanged |
 | 5 | manager flake `test_slow_runs_never_execute_twice_at_once` (attempt 1 only) | test race: serve sets the scheduler's stop flag only after the uvicorn and catalog shutdown, so a run that starts after `signalled` can still give up with `SchedulerStopping`, but it wasn't counted as in flight | test (not product) | the launcher traces when `SchedulerRunner.stop()` begins; "in flight" = still running at that moment; the assertion is unchanged (§5) |
+| 6 | agent `TestServeMalformed` subtests "refused busy" (22.04, second run) | product: serve cleared `busy` after closing the connection (TASK-225 r1 fixes it, plus the fatal-path window) | product (fixed by impl-agent-m10r) | test side: 3 new rows and 4 plants; TestServeMalformed unchanged (§6) |
 
 ## 1. Root-only rows
 
@@ -199,3 +200,43 @@ Fixed at main's request after the four fixes above were accepted. It failed on m
 | F5b | WM | the new test with the stop delayed 0.5, 1.0, 2.0 and 2.5 s (across the old test's red window), ×2 each | **8/8 passed** |
 | F6 | WM | `tests/test_serve_scheduler_linux.py` (the whole module; the launcher is shared) | **9/9 passed** |
 | F7 | WM | ruff check, ruff format --check, mypy --strict (manager) | clean |
+
+## 6. TestServeMalformed "refused busy" (TASK-225 r1, 2026-11-02)
+
+PR #18's second run (41310918313) was green except agent `go test` on 22.04: every TestServeMalformed subtest after the first got `replies "refused busy" (<nil>), want refused malformed` (`serve_linux_test.go:341`).
+
+**Cause (product, TASK-225 r1 by impl-agent-m10r; decisions rows "TASK-225 r1" and "TASK-225 r1 scope").** Serve's handler defers ran LIFO, so `conn.Close()` ran before `busy.Store(false)`. On the accepted path, `handle` also closed the connection in its own defer, before it returned. A client that read EOF and dialled at once could arrive while `busy` was still true. r1 has three parts:
+- Serve's goroutine clears `busy`, then closes, then calls `wg.Done()`.
+- `handle` wakes its reader with a past read deadline instead of a close.
+- Fatal path (scope (2)): a `failed` flag is set inside `once.Do` before `busy` is cleared, and checked after the busy CAS. A connection accepted after a failed cleanup is closed with no reply, and Serve returns the error.
+
+TestServeMalformed's assertion is unchanged.
+
+**Review note.** Decisions row "scope" (2) says to check the flag "before the CAS"; r1 checks it **after**, and its comment gives the reason. A CAS that wins has read the `busy=false` stored after `failed=true`, so it sees `failed`. Checked before the CAS, a fatal between the check and the CAS would let one more job run. I agree with the code; reviewer-m10c may want the decisions text aligned.
+
+**New rows** (all in `agent/internal/runner/serve_linux_test.go`; test files only):
+- `TestServeNextConnectionAfterEndNeverBusy`: 200 rounds with no pause, cycling through three ways a connection can end: a decode refusal (`refused malformed`), a job-check refusal (`refused foreign_agent`), and a finished job (`accepted,result,result,result,done`). Each round reads to EOF, then the next round dials at once. It is never refused busy, and the executor runs once per job round. On a write error it still reads and reports the reply, because a busy refusal is sent without reading the request.
+- `TestServeNoJobAfterFatal` (deterministic): a gated listener that still hands out a connection after `Close`. After the job's fatal error, and once `busy` is free, one more connection is accepted. It must be closed with no reply (no `accepted`, no `busy`), the executor must have run once, and Serve must return the executor's error.
+- `TestServeTightDialAroundFatal`: a client dials in a tight loop while the only job ends fatally. Every loop connection gets `refused busy` or a close with no reply, never `accepted`; the executor runs once and Serve returns the error. Recorded: about 75–93 loop connections per run, all `refused busy` apart from an occasional one closed with no reply, which is the post-fatal window, handled.
+
+**Plants** (throwaway copies; `serveplant.py` refuses the worktree). Without a sleep, neither ordering defect reproduced in WSL, even at `-cpu 1` (700/700 and 280/280 green). A 2 ms sleep widens the window, as main allowed.
+
+| Row | Plant | Result |
+| --- | --- | --- |
+| P1 | Serve's LIFO defers restored (close, then clear busy), plus 2 ms between them; ×3 at `-cpu 1,2,4` | **red** 18/126 passed: TestServeMalformed 90 subtests with CI's exact `replies "refused busy" (<nil>), want refused malformed` / `want refused not_compliance`; the new row red 9/9 runs (`round 1 (after round 0 ended): replies "refused busy" (read <nil>, write <nil>), want "refused foreign_agent"`) |
+| P2 | `handle`'s close-to-wake restored (r0), plus 2 ms after it; Serve's r1 order kept; ×3 at `-cpu 1,2,4` | **red**: the new row red 9/9, only right after a finished job (`round 3 (after round 2 ended)`; on the pre-extension tree also rounds 6, 33, 114, all job rounds); TestServeMalformed green (it has no accepted job) |
+| P3 | control, not a defect: r1's order with the same 2 ms between clearing busy and the close | **green** 420/420 (TestServeMalformed + the new row ×10 at `-cpu 1,2,4`): the row checks the order, not timing |
+| P4 | (c) the `failed` check after the CAS removed | **red**: `TestServeNoJobAfterFatal` 15/15 (`late connection after the fatal error got "accepted,result" … want a close with no reply`); the tight-loop row stays green under it (the window between two adjacent statements is too short to hit black-box, as the implementer noted; cover is review plus repetition under `-race`) |
+
+**Runs** (WSL Ubuntu 24.04, `-race`).
+
+`go test ./internal/runner/ -run 'TestServe' -count=50 -cpu 1,2,4` as asked would take about 4 h per user: TestServeWriteDeadline waits a real 60 s and TestServeRequestDeadline 30 s (the #130 (f) values), 150 times each. So every other TestServe row ran at `-count=50 -cpu 1,2,4`, and those two at `-count=1 -cpu 1,2,4`.
+
+| Row | Where | Result |
+| --- | --- | --- |
+| S0 | r1 before the fatal extension, WN and WR | fast rows **3450/3450** each; deadline rows **12/12** each; TestServeBusy, TestServeMalformed and the new busy row 150/150 each |
+| S1 | final tree (r1 with the fatal extension, serve.go sha256 `03cca52a…`), WN (uid 1000) | fast rows (11 TestServe rows, incl. the 3 new) **3750/3750** passed, 0 failed, 0 skipped; deadline rows **12/12**. TestServeBusy, TestServeMalformed, the busy row, TestServeNoJobAfterFatal and TestServeTightDialAroundFatal **150/150** each |
+| S2 | the same, WR (uid 0) | fast **3750/3750**; deadline **12/12**; the same five rows 150/150 each |
+| S3 | gofmt; golangci-lint v2.14.0 GOOS=linux, plain and `--build-tags delegated` (WSL and Windows) | clean; 0 issues |
+
+The existing busy row, TestServeBusy (a second connection during a running job is refused busy at once, its request unread; the slot is then free), passes in every run above.

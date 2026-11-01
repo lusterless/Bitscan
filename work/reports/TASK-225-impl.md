@@ -76,3 +76,66 @@ Extra rows worth planting:
 - A refused job still reaches `Exec.Run`: the exec counter is non-zero.
 - `done` is written after a cancelled job.
 - A fatal `Run` error is ignored: `Serve` keeps accepting.
+
+## Revision 1 (2026-11-02)
+
+Builder: impl-agent-m10r. Cause: PR #18 CI on 22.04, where TestServeMalformed's later subtests got `refused busy`. Recorded in `work/decisions.md` as "TASK-225 r1: clear busy before the connection is closed". File: `agent/internal/runner/serve.go` only.
+
+**Defect.** The per-connection goroutine had three defers: `wg.Done`, then `busy.Store(false)`, then `conn.Close()`. Defers run LIFO, so the connection closed first. A client saw EOF while `busy` was still true, and its next dial was refused `busy`. The agent retries `busy` for 30 s, so nothing is lost functionally, but the runner reported busy while idle.
+
+**Change.**
+- **L88-104, the per-connection goroutine.** One deferred func now runs, in order: `busy.Store(false)`, then `conn.Close()`, then `wg.Done()`. `wg.Done` stays last, so `Serve`'s `wg.Wait` still waits for the close. The fatal path (`s.once.Do`: record `fatal` and close the listener) is in the body, so it still runs before `busy` is cleared, as before. The comment gives the order and the reason.
+- **L146-154, in `handle`.** This goes one step past the lead's example; the lead confirmed it in the decisions row "TASK-225 r1 scope" (2026-11-02). On the accepted path, `handle`'s deferred cleanup used `conn.Close()` to wake its 1-byte reader goroutine, then waited `<-readDone`. That close happens before `handle` returns, so after a `done` reply the client would still see EOF while `busy` was true, and the reorder alone would fix only the refusal paths. The decisions row says `busy` is cleared "before the connection closes", so `handle` now wakes the reader with `conn.SetReadDeadline(time.Now())` instead. A deadline applies to pending as well as future I/O (`net.Conn` docs), so the blocked `Read` returns at once. Only if `SetReadDeadline` fails does it close the connection, so `<-readDone` can never hang. Afterwards the reader's `cancel()` runs on an already-ended job, which is harmless. The outer goroutine now does the only close, after `busy` is cleared.
+
+**`handle` has finished every job-side step before it returns, so clearing `busy` after it can't let two jobs overlap:**
+- **Refusal paths** (bad frame, failed check, failed `accepted` write): they return before any job starts. There is no reader goroutine and no `Exec.Run`.
+- **Accepted path:** `Exec.Run` returns only after all of these:
+  - its `wg.Wait` over every plugin goroutine. Each plugin has already received its wait result and waited `<-capDone`, so its capture and wait goroutines have ended.
+  - each plugin cgroup's `release`;
+  - the after-job `Sweep`, and the emptying of `TmpDirs` (`job.go` `cleanup`).
+- **After `Run`:** the `done` reply is written (or skipped when cancelled). Then `handle`'s defers run, in LIFO order: the reader is woken and `<-readDone` is waited on, then `cancel()`.
+- **When `handle` returns,** no goroutine of that job is left. The next `CompareAndSwap(false, true)` therefore can't start a job while one is running.
+
+**The fatal-path window is closed** (added to r1 by the lead's decisions row "TASK-225 r1 scope", 2026-11-02).
+
+*The window.* On the fatal path, `Accept` may already have returned a peer-checked connection before the listener closed. If the loop's `CompareAndSwap` then ran after `busy` was cleared, that connection's job would run on a runner whose sweep had failed. This was the same before r1.
+
+*Change.*
+- **L44-49: a new field `failed atomic.Bool`.** `s.fatal` and `s.once` are kept as they were. I didn't fold them into one atomic, because a `Bool` plus the existing write-once error is the smallest change, and the error read is ordered by the flag:
+  - Inside `once.Do` (L101), the order is `s.fatal = err`, then `s.failed.Store(true)`, then `Listener.Close()`.
+  - That body runs before the goroutine's deferred `busy.Store(false)`, so `failed` is always set before `busy` is cleared.
+- **L71-80, in the accept loop:** `won := s.busy.CompareAndSwap(false, true)`, then `if s.failed.Load()`. When it's set, the loop closes the connection with no reply (a busy reply would make the agent retry), calls `wg.Wait()`, and returns `s.fatal`. Otherwise `!won` gives the busy refusal as before.
+- **L63, on the Accept-error path:** it now tests `s.failed.Load()` instead of `s.fatal != nil`, so one source decides "fatal". That read was already ordered by `wg.Wait`.
+
+*Why the check comes after the CAS, not before it as the lead's message said.* A check only before the CAS leaves a window:
+1. the loop reads `failed` (false);
+2. the handler sets `failed` and clears `busy`;
+3. the loop's CAS wins;
+4. one job runs after the failed sweep.
+
+Checked after the CAS, it is exact. A won CAS read `false`, and that `false` is either the initial value (no job has run, so no fatal) or the store the handler made after `failed.Store(true)`. Go's atomics are sequentially consistent, so the following `failed.Load()` then sees true. A lost CAS also checks the flag, so once `failed` is set, no busy reply goes out either. Before `failed` is set, a busy reply is still correct, because the job really is still running. The rule asked for is "a job never runs after a failed cleanup, and no busy reply", and this placement enforces it.
+
+*Memory ordering of `s.fatal`.* It is written once inside `once.Do`, before `failed.Store(true)`. Both reads come after `failed.Load()` returned true, and after `wg.Wait()`, so there is no data race.
+
+**Gates (from `agent/`):**
+- `gofmt -l .`: nothing.
+- `go vet` with `GOOS=windows` and `GOOS=linux`, each with no tags and with `-tags delegated`: rc 0 (4 runs).
+- `golangci-lint run ./...` for the same four combinations (`--build-tags delegated`): 0 issues each, no `nolint`.
+- `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...`: OK.
+- `go mod verify`: all modules verified.
+- Not run: the tests (tester, WSL with `-race`).
+
+**For the tester.**
+- TestServeMalformed, repeated many times under `-race`, must give no `refused busy`.
+- A new accepted-path row: run a normal job (fake executor), read until EOF after `done`, and dial again at once. That second connection must get its own `accepted`, never `refused busy`.
+- **Fatal race row (new).** Use a fake executor whose `Run` blocks on a channel and then returns an error.
+  - While it runs, keep a second client dialling in a tight loop, so a connection is accepted around the fatal.
+  - Release the executor.
+  - Expect: `Serve` returns that error; the executor's `Run` was called exactly once; and every other connection got either `refused busy` (before the fatal) or a close with no reply. None gets `accepted`.
+  - To make the window deterministic, a test `Listener` can hand out one connection only after it sees `Listener.Close()`. That connection must be closed unanswered, and `Run` must not be called a second time.
+- Plants:
+  - (a) restore the LIFO defers (the decisions row's plant). TestServeMalformed should go red.
+  - (b) restore `handle`'s `conn.Close()` wake-up. Only the accepted-path row should go red.
+  - (c) remove the `failed` check at L76-80. The deterministic fatal race row should go red: a second `Run`, or `accepted` on the late connection.
+  - Moving the check before the CAS opens only a scheduling window between two adjacent statements. A black-box test can't hit it deterministically: a connection handed out after `Close` is already caught by a check before the CAS. That placement is covered by review, plus the tight-loop row repeated under `-race`.
+- Rows that must stay green: client close cancels the executor within 1 s (the reader still sees EOF), and the fatal row (`Serve` returns the error and the connection closes without `done`).
