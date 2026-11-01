@@ -13,6 +13,15 @@ The manager runs:
 
 The agent package (`bitscan-agent`) installs the `bitscan-agent` and `bitscan-runner` services. The agent enrols, sends a heartbeat every 5 minutes, pulls its jobs and uploads the inventory.
 
+**Compliance jobs (pre-release `0.2.0~pre1-1`, not a supported release).** Hosts on this build run compliance jobs:
+
+- The agent hands each job to `bitscan-runner`. The runner runs every check in its sandbox as the `bitscan-runner` user: it can read every file, but it cannot write outside its private `/tmp` or open IP connections.
+- The runner redacts the output on the host and returns it.
+- The agent keeps the results in an on-disk spool until the manager has answered them.
+- The optional `bitscan-capread` helper stays off until an administrator enables it on the host.
+
+The routes and pages that show scan results and scores come in a later version (see [Scans](#scans)). [`agent-install.md`](deploy/runbooks/agent-install.md) sections 9 to 11 cover the cgroup v2 requirement, `runner_unavailable`, the helper and the spool.
+
 The specifications are in `docs/spec/`: `Technical_Specification.md` and `bit_Schema_Reference.md`.
 
 ## Installing a release
