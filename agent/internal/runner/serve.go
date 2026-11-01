@@ -41,9 +41,12 @@ type Server struct {
 	Clock    func() time.Time
 	Log      *slog.Logger
 
-	busy  atomic.Bool
-	fatal error
-	once  sync.Once
+	busy atomic.Bool
+	// failed is set, after fatal and before busy is cleared, once a job's
+	// cleanup failed: no job may run after that (TASK-225 r1).
+	failed atomic.Bool
+	fatal  error
+	once   sync.Once
 }
 
 // Serve accepts until ctx is done (it returns nil after the running job has
@@ -57,7 +60,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		conn, err := s.Listener.Accept()
 		if err != nil {
 			wg.Wait()
-			if s.fatal != nil {
+			if s.failed.Load() {
 				return s.fatal
 			}
 			if ctx.Err() != nil {
@@ -65,7 +68,17 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 			return err
 		}
-		if !s.busy.CompareAndSwap(false, true) {
+		won := s.busy.CompareAndSwap(false, true)
+		// Checked after the CAS: a won CAS read the busy=false stored after
+		// failed was set, so it sees failed; checked before, a fatal between
+		// the check and the CAS would let one job run after a failed sweep.
+		// Closed unanswered: a busy reply would make the agent retry.
+		if s.failed.Load() {
+			_ = conn.Close()
+			wg.Wait()
+			return s.fatal
+		}
+		if !won {
 			// A second connection while a job runs: refused at once, its
 			// request never read (#130 (g)).
 			_ = s.reply(conn, proto.Reply{Kind: proto.KindRefused, Reason: proto.ReasonBusy})
@@ -74,11 +87,18 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			defer s.busy.Store(false)
-			defer func() { _ = conn.Close() }()
+			// In this order (TASK-225 r1): handle has ended the job and its
+			// cleanup, and a fatal error has set failed and closed the
+			// listener; then busy is cleared, so a client that sees EOF and
+			// dials again is served; then the connection is closed; wg.Done
+			// last, so Serve waits for the close.
+			defer func() {
+				s.busy.Store(false)
+				_ = conn.Close()
+				wg.Done()
+			}()
 			if err := s.handle(ctx, conn); err != nil {
-				s.once.Do(func() { s.fatal = err; _ = s.Listener.Close() })
+				s.once.Do(func() { s.fatal = err; s.failed.Store(true); _ = s.Listener.Close() })
 			}
 		}()
 	}
@@ -123,7 +143,15 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) error {
 		_, _ = conn.Read(b[:])
 		cancel()
 	}()
-	defer func() { _ = conn.Close(); <-readDone }()
+	// The reader is woken by a past read deadline (it applies to a pending
+	// Read too), not by a close: Serve closes the connection only after busy
+	// is cleared (TASK-225 r1). Closing is the fallback if that fails.
+	defer func() {
+		if conn.SetReadDeadline(time.Now()) != nil {
+			_ = conn.Close()
+		}
+		<-readDone
+	}()
 	var mu sync.Mutex
 	sent := 0
 	emit := func(r proto.Result) error {
