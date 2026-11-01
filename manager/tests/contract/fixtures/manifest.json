@@ -2380,5 +2380,11 @@
   "schema_gaps": {
     "lone surrogate": "main ruling 2026-10-23: model-only. No portable pattern can name a surrogate range (RE2 has none) and Go's encoding/json decodes a lone-surrogate escape as U+FFFD, so the Go agent cannot send one. The schema accepts these fixtures; the manager model must refuse them. M4: the Go contract test asserts only that the manager refuses (or skips these).",
     "nan_inf": "main ruling 2026-10-23: model-only. NaN, Infinity and -Infinity are not JSON (RFC 8259) and 1e400 overflows float64, so a JSON Schema \"number\" cannot exclude them. These 8 files are not strict JSON: Python's json reads them, Go's encoding/json refuses them. M4: the Go contract test expects a parse error for them; the manager model must refuse them."
-  }
+  },
+  "shared_files": [
+    {
+      "file": "redaction/corpus.json",
+      "reason": "M10 TP-M10-03 (REQ-243 (3), CHK-M10-016): the redaction corpus shared by the Go agent and the manager. Not a wire body, so it has no route: agent/internal/redact/redact_test.go checks Go regexp spans per TS §8.6 default pattern, manager/tests/test_redaction_crosscheck.py checks the same spans with google-re2."
+    }
+  ]
 }

@@ -71,7 +71,16 @@ func TestInventoryJobPathTakesNoJobInput(t *testing.T) { // CHK-M4-101 (job path
 		pickup := t0.Add(time.Hour)
 		answer := jobsBody(t, invJob(jobA, agentID, pickup), compJob(jobB, pickup, 2, execute))
 		h := runJobPath(t, [][]byte{answer})
-		waitFor(t, func() bool { _, u, r := h.m.counts(); return u >= 1 && r >= 1 }, "the inventory upload and the results")
+		// PD-45: the #74 handler's results post was the second sync point;
+		// with no compliance handler the compliance job is refused instead
+		// (REQ-245, TASK-223), so wait for the upload and that refusal.
+		waitFor(t, func() bool {
+			_, u, _ := h.m.counts()
+			return u >= 1 && strings.Contains(h.logs.String(), "no compliance handler")
+		}, "the inventory upload and the compliance refusal")
+		if _, _, r := h.m.counts(); r != 0 {
+			t.Errorf("%d results posts without a compliance handler, want 0", r)
+		}
 		h.m.mu.Lock()
 		up := h.m.uploads[0]
 		h.m.mu.Unlock()

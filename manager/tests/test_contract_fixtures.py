@@ -22,13 +22,19 @@ ROUTES = {"enrol", "heartbeat", "jobs", "results", "inventory", "rotate"}
 
 def test_manifest_and_folder_agree() -> None:
     listed = {f.file for f in loader.fixtures()}
+    # Shared non-wire files (M10: the redaction corpus) are listed by name in
+    # "shared_files"; every file on disk is still listed exactly once.
+    shared = [e["file"] for e in loader.manifest().get("shared_files", [])]
     on_disk = {
         p.relative_to(loader.FIXTURES).as_posix()
-        for p in loader.FIXTURES.rglob("*.json")
-        if p.name != "manifest.json"
+        for p in loader.FIXTURES.rglob("*")
+        if p.is_file() and p.name != "manifest.json"
     }
-    assert listed == on_disk
+    assert listed | set(shared) == on_disk
     assert len(listed) == len(loader.fixtures())  # no duplicate entries
+    assert len(set(shared)) == len(shared)
+    assert not listed & set(shared)  # a wire fixture is never also "shared"
+    assert shared == ["redaction/corpus.json"]  # M10; extend deliberately
 
 
 def test_every_fixture_is_utf8_json_with_lf() -> None:
