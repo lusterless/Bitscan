@@ -13,6 +13,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -638,4 +639,249 @@ func TestServeShutdownMidJob(t *testing.T) {
 	if kinds(reps) != "accepted,result" {
 		t.Fatalf("replies %s", kinds(reps))
 	}
+}
+
+// PR #18 CI fix (TASK-225 r1; work/reports/PR18-ci-fix-test.md §6): once the
+// runner has closed a connection (the client read EOF), its job slot is free.
+// An immediate next connection is never refused busy, whether the previous
+// one ended with a request refusal (decode), a job refusal (checks) or a
+// finished job. CI saw TestServeMalformed's subtests get "refused busy"
+// because busy was cleared only after the close. A tight dial loop, 200
+// rounds, no pause between rounds.
+func TestServeNextConnectionAfterEndNeverBusy(t *testing.T) {
+	const rounds = 200
+	h := startServer(t, &fakeExec{results: -1})
+	jobs := 0
+	for i := range rounds {
+		var write func(c *net.UnixConn) error
+		var want string
+		switch i % 3 {
+		case 0: // refused at decode
+			write = func(c *net.UnixConn) error { _, err := c.Write(rawFrame([]byte("\x00\xffGARBAGE{"))); return err }
+			want = "refused malformed"
+		case 1: // refused by the job checks
+			r := srvReq(jobN(30000+i), func(r *proto.Request) { r.Job.AgentID = foreignID })
+			write = func(c *net.UnixConn) error { return proto.WriteRequest(c, r) }
+			want = "refused " + string(proto.ReasonForeignAgent)
+		default: // a job that runs and finishes
+			r := srvReq(jobN(30000+i), nil)
+			write = func(c *net.UnixConn) error { return proto.WriteRequest(c, r) }
+			want = "accepted,result,result,result,done"
+			jobs++
+		}
+		c := h.dial(t)
+		// A busy refusal is sent without reading the request, so the write
+		// may fail; the replies still say what happened.
+		werr := write(c)
+		reps, err := readAll(t, c, 5*time.Second) // to EOF: the runner closed it
+		_ = c.Close()
+		if werr != nil || err != nil || kinds(reps) != want {
+			t.Fatalf("round %d (after round %d ended): replies %q (read %v, write %v), want %q", i, i-1, kinds(reps), err, werr, want)
+		}
+	}
+	if n := h.exec.calls.Load(); int(n) != jobs {
+		t.Fatalf("executor ran %d times, want %d", n, jobs)
+	}
+}
+
+// gatedListener hands out a real connection only when the test sends a
+// token, and keeps doing so after Close: a connection Accept had already
+// returned when the fatal error closed the listener (TASK-225 r1).
+type gatedListener struct {
+	l      *net.UnixListener
+	gate   chan struct{}
+	closed chan struct{} // closed by the first Close
+	done   chan struct{} // closed by the test's cleanup: Accept then fails
+	once   sync.Once
+}
+
+func (g *gatedListener) Accept() (*net.UnixConn, error) {
+	select {
+	case <-g.gate:
+		return g.l.AcceptUnix()
+	case <-g.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (g *gatedListener) Close() error {
+	g.once.Do(func() { close(g.closed) })
+	return nil
+}
+
+// fatalServer is a Server on a gatedListener whose executor holds its first
+// job, then returns a fatal (cleanup failed) error.
+func fatalServer(t *testing.T) (*Server, *gatedListener, *fakeExec, string, chan error, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "runner.sock")
+	l, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &gatedListener{l: l, gate: make(chan struct{}), closed: make(chan struct{}), done: make(chan struct{})}
+	planted := errors.New("planted: sweep failed")
+	ex := &fakeExec{results: 1, hold: make(chan struct{}), started: make(chan struct{}), fatal: planted}
+	s := &Server{Listener: g, Checks: NewChecks(agentFile(t, ownID+"\n")), Exec: ex,
+		Clock: func() time.Time { return now0 }, Log: slog.New(slog.NewJSONHandler(&jobLog{}, nil))}
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Serve(context.Background()) }()
+	t.Cleanup(func() {
+		close(g.done)
+		select {
+		case <-errCh:
+		case <-time.After(10 * time.Second):
+			t.Error("Serve did not return")
+		}
+		_ = l.Close()
+	})
+	return s, g, ex, path, errCh, planted
+}
+
+// TASK-225 r1 (decisions "TASK-225 r1 scope" (2)), deterministic: after a
+// job's cleanup failed, a connection accepted once busy is free again is
+// closed unanswered (no accepted, no busy), no second job runs, and Serve
+// returns the executor's error.
+func TestServeNoJobAfterFatal(t *testing.T) {
+	s, g, ex, path, errCh, planted := fatalServer(t)
+	dial := func() *net.UnixConn {
+		c, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: path, Net: "unix"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = c.Close() })
+		return c
+	}
+	c1 := dial()
+	if err := proto.WriteRequest(c1, srvReq(jobN(2251), nil)); err != nil {
+		t.Fatal(err)
+	}
+	g.gate <- struct{}{}
+	<-ex.started
+	close(ex.hold) // Run returns the fatal error
+	if reps, _ := readAll(t, c1, 10*time.Second); kinds(reps) != "accepted,result" {
+		t.Fatalf("first connection: %s, want accepted,result and no done", kinds(reps))
+	}
+	select {
+	case <-g.closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the fatal error did not close the listener")
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for s.busy.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("busy was not cleared after the fatal job")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Serve has not returned yet: it waits in Accept, which hands out one
+	// more connection now, while busy is free.
+	select {
+	case err := <-errCh:
+		t.Fatalf("Serve returned %v before the late connection; this row needs it waiting in Accept", err)
+	default:
+	}
+	c2 := dial()
+	werr := proto.WriteRequest(c2, srvReq(jobN(2252), nil))
+	g.gate <- struct{}{}
+	reps, rerr := readAll(t, c2, 10*time.Second)
+	if kinds(reps) != "" {
+		t.Fatalf("late connection after the fatal error got %q (read %v, write %v), want a close with no reply", kinds(reps), rerr, werr)
+	}
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, planted) {
+			t.Fatalf("Serve returned %v, want the executor's error", err)
+		}
+		errCh <- err // for the cleanup
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve kept running after the late connection")
+	}
+	if n := ex.calls.Load(); n != 1 {
+		t.Fatalf("executor ran %d times, want 1: a job ran after a failed cleanup", n)
+	}
+}
+
+// TASK-225 r1, the same race through the real listener: a client dials in a
+// tight loop while the only job ends with a fatal error. Every one of its
+// connections is refused busy (job running) or closed with no reply; none
+// is accepted, the executor runs once, and Serve returns the error.
+func TestServeTightDialAroundFatal(t *testing.T) {
+	planted := errors.New("planted: sweep failed")
+	ex := &fakeExec{results: 1, hold: make(chan struct{}), started: make(chan struct{}), fatal: planted}
+	h := startServer(t, ex)
+	c1 := h.dial(t)
+	if err := proto.WriteRequest(c1, srvReq(jobN(2253), nil)); err != nil {
+		t.Fatal(err)
+	}
+	<-ex.started
+	type round struct{ kinds, rerr string }
+	var mu sync.Mutex
+	var got []round
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		for i := 0; ; i++ {
+			c, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: h.path, Net: "unix"})
+			if err != nil {
+				return // the listener is gone: Serve has returned
+			}
+			_ = proto.WriteRequest(c, srvReq(jobN(40000+i), nil))
+			_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+			var ks []string
+			var rerr error
+			for {
+				r, err := proto.ReadReply(c)
+				if err != nil {
+					if !errors.Is(err, io.EOF) && !errors.Is(err, syscall.ECONNRESET) {
+						rerr = err
+					}
+					break
+				}
+				k := string(r.Kind)
+				if r.Kind == proto.KindRefused {
+					k += " " + string(r.Reason)
+				}
+				ks = append(ks, k)
+			}
+			_ = c.Close()
+			mu.Lock()
+			got = append(got, round{strings.Join(ks, ","), fmt.Sprint(rerr)})
+			mu.Unlock()
+		}
+	}()
+	time.Sleep(20 * time.Millisecond) // let the loop see a running job
+	close(ex.hold)
+	select {
+	case err := <-h.errCh:
+		if !errors.Is(err, planted) {
+			t.Fatalf("Serve returned %v, want the executor's error", err)
+		}
+		h.errCh <- err // for the cleanup
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve kept running after a fatal executor error")
+	}
+	select {
+	case <-loopDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the dial loop did not end after the listener closed")
+	}
+	if n := ex.calls.Load(); n != 1 {
+		t.Fatalf("executor ran %d times, want 1: a job ran after a failed cleanup", n)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	busy := 0
+	for i, r := range got {
+		switch r.kinds {
+		case "refused busy":
+			busy++
+		case "":
+		default:
+			t.Fatalf("loop connection %d got %q (read error %s), want refused busy or no reply", i, r.kinds, r.rerr)
+		}
+	}
+	if busy == 0 {
+		t.Fatalf("%d loop connections, none refused busy: the loop never overlapped the running job", len(got))
+	}
+	t.Logf("RECORDED: %d loop connections, %d refused busy, %d closed with no reply", len(got), busy, len(got)-busy)
 }
