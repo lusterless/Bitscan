@@ -738,12 +738,24 @@ def test_well_formed_batches_for_jobs_that_cannot_take_them_are_409(
             state="dispatched",
             created_at=T0 - timedelta(minutes=3),
         )
-    env.clock.at += timedelta(seconds=10)
-    mark = env.last_audit()
-    r = env.post(a, own.job_id, batch(item(plugin_uuid=str(pol.uuids[0]))))
-    assert r.status_code == 200 and r.json() == {"accepted": 1, "duplicates": 0}, r.text
-    assert refused_entries(env, mark) == []
-    assert env.results_count() == results_before + 1
+    # PR #18 CI fix (work/reports/PR18-ci-fix-test.md): the stored row is
+    # committed to the shared session database. Its job is dated T0
+    # (2026-10), so once `db migrate` runs in a later month there is no
+    # partition for it and the row sits in scan_result_default, which
+    # test_schema_scanning and test_fleet_alerts_pg require to be empty. It
+    # is removed afterwards, as planted_default_row does.
+    try:
+        env.clock.at += timedelta(seconds=10)
+        mark = env.last_audit()
+        r = env.post(a, own.job_id, batch(item(plugin_uuid=str(pol.uuids[0]))))
+        assert r.status_code == 200 and r.json() == {"accepted": 1, "duplicates": 0}, (
+            r.text
+        )
+        assert refused_entries(env, mark) == []
+        assert env.results_count() == results_before + 1
+    finally:
+        with sf.owner(env.server) as o:
+            o.execute("DELETE FROM scan_result WHERE job_id = %s", (own.job_id,))
 
 
 def test_refusal_entry_counts_the_batch_without_its_content(env: Env) -> None:

@@ -308,9 +308,12 @@ func TestCapreadChild(t *testing.T) {
 	os.Exit(0)
 }
 
+// Root-only (PR #18 CI fix): the peers run as other uids through setpriv.
+// Like M4's named euid skips, a non-root run skips it by name; agent.yml's
+// root step runs it under sudo and is red unless it passed there.
 func TestPeerCheckThroughSdsock(t *testing.T) {
 	if os.Geteuid() != 0 {
-		t.Fatal("needs root (setpriv)")
+		t.Skip("named skip: needs root to run peers as other uids (setpriv); this row runs in agent.yml's root step and in WSL as root")
 	}
 	dir, err := os.MkdirTemp("", "capread-peer-")
 	if err != nil {

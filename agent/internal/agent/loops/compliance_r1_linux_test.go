@@ -392,6 +392,15 @@ func TestHandlerOneJobAtATime(t *testing.T) {
 
 // CHK-M10-079 (REQ-250 (1), (3); -367, -384): heartbeat spool_bytes is the
 // spool's size while results wait; heartbeat answers never reach the runner.
+//
+// PR #18 CI fix (work/reports/PR18-ci-fix-test.md): the test used to take the
+// first heartbeat over 180,000 bytes and compare it with Spool.Size() read
+// later, assuming neither changed after the job finished. That heartbeat can
+// be built after the last Put but before Finish (or before the start notice
+// is acknowledged), and each of those rewrites job.json one byte shorter
+// ("finished":false → true, "start_acked":false → true), so CI saw 180,969
+// against 180,968. The comparison is now made only once the spool is at rest,
+// against a heartbeat built after that point; the assertion is unchanged.
 func TestHandlerSpoolBytesAndNoRunnerFromHeartbeat(t *testing.T) {
 	clock := &fakeClock{now: t0}
 	runner := &scriptRunner{clock: clock, steps: func(job wire.Job, now time.Time) []any {
@@ -407,24 +416,38 @@ func TestHandlerSpoolBytesAndNoRunnerFromHeartbeat(t *testing.T) {
 		}
 		return reply{status: 200, body: []byte(`{"accepted":0,"duplicates":0}`)}
 	})
-	var got int64
+	// The spool is at rest once the start notice is acknowledged and the job
+	// is finished: job.json then holds both flags true, and every results post
+	// is answered 503, so nothing changes the spool again.
+	manifest := filepath.Join(h.dir, "spool", string(uid(1)), "job.json")
 	h.drive(t, func() bool {
-		for _, c := range h.m.ops(transport.OpHeartbeat) {
-			if hr, _ := decoded(t, c.req); hr.SpoolBytes > 180_000 {
-				got = hr.SpoolBytes
-				return true
-			}
-		}
-		return false
+		b, err := os.ReadFile(manifest) //nolint:gosec // the test's own spool
+		return err == nil && strings.Contains(string(b), `"start_acked":true`) && strings.Contains(string(b), `"finished":true`)
 	})
-	if size := h.sp.Size(); got != size {
-		t.Fatalf("heartbeat spool_bytes %d, Spool.Size() %d (both unchanged since the job finished)", got, size)
+	size := h.sp.Size() // waits for the spool lock, so Finish has counted the manifest
+	if size <= 180_000 {
+		t.Fatalf("Spool.Size() %d with three ~60 kB results waiting", size)
+	}
+	// One heartbeat body is built at a time, so the second heartbeat recorded
+	// from here on was built after the spool came to rest.
+	n := len(h.m.ops(transport.OpHeartbeat))
+	for len(h.m.ops(transport.OpHeartbeat)) < n+2 {
+		h.clock.fireEarliest(t, 2)
+		time.Sleep(time.Millisecond)
+	}
+	for i, c := range h.m.ops(transport.OpHeartbeat)[n+1:] {
+		if hr, _ := decoded(t, c.req); hr.SpoolBytes != size {
+			t.Fatalf("heartbeat %d at rest: spool_bytes %d, Spool.Size() %d", n+1+i, hr.SpoolBytes, size)
+		}
+	}
+	if now := h.sp.Size(); now != size {
+		t.Fatalf("the spool changed at rest: %d, then %d", size, now)
 	}
 	if runner.calls != 1 {
 		t.Fatalf("%d runner calls, want 1", runner.calls)
 	}
 	// Further heartbeats, with any answer values, make no runner contact.
-	n := len(h.m.ops(transport.OpHeartbeat))
+	n = len(h.m.ops(transport.OpHeartbeat))
 	for len(h.m.ops(transport.OpHeartbeat)) < n+3 {
 		h.clock.fireEarliest(t, 2)
 		time.Sleep(time.Millisecond)

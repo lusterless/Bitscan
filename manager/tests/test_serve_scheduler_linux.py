@@ -116,6 +116,18 @@ def close(self):
 
 
 pool.AppDatabase.close = close
+# PR #18 CI fix: serve stops uvicorn and the catalog before the scheduler, so
+# runs still start after SIGTERM; this marks when stop() begins (just before
+# it sets the stop flag), the moment from which a run may give up.
+real_stop = r.SchedulerRunner.stop
+
+
+def stop(self):
+    note("scheduler stopping")
+    return real_stop(self)
+
+
+r.SchedulerRunner.stop = stop
 sys.exit(serve_main(os.environ, queue_dir=pathlib.Path(hooks["queue"])))
 """
 
@@ -368,6 +380,15 @@ def test_slow_runs_never_execute_twice_at_once(launch: Any) -> None:
     )
     signalled = time.monotonic()  # CLOCK_MONOTONIC is shared by processes
     assert t.stop() == 0
+    # PR #18 CI fix (work/reports/PR18-ci-fix-test.md): serve stops uvicorn
+    # and the catalog first, so a sweep may start after `signalled` and still
+    # meet the stop flag. "In flight" was "running at `signalled`", which
+    # missed such a run (CI: in_flight sweep 0, one offline_sweep failure).
+    # It is now "still running when the scheduler's stop() began": every run
+    # that can meet the stop flag. The assertion is unchanged.
+    stops = [at for at, text in t.events() if text == "scheduler stopping"]
+    assert len(stops) == 1 and signalled < stops[0], (signalled, stops)
+    stopping = stops[0]
     # The job name a failure record carries -> its traced kind. M9 adds the
     # scan_schedules tick (REQ-225), which can be in flight at SIGTERM too
     # (CI, PR #17); each job's failures are compared with its own runs.
@@ -382,7 +403,7 @@ def test_slow_runs_never_execute_twice_at_once(launch: Any) -> None:
         assert overlaps(spans) == [], (kind, spans)
         open_runs = [k for k, v in spans.items() if len(v) != 2]
         assert open_runs == [], (kind, spans)  # stop waited for the last one
-        in_flight[kind] = sum(v[0] < signalled < v[1] for v in spans.values())
+        in_flight[kind] = sum(v[1] > stopping for v in spans.values())
     # TASK-071 r1 (lead ruling 2026-10-23), as in the G27 test below: a run
     # still in progress at SIGTERM gives up its later steps with
     # SchedulerStopping. Only such a run may log a failure; nothing else fails.

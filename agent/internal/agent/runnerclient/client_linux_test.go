@@ -57,9 +57,13 @@ func TestEACCESChild(t *testing.T) {
 // Builder checklist 21 (lead's TASK-218 r1 row): a peer that can't open the
 // 0660 root-owned socket (EACCES) gets connect: a Failure, not a ctx stop,
 // no result, not retried as busy.
+//
+// Root-only (PR #18 CI fix): it runs the client as nobody through setpriv.
+// Like M4's named euid skips, a non-root run skips it by name; agent.yml's
+// root step runs it under sudo and is red unless it passed there.
 func TestConnectPermissionDeniedLinux(t *testing.T) {
 	if os.Geteuid() != 0 {
-		t.Fatal("needs root to run the client as nobody")
+		t.Skip("named skip: needs root to run the client as nobody (setpriv); this row runs in agent.yml's root step and in WSL as root")
 	}
 	r := newRunner(t, []step{reply(accepted), res(t, 1), reply(done)})
 	if err := os.Chmod(r.path, 0o660); err != nil { //nolint:gosec // the runner socket mode under test

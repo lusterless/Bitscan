@@ -219,9 +219,13 @@ const otherUID, otherGID = 64999, 64999
 // CHK-M10-117, -118: REQ-235 (1) the expected uid is served; any other uid
 // (0 included) is closed unread with one log line naming the uid; a peer
 // with the right gid but another uid is refused (CHK-M10-321).
+//
+// Root-only (PR #18 CI fix): the peers run as other uids through setpriv.
+// Like M4's named euid skips, a non-root run skips it by name; agent.yml's
+// root step runs it under sudo and is red unless it passed there.
 func TestPeerCheck(t *testing.T) {
 	if os.Geteuid() != 0 {
-		t.Fatal("this test needs root (setpriv); run it in WSL as root")
+		t.Skip("named skip: needs root to run peers as other uids (setpriv); this row runs in agent.yml's root step and in WSL as root")
 	}
 	t.Run("expected uid served", func(t *testing.T) {
 		path, f := listener(t)

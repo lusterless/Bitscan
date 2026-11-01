@@ -23,11 +23,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -418,8 +420,18 @@ func TestPD45Results409Dropped(t *testing.T) {
 }
 
 // PD-45, CHK-M4-221 → REQ-246 (1): start notice, then batches of at most 50
-// (and 1,572,864 bytes uncompressed), only the last final; a 503 retry sends
-// the same bytes.
+// (and 1,572,864 bytes uncompressed), only the last final; a 503 retry
+// carries the same results.
+//
+// PR #18 CI fix (old → new; work/reports/PR18-ci-fix-test.md): the retry used
+// to be asserted byte-identical to the 503'd post. TASK-220 r1 (decisions
+// "#140 reading", 2026-10-30) releases the batch after a failed attempt and
+// rebuilds it with Next before the retry, so the bytes may change: a full
+// batch posted before Finish goes as final=false and comes back as the final
+// once the job has finished (50 plugins on a slow host), and a converted item
+// goes as its marker. The retry must now carry exactly the 503'd post's
+// plugins, each once, each with the same result or its spool_overflow
+// marker, and a final copy stays final.
 func TestPD45Batches(t *testing.T) {
 	for _, n := range []int{1, 50, 51, 120, 5000} {
 		t.Run(fmt.Sprint(n, " plugins"), func(t *testing.T) {
@@ -460,8 +472,8 @@ func TestPD45Batches(t *testing.T) {
 			if rr := resultsOf(t, res[0].req); rr.Final || len(rr.Results) != 0 {
 				t.Fatal("the first post is not the start notice")
 			}
-			// The first non-empty post was answered 503: the next post repeats
-			// its bytes.
+			// The first non-empty post was answered 503: the next post carries
+			// the same results (see the rewrite note above).
 			retried := false
 			total := 0
 			seen := map[wire.UUID]bool{}
@@ -472,9 +484,7 @@ func TestPD45Batches(t *testing.T) {
 					t.Fatalf("post %d: %d items, %d bytes", i, len(rr.Results), len(raw))
 				}
 				if i == 1 && len(rr.Results) > 0 {
-					if !bytes.Equal(res[1].req.Body, res[2].req.Body) {
-						t.Fatal("the retry after a 503 sent different bytes")
-					}
+					sameResults(t, rr, resultsOf(t, res[2].req))
 					retried = true
 					continue // the 503'd copy
 				}
@@ -493,6 +503,47 @@ func TestPD45Batches(t *testing.T) {
 				t.Fatalf("retried %v, %d items for %d plugins", retried, total, n)
 			}
 		})
+	}
+}
+
+// sameResults fails unless retry carries exactly the plugins of the 503'd
+// post, each once, each with the same result or its spool_overflow marker
+// (TASK-220 r1: a rebuilt batch, not a byte copy), and unless a final 503'd
+// post stays final.
+func sameResults(t *testing.T, failed, retry wire.ResultsRequest) {
+	t.Helper()
+	if failed.Final && !retry.Final {
+		t.Fatal("the 503'd post was final, its retry is not")
+	}
+	want := map[wire.UUID]wire.ResultItem{}
+	for _, it := range failed.Results {
+		if _, dup := want[it.PluginUUID]; dup {
+			t.Fatalf("the 503'd post holds plugin %s twice", it.PluginUUID)
+		}
+		want[it.PluginUUID] = it
+	}
+	if len(retry.Results) != len(want) {
+		t.Fatalf("the retry after a 503 holds %d results, the 503'd post %d", len(retry.Results), len(want))
+	}
+	got := map[wire.UUID]bool{}
+	for _, it := range retry.Results {
+		prev, ok := want[it.PluginUUID]
+		if !ok {
+			t.Fatalf("the retry after a 503 holds plugin %s, which the 503'd post did not", it.PluginUUID)
+		}
+		if got[it.PluginUUID] {
+			t.Fatalf("the retry after a 503 holds plugin %s twice", it.PluginUUID)
+		}
+		got[it.PluginUUID] = true
+		pr, err := proto.NewResult(prev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(it, prev) && !reflect.DeepEqual(it, proto.OverflowMarker(pr).Item()) {
+			now, _ := json.Marshal(it)
+			was, _ := json.Marshal(prev)
+			t.Fatalf("the retry changed plugin %s's result: %s, was %s", it.PluginUUID, now, was)
+		}
 	}
 }
 
