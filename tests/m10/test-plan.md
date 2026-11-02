@@ -364,7 +364,22 @@ Each row is defined from its criterion so it can be run later. Owner: open. Cove
 | CHK-M10-260 | CODE | Unit part, expired, foreign, replayed jobs refused by the runner checks and through the serve loop (CHK-M10-035, -167), nothing executed, one log line without payload | L, W |
 | CHK-M10-261 | CODE | Wrong peer (CHK-M10-118); non-job requests (CHK-M10-165, -166); capread names (CHK-M10-138) | W |
 | CHK-M10-270 | CODE | Agent half (G36): the M4 security rows (expired, foreign, replayed by the agent; certificate failing verification or its pin) re-run unchanged; plus CHK-M10-356 and -358 (no job stored, no resend) in `ag/internal/agent/security_test.go` | W |
-| CHK-M10-280 to -289 | APP | Host part through the driver (REQ-236 (5), REQ-261 (1) on a sandbox host) | **NOT RUN** (safety-classifier refusal (VM sandbox)); cover CHK-M10-260, -261 |
+| CHK-M10-280 to -289 | APP | Host part through the driver (REQ-236 (5), REQ-261 (1) on a sandbox host), defined below | VM, CI (`agent/test/sandbox/sandbox.py`; 2026-11-02, see `tests/m10/report.md` "M10 sandbox suite") |
+
+Host part, defined 2026-11-02 from REQ-236 (5) and REQ-261 (1). Each request is sent straight to `/run/bitscan/runner.sock` by the suite's driver as uid `bitscan` (unless stated) on a throwaway sandbox host with the installed `.deb`. "Nothing executed" means the job's plugin, which would connect to a root-owned 0666 marker socket and send a row tag, never did. "One log line" means exactly one runner journal line holds the job id, it has the refusal word, and it holds no `execute` text.
+
+| Check | Request | Expected |
+| --- | --- | --- |
+| CHK-M10-280 | Expired: `pickup_by` 60 s ago | one `refused` `pickup_passed`; nothing executed; one log line |
+| CHK-M10-281 | Foreign: a random `agent_id` | one `refused` `foreign_agent`; nothing executed; one log line |
+| CHK-M10-282 | Replayed: a job runs, then the same `job_id` is sent again with a different plugin | first accepted and executed; second one `refused` `replayed`, its plugin never executed; one `replayed` line |
+| CHK-M10-283 | Wrong peer: root, and a user in group `bitscan` | connection closed without a frame; nothing executed; `sdsock: peer refused` lines name the uids |
+| CHK-M10-284 | A bare JSON string | one `refused` `malformed`; nothing executed |
+| CHK-M10-285 | A `plugins` list without a job | one `refused` `malformed`; nothing executed |
+| CHK-M10-286 | Two whole request frames in one write | at most the first accepted (the extra bytes cancel it, serve.go); the second never decoded, executed or logged |
+| CHK-M10-287 | An inventory job (no `plugins` or patterns) | one `refused` `not_compliance`; nothing executed |
+| CHK-M10-288 | An unknown key `"command"` beside `job` | one `refused` `malformed`; nothing executed |
+| CHK-M10-289 | capread, with the helper enabled: as `bitscan-runner`, `nft_ruleset x`, `NFT_RULESET`, `../nft`, `/usr/sbin/nft`, an empty line, 33 bytes, `id`, `shutdown`, `nft_ruleset;id`, `audit_rules -D`; root and `bitscan` as peers; the client with a path | each name `error unknown_request`; `nft_ruleset` answered `ok` (control); root closed without a reply, `bitscan` EACCES; the client exits 2; the helper has no child left |
 
 ## TP-M10-22 First compliance run (REQ-263; G79) — NOT RUN
 

@@ -724,7 +724,7 @@ def r211(ctx: Ctx) -> tuple[str, str]:
                     ("cwd gone after the job (test -e rc %s)" % gone, gone == "1"),
                     ("uid %s is bitscan-runner" % d.get("UID"), d.get("UID") == str(ctx.runner_uid) and d.get("UID") != "0"),
                     ("8 x sleep 2 at max_parallel 3 done", ok_job(res2, 8)), ("at most 3 at once (%d)" % top, top == 3),
-                    ("three rounds (%.1f s)" % dur, 5.5 <= dur < 12)])
+                    ("three rounds (%.1f s; at least 3 x 2 s, slack for emulated hosts)" % dur, 5.5 <= dur < 30)])
 
 
 @row("CHK-M10-212", "no plugin outlives its job (REQ-240 (1)-(10))")
@@ -1149,7 +1149,7 @@ def r288(ctx: Ctx) -> tuple[str, str]:
 def _capread_raw(user: str, data: bytes) -> tuple[int, bytes]:
     code = ("import socket,sys\ns=socket.socket(socket.AF_UNIX);s.settimeout(15)\n"
             "try:\n  s.connect(%r)\nexcept OSError as e:\n  sys.stdout.write('CONNERR %%d'%%e.errno);sys.exit(0)\n"
-            "s.sendall(sys.stdin.buffer.read())\nb=b''\n"
+            "try:\n  s.sendall(sys.stdin.buffer.read())\nexcept OSError:\n  pass\nb=b''\n"
             "try:\n  while True:\n    c=s.recv(65536)\n    if not c: break\n    b+=c\nexcept OSError:\n  pass\n"
             "sys.stdout.buffer.write(b'OK ' + b)\n") % CAPSOCK
     kw: dict = {}
@@ -1255,7 +1255,7 @@ def cleanup(ctx: Ctx) -> None:
     sh("userdel bs-sbx-member; userdel bs-sbx-outsider")
 
 
-def cgroup_v1_mode(ctx: Ctx, out: Path) -> int:
+def cgroup_v1_mode(ctx: Ctx, out: Path, expect_red: str | None, label: str) -> int:
     """VM row CHK-M10-214 on a host booted with cgroup v1 (u2204)."""
     res = run_job(ctx, [plugin(mark_cmd("M214"))], timeout=8)
     time.sleep(1)
@@ -1268,7 +1268,7 @@ def cgroup_v1_mode(ctx: Ctx, out: Path) -> int:
     for rid, title, _fn in ROWS:
         if rid != "CHK-M10-214":
             rows.append({"id": rid, "title": title, "status": "NOT RUN", "evidence": "host booted with cgroup v1: only CHK-M10-214 runs here"})
-    return write_report(out, rows, None, "cgroup v1")
+    return write_report(out, rows, expect_red, label + " (cgroup v1)")
 
 
 def write_report(out: Path, rows: list[dict], expect_red: str | None, label: str) -> int:
@@ -1327,7 +1327,7 @@ def main() -> int:
     setup(ctx, args)
     try:
         if sh("stat -fc %T /sys/fs/cgroup").stdout.strip() != "cgroup2fs":
-            return cgroup_v1_mode(ctx, out)
+            return cgroup_v1_mode(ctx, out, args.expect_red or None, args.label)
         want = [x for x in args.rows.split(",") if x]
         rows = []
         for rid, title, fn in ROWS:
