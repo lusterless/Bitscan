@@ -15,9 +15,9 @@ This file is updated after every check, so a stopped session can resume without 
 | Manager for the VMs | **UP** since 18:48 local (user chose "serve from the tree") | A real `bitscan-manager serve` from the 33a45ad copy (`/root/m10vm/mgr/tree`, web UI built in), set up as G41 does: PostgreSQL 16 by Testcontainers, HTTPS with a private CA, the test sink and vault. It listens on WSL `127.0.0.1:18443`; the leaf covers `bitscan-mgr.test`. Start: `bash /root/m10vm/scripts/mgr-serve.sh` (log `/root/m10vm/mgr/serve.out`; work dir `/root/m10vm/mgr/serve/`, 0700; CA `manager-ca.pem`, also copied to `C:\Users\kaiquan.koh\Documents\m10vm\`). Admin and TOTP secrets are only in `serve/secrets/` (0600). It lives in this session's background shell, so after a session stop, start it again: a new database, so earlier enrolments are gone. Checked from Windows by the VMs' path (`bitscan-mgr.test` → 192.168.224.1:8443 → portproxy → 18443): `/healthz` and `/readyz` both 200 `{"status":"ok"}` (curl `--ssl-no-revoke`: schannel can't check revocation for the private CA; the chain and name are still verified). The manager-install walk route was blocked: `e2e/m6/manager_walk.py` is stale (see "Manager release files") |
 | TASK-231 runbook walk (u2404, u2204) | **PASS on both.** u2404: §1, §2, §3a, §4, §9, §10, §11. u2204: the same plus §6 (0.1.0-1 → 0.2.0~pre1-1 in place). Both VMs `Off` at 11:44 UTC; their `clean` checkpoints are untouched | u2404 runs from `clean` (192.168.236.23). After a session stop: if the manager restarted (new DB), restore `clean` and redo the walk from §1; `scripts/mgrcli.sh` and `scripts/agent-show.sh` in `/root/m10vm/` drive the admin API |
 | G79 (CHK-M10-290 to -292) | **PASS** on u2404 (-290, -291, -292 all PASS, 11:11–11:28Z). The runner was unmasked afterwards, and a follow-up scan of policy 1 passed again (job `276b8a73-…`, PASS, 11:28:12Z) | Section "G79" below. Policies in `/root/m10vm/g79/` (canary in `canary.txt`, 0600); `scripts/scan.sh POLICY_ID [canary]` starts a scan and reads the stored rows read-only (`scripts/mgr_db.py`, as `bitscan_app`) |
-| G76 (CHK-M10-200 to -223), G78 host (CHK-M10-280 to -289) | BLOCKED | Harness not written (refusal below). Plan: write the row checks in a foreground session with the user watching, using `e2e/runner_client_m10.py` as the driver. If stopped again, a human writes them |
-| VM-planted CHK-M10 rows | **BLOCKED: the lead's write-up was stopped by a safety classifier** (Incident 2). The user then let the lead write them (decisions 2026-11-02 "Change") | Stopped, not retried. The user decides the next author |
-| TASK-230 (`sandbox.yml`, G77) | NOT STARTED | Depends on the harness |
+| G76 (CHK-M10-200 to -223), G78 host (CHK-M10-280 to -289) | **Harness written and run (cloud session, 2026-11-02 evening; see "Sandbox suite" below).** Not yet on `bitscan-u2204`/`bitscan-u2404`: run on fresh QEMU VMs of the official Ubuntu 22.04 and 24.04 cloud images (stand-in) and on the GitHub hosted runners (G77). Every G78 host row PASS on every host. Sandbox: **3 rows FAIL for real** (201 `/dev/shm`, 203 exec in private `/tmp`, 222 cramfs on Azure kernels), needing an owner decision | On the Hyper-V VMs: restore `clean`, copy the `.deb` and `agent/test/sandbox/`, `sudo bash run_vm.sh <deb> <out> --with-nft --with-auditd --samples bits/samples`; then restore `clean` |
+| VM-planted CHK-M10 rows | **Written (`agent/test/sandbox/plants.sh`) and run**: 22 of 25 red for their own sub-check on a hosted runner; 333, 382 (hosted) and 340 (cgroup v1 VM) not red, each explained below | Throwaway `git archive` copy, `plants.sh apply ID COPY`, build, `run_vm.sh … --rows ROW@part --expect-red ROW@part` |
+| TASK-230 (`sandbox.yml`, G77) | **Implemented and run** on both hosted runners (runs 1–5 on `ccr-e5f4e02d-dulvt3`); red only for the three real findings | Needs the owner's answer on the findings to go green; lead's second look (PD-43) |
 
 ## Environment
 
@@ -178,6 +178,64 @@ Policies (`/root/m10vm/g79/`), uploaded with the admin TOTP session through `POS
 | CHK-M10-291 (sweep) | The canary is in no agent or runner log, no spool or state file, and not in `serve.log` | **PASS** | `bitscan-agent`/`bitscan-runner` journal lines with the canary: 0; manager `serve.log`: 0; `/var/lib/bitscan-agent`: none. Harness note: the canary later showed up in `/var/log/auth.log` and the `bstester` journal, but only in 2 lines, both `sudo … COMMAND=` lines of the lead's own sweep (the canary was passed to `sudo grep` as an argument). Not the product. The `bse_` token sweep in the runbook walk passed its token on stdin, so it left no such line. The command text (with the canary) is stored as `execute_snap` on the manager by design: commands aren't output |
 | CHK-M10-292 | Runner masked → every result ERROR `runner_unavailable`, the job `completed`, nothing retried | **PASS** | On u2404: `systemctl mask --now bitscan-runner.socket bitscan-runner.service` (both `inactive`; restored afterwards). Scan `4de0fadb-8a3a-4e76-a1a8-b93fd9ef0f5c` (policy 1) queued 11:18:21Z. Job `7ffb29bf-…` `completed` 11:19:12Z; scan `completed` 11:19:35Z. Result: ERROR, `eval_detail runner_unavailable`, exit null, stdout empty. Jobs for the scan: 1; jobs with `retry_of` set across all scans: 0 |
 | CHK-M10-292 (runbook §9 text) | The agent logs `the runner is unavailable; plugins without a result are reported runner_unavailable` with `job_id` and a reason; the next heartbeat carries `last_error` `runner_unavailable: <reason>`, which the manager logs as `agent last_error` with the agent id | **PASS** | agent journal 11:19:12Z: that line, WARN, with `agent_id` and `job_id=7ffb29bf…`. Heartbeat 11:21:52Z → `serve.log` `"message": "agent last_error"`, `agent_id 6d644e85-…`, `"last_error": "runner_unavailable: connect"`. (The manager only logs `last_error` and never stores it, by design #25 (a); `GET /agents/{id}` has no such field) |
+
+## Sandbox suite, G78 host part, VM plants and TASK-230 (cloud session, 2026-11-02 evening)
+
+Branch `ccr-e5f4e02d-dulvt3` (from `m10-vm-checks` 413f299). The user asked for G76, the G78 host part, the VM-planted rows and TASK-230, "write the test and run it". This cloud session cannot reach the Hyper-V VMs, and its own kernel keeps cgroup v1 hierarchies (the runner rightly refuses there), so the suite ran on:
+
+- **G77, GitHub hosted runners** `ubuntu-22.04` and `ubuntu-24.04` (Azure kernel 7.0.0-1017, systemd 255 on 24.04), through the new `sandbox.yml`, which builds the `.deb` and installs it on each throwaway runner. Runs 1–5 on this branch; the record below is run 3 (37328214, with the plants) and run 5 (030447d, 24.04 with `auditd`).
+- **G76 stand-in, QEMU VMs** of the official cloud images (`noble-server-cloudimg-amd64.img`, `jammy-server-cloudimg-amd64.img`; kernels 6.8.0-147 and 5.15.0-198), software emulation, 4 vCPU, 4 GB. Each run is a fresh overlay on a read-only `clean` base (the checkpoint equivalent), destroyed afterwards. A third base boots 22.04 with `systemd.unified_cgroup_hierarchy=0` for CHK-M10-214. **These are not `bitscan-u2204`/`bitscan-u2404`**; whether they count for G76 is the user's call (question 4 below).
+
+The `.deb` under test is the M10 build, byte-identical to this morning's (sha256 `bb3a8785…0814`, rebuilt from 413f299). No token was printed: the install uses an `.invalid` manager URL and a random `bse_` never issued; `bitscan-agent` is stopped and the driver plays the agent as uid `bitscan`. Reports are masked for `bs[uaek]_`; the saved copies hold no token or canary (grep: 0).
+
+### Harness (all new, test files only)
+
+| File | What |
+| --- | --- |
+| `agent/test/sandbox/run_vm.sh` | Host wrapper: installs the `.deb` (install.env, dummy inputs), stops the agent, writes a test `agent_id`, optional `--with-nft`/`--with-auditd`, runs the suite |
+| `agent/test/sandbox/sandbox.py` | Driver and rows: CHK-M10-200 to -223 (G76/G77), -280 to -289 (G78 host part, defined in `tests/m10/test-plan.md` today), -344v (runner half of the -344 boundary). PASS/FAIL/NOT RUN per row, never silent; `--expect-red ROW@part` for plants |
+| `agent/test/sandbox/plants.sh` | The 25 VM plants as exact one-anchor replacements in a throwaway `git archive` copy (refuses a git work tree) |
+| `.github/workflows/sandbox.yml` | TASK-230: build, suite on both runners (24.04 with `auditd`), report in the job summary and as an artifact; the plant matrix runs on `workflow_dispatch` or a push whose message holds `[sandbox-plants]`. Path filters per REQ-257 (pushes also run, a superset) |
+
+Harness defects found and fixed on the way (none product): `datetime.UTC` is 3.11+; the shell's own fds (a `$(…)` pipe at fd 3, dash's saved stdout at fd 10) were counted, so the fd probe now `exec`s Python; `pgrep -f` matched the probe shell; nft counters move between two reads; the 64 KiB token needed a non-word byte before it for `\b`; an inventory job must not carry `plugins`; a plugin read the runner's cgroup mid-hop (#136 (a)); Python 3.10 can't parse nanoseconds; cgroup v1 mode ignored `--expect-red`.
+
+### Results (final code)
+
+| Host | PASS | FAIL | NOT RUN | FAIL rows |
+| --- | --- | --- | --- | --- |
+| QEMU Ubuntu 24.04 (kernel 6.8, systemd 255), 3f2369d | 32 | 2 | 2 | 201, 203 |
+| QEMU Ubuntu 22.04 (kernel 5.15, systemd 249), 3f2369d | 32 | 2 | 2 | 201, 203 |
+| QEMU Ubuntu 22.04 booted cgroup v1 | CHK-M10-214 **PASS** ("/sys/fs/cgroup is not cgroup2", no frame, nothing executed) | | other rows NOT RUN by design | |
+| Hosted ubuntu-24.04 with `auditd` (run 5) | 31 | 3 | 2 | 201, 203, 222 |
+| Hosted ubuntu-22.04 (run 3) | 32 | 2 | 2 | 201, 203 |
+
+NOT RUN everywhere: CHK-M10-214 on cgroup v2 hosts (it runs on the v1 VM, above) and CHK-M10-219b (`runner_helpers` in the heartbeat needs a manager; covered by the TASK-231 walk §10 on both Hyper-V VMs today). Full row tables: `work/reports/m10-sandbox/f-n24.md`, `f-j22.md`, `r-j22v1-clean.md`.
+
+Every G78 host row (CHK-M10-280 to -289) PASS on all four v2 hosts: expired → `pickup_passed`, foreign → `foreign_agent`, replay → `replayed`, root and a `bitscan` member closed without a frame (journal names uid 0 and the member's uid), bare string / plugins-only / unknown key → `malformed`, inventory → `not_compliance`, a second frame never decoded, capread refuses ten other names and serves only `bitscan-runner`; nothing executed in any case (marker socket), one journal line per refused job id, no payload.
+
+Facts for the owner: CHK-M10-223 `clone3` → **ENOSYS** on 24.04 (systemd 255's filter answers) and **EINVAL** on 22.04 (systemd 249 lets it reach the kernel). CHK-M10-217 with `auditd` (hosted 24.04): `audit_rules` equals root's `auditctl -l`; helper `CapEff` `0000000040001000` under a dynamic uid, helper command environment empty (an env probe bound over `auditctl` for one request).
+
+### Real findings (spec vs. host behaviour; no unit was changed)
+
+1. **CHK-M10-201: a plugin can write to `/dev/shm`, and the file appears in the host's `/dev/shm`** (all 4 v2 hosts). TS §3.7 says the runner cannot "write outside its private `/tmp`" and the unit comment says "the only writable place is a private /tmp". `ProtectSystem=strict` leaves the API filesystems (`/dev`) writable, and `PrivateDevices=yes` keeps the host's `/dev/shm`; `PrivateIPC=` does not cover it. A plugin can therefore leave files for, or read files from, other host processes there.
+2. **CHK-M10-203: a plugin can execute a file it wrote to its private `/tmp` or `/var/tmp`** (exit 0, all 4 v2 hosts; `/home` correctly 126). TS §3.7 unit comment: "Only system binaries can be executed; /tmp and user paths cannot". `NoExecPaths=/` does not reach the `PrivateTmp=` mounts on systemd 249 or 255.
+3. **CHK-M10-222 (#143): the cramfs sample plugins answer `absent` under the sandbox where root sees `loaded=no install=no blacklist=no`** (hosted 24.04, Azure kernel with the cramfs module; the cloud-image kernels lack it, so the two match there; the other 30 sample plugins match root on every host). `ProtectKernelModules=yes` hides `/lib/modules`, so "1.1.1.1 Ensure cramfs kernel module is not available" can report compliant on a host that is not.
+
+All three need a unit change (TS §3.7 verbatim) or a sample change, so they are open questions for the owner, not fixed here. G77 stays red until then; no gate was lowered.
+
+### VM plants (REQ-262)
+
+Hosted ubuntu-24.04, run 3, each plant in a throwaway copy, its own `.deb`, `--expect-red ROW@part` (the plant's own sub-check must fail, so a row already red on a clean build cannot hide a miss). **Red: 320, 325, 327, 329, 330, 331, 334, 335, 336, 337, 338, 339, 343, 344, 371, 373, 374, 386, 388, 389, 390, 391 (22).**
+
+Not red, each recorded with its reason:
+
+| Plant | Row | Why not red on a host | Unit-level red (gate report) |
+| --- | --- | --- | --- |
+| 333 stdin inherited | CHK-M10-211 stdin | systemd gives the runner `/dev/null` as stdin, so the inherited fd is also `/dev/null`; not observable on a host | G72 (spawn unit test) |
+| 382 stdout logged at debug | CHK-M10-220 | the runner's handler is at info, so the debug line is never written; the journal sweep stays clean | G72 |
+| 340 statfs check removed | CHK-M10-214 (cgroup v1 VM) | the runner still refuses at its second check, "not on the unified cgroup v2 hierarchy" (`/proc/self/cgroup`); defence in depth holds | G72 (injected statfs) |
+
+The plants were applied only in throwaway copies; the tree was never planted.
 
 ## NOT RUN so far
 
