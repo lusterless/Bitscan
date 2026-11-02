@@ -76,7 +76,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
+        include:
+          # 24.04 installs auditd so CHK-M10-217 compares the real auditctl -l;
+          # 22.04 keeps the not_installed path.
+          - { os: ubuntu-22.04, extra: "" }
+          - { os: ubuntu-24.04, extra: "--with-auditd" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
@@ -93,7 +97,7 @@ jobs:
         run: |
           deb=$(ls "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb)
           sudo bash agent/test/sandbox/run_vm.sh "$deb" "$RUNNER_TEMP/report" \
-            --with-nft --samples bits/samples --label "G77 ${{ matrix.os }}"
+            --with-nft ${{ matrix.extra }} --samples bits/samples --label "G77 ${{ matrix.os }}"
 
       - name: Row report
         if: always()
