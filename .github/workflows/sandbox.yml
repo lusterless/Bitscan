@@ -122,30 +122,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { plant: "320", row: CHK-M10-283 }
+          - { plant: "320", row: "CHK-M10-283@root: no frame" }
           - { plant: "325", row: CHK-M10-281 }
           - { plant: "327", row: CHK-M10-282 }
           - { plant: "329", row: CHK-M10-205 }
-          - { plant: "330", row: CHK-M10-206 }
-          - { plant: "331", row: CHK-M10-211 }
-          - { plant: "333", row: CHK-M10-211 }
-          - { plant: "334", row: CHK-M10-211 }
-          - { plant: "335", row: CHK-M10-211 }
-          - { plant: "336", row: CHK-M10-210 }
-          - { plant: "337", row: CHK-M10-212 }
-          - { plant: "338", row: CHK-M10-212 }
-          - { plant: "339", row: CHK-M10-212 }
-          - { plant: "343", row: CHK-M10-212 }
+          - { plant: "330", row: "CHK-M10-206@fds" }
+          - { plant: "331", row: "CHK-M10-211@environ" }
+          - { plant: "333", row: "CHK-M10-211@stdin" }
+          - { plant: "334", row: "CHK-M10-211@niceness" }
+          - { plant: "335", row: "CHK-M10-211@ionice" }
+          - { plant: "336", row: "CHK-M10-210@plugin cgroups" }
+          - { plant: "337", row: "CHK-M10-212@(1b)" }
+          - { plant: "338", row: "CHK-M10-212@(1)-(6)" }
+          - { plant: "339", row: "CHK-M10-212@(1)-(6)" }
+          - { plant: "343", row: "CHK-M10-212@(7)" }
           - { plant: "344", row: CHK-M10-344v }
-          - { plant: "371", row: CHK-M10-289 }
-          - { plant: "373", row: CHK-M10-217 }
-          - { plant: "374", row: CHK-M10-289 }
+          - { plant: "371", row: "CHK-M10-289@'id" }
+          - { plant: "373", row: "CHK-M10-217@environment" }
+          - { plant: "374", row: "CHK-M10-289@peer root" }
           - { plant: "382", row: CHK-M10-220 }
           - { plant: "386", row: CHK-M10-215 }
-          - { plant: "388", row: CHK-M10-207 }
+          - { plant: "388", row: "CHK-M10-207@busctl" }
           - { plant: "389", row: CHK-M10-204 }
-          - { plant: "390", row: CHK-M10-203 }
-          - { plant: "391", row: CHK-M10-212 }
+          - { plant: "390", row: "CHK-M10-203@/home copy" }
+          - { plant: "391", row: "CHK-M10-212@(10) no plugin" }
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

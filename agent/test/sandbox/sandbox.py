@@ -221,6 +221,15 @@ def run_job(ctx: Ctx, plugins: list[dict], user: str = "bitscan", timeout: float
     return res
 
 
+def rfc3339(s: str) -> datetime:
+    """RFC 3339 UTC with up to nanoseconds (Python 3.10 takes 6 digits)."""
+    m = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]00:00)$", s)
+    if not m:
+        raise ValueError("not RFC 3339 UTC: %r" % s)
+    frac = (m.group(2) or "0")[:6].ljust(6, "0")
+    return datetime.strptime(m.group(1) + "." + frac, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=UTC)
+
+
 def kv(item: dict | None) -> dict[str, str]:
     d: dict[str, str] = {}
     if not item:
@@ -519,21 +528,30 @@ def r205(ctx: Ctx) -> tuple[str, str]:
                    "runner CapEff %s CapBnd %s" % (st.get("CapEff"), st.get("CapBnd")))
 
 
+# The plugin's own descriptors, as the runner handed them over: the shell is
+# replaced by Python (no redirection, no $(...) pipe, no saved copy), and the
+# directory descriptor of the listing itself is left out (closed by then).
+FD_PROBE = "exec " + "python3 -I -c \"import os\nfor n in sorted(os.listdir('/proc/self/fd'),key=int):\n  try:\n    print('FDL%s=%s'%(n,os.readlink('/proc/self/fd/'+n)))\n  except OSError:\n    pass\n\""
+
+
+def fd_list(item: dict | None) -> dict[str, str]:
+    return {k[3:]: v for k, v in kv(item).items() if k.startswith("FDL")}
+
+
 @row("CHK-M10-206", "the runner's socket is not among a plugin's fds; runner.sock can't be replaced, renamed or unlinked; nothing can be created in /run/bitscan")
 def r206(ctx: Ctx) -> tuple[str, str]:
     ino = os.stat(SOCK).st_ino
     before = sorted(os.listdir("/run/bitscan"))
-    ex = ('ls -l /proc/$$/fd > ./fdl; ls /proc/$$/fd > ./fds; echo FDS=$(sort -n ./fds | tr "\\n" " "); '
-          'sed -n "s#.* \\([0-9]*\\) -> \\(.*\\)#FDL\\1=\\2#p" ./fdl; '
+    ex = (''
           'mv /run/bitscan/runner.sock /run/bitscan/x 2>/dev/null; echo MV=$?; rm -f /run/bitscan/runner.sock 2>/dev/null; echo RM=$?; '
           'ln -sf /dev/null /run/bitscan/runner.sock 2>/dev/null; echo LN=$?; touch /run/bitscan/new 2>/dev/null; echo TOUCH=$?; '
           'mkdir /run/bitscan/d 2>/dev/null; echo MKDIR=$?')
-    res = run_job(ctx, [plugin(ex)])
-    d = kv(res["results"][0])
-    fds = (d.get("FDS") or "").split()
+    res = run_job(ctx, [plugin(FD_PROBE), plugin(ex)])
+    d = kv(res["results"][1])
+    links = fd_list(res["results"][0])
+    fds = list(links)
     after = sorted(os.listdir("/run/bitscan"))
-    links = {k: v for k, v in d.items() if k.startswith("FDL")}
-    return verdict([("job done", ok_job(res, 1)), ("fds %s" % fds, fds == ["0", "1", "2"]),
+    return verdict([("job done", ok_job(res, 2)), ("fds %s" % fds, fds == ["0", "1", "2"]),
                     ("no socket fd", not any("socket:" in v for v in links.values())),
                     ("mv %s" % d.get("MV"), d.get("MV") not in (None, "0")), ("rm %s" % d.get("RM"), d.get("RM") not in (None, "0")),
                     ("ln %s" % d.get("LN"), d.get("LN") not in (None, "0")), ("touch %s" % d.get("TOUCH"), d.get("TOUCH") not in (None, "0")),
@@ -651,8 +669,10 @@ def r209(ctx: Ctx) -> tuple[str, str]:
 
 @row("CHK-M10-210", "cgroup layout: each plugin in its own p-<n>, the runner in supervisor, only supervisor left (REQ-238 (2)-(4))")
 def r210(ctx: Ctx) -> tuple[str, str]:
-    ex = ("echo CG=$(cut -d: -f3 /proc/self/cgroup); echo RCG=$(cut -d: -f3 /proc/$PPID/cgroup); "
-          "sleep 30.210 & echo CH=$(cut -d: -f3 /proc/$!/cgroup); sleep 1")
+    # The runner hops through each new p-<n> while it starts a plugin (#136
+    # (a)), so its cgroup is read after the other starts are over.
+    ex = ("echo CG=$(cut -d: -f3 /proc/self/cgroup); sleep 30.210 & echo CH=$(cut -d: -f3 /proc/$!/cgroup); "
+          "sleep 1.5; echo RCG=$(cut -d: -f3 /proc/$PPID/cgroup)")
     res = run_job(ctx, [plugin(ex) for _ in range(3)], mpp=3)
     ds = [kv(r) for r in res["results"]]
     cgs = [d.get("CG", "") for d in ds]
@@ -674,10 +694,11 @@ def r210(ctx: Ctx) -> tuple[str, str]:
 def r211(ctx: Ctx) -> tuple[str, str]:
     ex = ("echo LS=$(ls -A | wc -l); echo PWD=$PWD; echo ENVN=$(tr '\\0' '\\n' < /proc/$$/environ | wc -l); "
           "echo ENV=$(tr '\\0' '\\n' < /proc/$$/environ | head -n 3 | tr '\\n' '|'); echo FD0=$(readlink /proc/$$/fd/0); "
-          "ls /proc/$$/fd > ./fds; echo FDS=$(sort -n ./fds | tr '\\n' ' '); echo NICE=$(cut -d' ' -f19 /proc/$$/stat); "
+          "echo NICE=$(cut -d' ' -f19 /proc/$$/stat); "
           "echo IONICE=$(ionice -p $$); echo UID=$(id -u); echo MODE=$(stat -c %a .)")
-    res = run_job(ctx, [plugin(ex)])
+    res = run_job(ctx, [plugin(ex), plugin(FD_PROBE)])
     d = kv(res["results"][0])
+    fdl = fd_list(res["results"][1])
     pwdir = d.get("PWD", "")
     rp = runner_pid()
     time.sleep(0.5)
@@ -696,8 +717,8 @@ def r211(ctx: Ctx) -> tuple[str, str]:
     for _, x in ev:
         cur += x
         top = max(top, cur)
-    return verdict([("job done", ok_job(res, 1)), ("environ %s (%s lines)" % (d.get("ENV"), d.get("ENVN")), d.get("ENVN") == "1" and d.get("ENV") == PATH_ENV + "|"),
-                    ("stdin %s" % d.get("FD0"), d.get("FD0") == "/dev/null"), ("fds %s" % d.get("FDS"), (d.get("FDS") or "").split() == ["0", "1", "2"]),
+    return verdict([("job done", ok_job(res, 2)), ("environ %s (%s lines)" % (d.get("ENV"), d.get("ENVN")), d.get("ENVN") == "1" and d.get("ENV") == PATH_ENV + "|"),
+                    ("stdin %s" % d.get("FD0"), d.get("FD0") == "/dev/null"), ("fds %s" % fdl, list(fdl) == ["0", "1", "2"] and fdl["0"] == "/dev/null" and all(fdl[k].startswith("pipe:") for k in ("1", "2"))),
                     ("niceness %s" % d.get("NICE"), d.get("NICE") == "10"), ("ionice %s" % d.get("IONICE"), d.get("IONICE") == "idle"),
                     ("cwd %s, empty at start (%s), mode %s" % (pwdir, d.get("LS"), d.get("MODE")), pwdir.startswith("/tmp/") and d.get("LS") == "0" and d.get("MODE") == "700"),
                     ("cwd gone after the job (test -e rc %s)" % gone, gone == "1"),
@@ -734,11 +755,7 @@ def r212(ctx: Ctx) -> tuple[str, str]:
     it = r7["results"][0] or {}
     el = 99.0
     if it.get("started_at") and it.get("finished_at"):
-        f = "%Y-%m-%dT%H:%M:%S.%fZ"
-        try:
-            el = (datetime.strptime(it["finished_at"], f) - datetime.strptime(it["started_at"], f)).total_seconds()
-        except ValueError:
-            el = (datetime.fromisoformat(it["finished_at"].replace("Z", "+00:00")) - datetime.fromisoformat(it["started_at"].replace("Z", "+00:00"))).total_seconds()
+        el = (rfc3339(it["finished_at"]) - rfc3339(it["started_at"])).total_seconds()
     # (8) the runner's pid written into the plugin's own cgroup.procs
     r8 = run_job(ctx, [plugin("M=/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup); echo $PPID > $M/cgroup.procs 2>/dev/null; echo W=$?; sleep 300.2131 & sleep 0.5")])
     rp8 = runner_pid()
@@ -1274,8 +1291,13 @@ def write_report(out: Path, rows: list[dict], expect_red: str | None, label: str
     (out / "report.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
     if expect_red:
-        hit = [r for r in rows if r["id"] == expect_red]
+        # ROW, or ROW@part: then the failed check must be that part, so a
+        # row already red on a clean build cannot hide a missed plant.
+        rid, _, part = expect_red.partition("@")
+        hit = [r for r in rows if r["id"] == rid]
         red = bool(hit) and hit[0]["status"] == "FAIL"
+        if red and part:
+            red = any(part in c and c.endswith("FAILED") for c in hit[0]["evidence"].split(" | ")[0].split("; "))
         print("EXPECT-RED %s: %s" % (expect_red, "RED (plant caught)" if red else "NOT RED (plant missed)"))
         return 0 if red else 1
     return 0 if fl == 0 else 1
@@ -1309,7 +1331,7 @@ def main() -> int:
         want = [x for x in args.rows.split(",") if x]
         rows = []
         for rid, title, fn in ROWS:
-            if want and rid not in want and not (rid == "CHK-M10-221" and "first" in want):
+            if want and rid not in [w.partition("@")[0] for w in want]:
                 continue
             t0 = time.time()
             try:
