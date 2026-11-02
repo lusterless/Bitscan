@@ -1,0 +1,185 @@
+name: sandbox
+
+# TASK-230 (G77; REQ-257, REQ-259, REQ-261, REQ-262; TS §8.3 Sandbox and
+# Security). Builds the agent .deb, installs it on the GitHub ubuntu-22.04 and
+# ubuntu-24.04 runners (throwaway hosts) and runs agent/test/sandbox: every
+# G77 row is reported PASS, FAIL or NOT RUN with its reason.
+#
+# The planted-fault builds (the VM rows of the M10 mutation table) run on
+# workflow_dispatch, or on a push whose head commit message holds
+# "[sandbox-plants]": each plant is applied to a throwaway copy, never
+# committed, and its job passes only when its row turns red.
+
+on:
+  pull_request:
+    paths:
+      - "agent/**"
+      - "deploy/systemd/**"
+      - "deploy/dbus/**"
+      - "deploy/debian/**"
+      - "bits/samples/**"
+      - ".github/workflows/sandbox.yml"
+  push:
+    paths:
+      - "agent/**"
+      - "deploy/systemd/**"
+      - "deploy/dbus/**"
+      - "deploy/debian/**"
+      - "bits/samples/**"
+      - ".github/workflows/sandbox.yml"
+  workflow_dispatch:
+    inputs:
+      plants:
+        description: "Run the planted-fault builds too"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build the .deb
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+
+      - name: Install build-essential, dpkg-dev and debhelper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential dpkg-dev debhelper
+
+      - name: Build the .deb
+        run: bash deploy/debian/build-deb.sh "$RUNNER_TEMP/out"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-deb
+          path: ${{ runner.temp }}/out/*.deb
+          if-no-files-found: error
+
+  suite:
+    name: Sandbox suite (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sandbox-deb
+          path: ${{ runner.temp }}/deb
+
+      - name: Run the sandbox suite on this throwaway runner
+        run: |
+          deb=$(ls "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb)
+          sudo bash agent/test/sandbox/run_vm.sh "$deb" "$RUNNER_TEMP/report" \
+            --with-nft --samples bits/samples --label "G77 ${{ matrix.os }}"
+
+      - name: Row report
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/report/report.md" ]; then
+            cat "$RUNNER_TEMP/report/report.md" >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "no report: the suite did not start" >>"$GITHUB_STEP_SUMMARY"
+          fi
+          sudo journalctl -u bitscan-runner.service --no-pager -o cat | tail -n 40 | sed -E 's/bs[uaek]_[A-Za-z0-9_-]+/bs?_[MASKED]/g'
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sandbox-report-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/report/report.md
+            ${{ runner.temp }}/report/rows.jsonl
+          if-no-files-found: warn
+
+  plants:
+    name: Plant ${{ matrix.plant }} turns ${{ matrix.row }} red
+    if: github.event_name == 'workflow_dispatch' && inputs.plants || github.event_name == 'push' && contains(github.event.head_commit.message, '[sandbox-plants]')
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { plant: "320", row: CHK-M10-283 }
+          - { plant: "325", row: CHK-M10-281 }
+          - { plant: "327", row: CHK-M10-282 }
+          - { plant: "329", row: CHK-M10-205 }
+          - { plant: "330", row: CHK-M10-206 }
+          - { plant: "331", row: CHK-M10-211 }
+          - { plant: "333", row: CHK-M10-211 }
+          - { plant: "334", row: CHK-M10-211 }
+          - { plant: "335", row: CHK-M10-211 }
+          - { plant: "336", row: CHK-M10-210 }
+          - { plant: "337", row: CHK-M10-212 }
+          - { plant: "338", row: CHK-M10-212 }
+          - { plant: "339", row: CHK-M10-212 }
+          - { plant: "343", row: CHK-M10-212 }
+          - { plant: "344", row: CHK-M10-344v }
+          - { plant: "371", row: CHK-M10-289 }
+          - { plant: "373", row: CHK-M10-217 }
+          - { plant: "374", row: CHK-M10-289 }
+          - { plant: "382", row: CHK-M10-220 }
+          - { plant: "386", row: CHK-M10-215 }
+          - { plant: "388", row: CHK-M10-207 }
+          - { plant: "389", row: CHK-M10-204 }
+          - { plant: "390", row: CHK-M10-203 }
+          - { plant: "391", row: CHK-M10-212 }
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: src
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/agent/go.mod
+          cache: false
+
+      - name: Install build-essential, dpkg-dev and debhelper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential dpkg-dev debhelper
+
+      - name: Plant ${{ matrix.plant }} in a throwaway copy and build its .deb
+        run: |
+          mkdir "$RUNNER_TEMP/copy"
+          git -C src archive HEAD | tar -x -C "$RUNNER_TEMP/copy"
+          bash src/agent/test/sandbox/plants.sh apply "${{ matrix.plant }}" "$RUNNER_TEMP/copy"
+          bash "$RUNNER_TEMP/copy/deploy/debian/build-deb.sh" "$RUNNER_TEMP/out"
+
+      - name: Run ${{ matrix.row }}; it must turn red
+        run: |
+          deb=$(ls "$RUNNER_TEMP"/out/bitscan-agent_*_amd64.deb)
+          sudo bash src/agent/test/sandbox/run_vm.sh "$deb" "$RUNNER_TEMP/report" --with-nft \
+            --rows "${{ matrix.row }}" --expect-red "${{ matrix.row }}" --label "plant ${{ matrix.plant }}"
+
+      - name: Row report
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/report/report.md" ]; then
+            cat "$RUNNER_TEMP/report/report.md" >>"$GITHUB_STEP_SUMMARY"
+          fi
