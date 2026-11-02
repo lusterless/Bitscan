@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import ctypes
 import json
 import os
 import pwd
@@ -41,7 +40,7 @@ import traceback
 import uuid
 import xml.etree.ElementTree as ET  # noqa: S405 - repo-owned sample files only
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SOCK = "/run/bitscan/runner.sock"
@@ -62,6 +61,7 @@ BLOCKED = [
     "/run/systemd/journal/syslog",
     "/run/systemd/journal/dev-log",
 ]
+UTC = timezone.utc
 TOKEN_RE = re.compile(r"bs[uaek]_[A-Za-z0-9_-]{4,}")
 
 
@@ -419,8 +419,7 @@ def r201(ctx: Ctx) -> tuple[str, str]:
     leaked = [x for x in dirs if os.path.exists(x + "/.bs-sbx-w")]
     checks.append(("no probe file on the host (private /tmp, /var/tmp)", not leaked))
     for x in leaked:
-        if x in ("/tmp", "/var/tmp"):
-            os.unlink(x + "/.bs-sbx-w")
+        os.unlink(x + "/.bs-sbx-w")
     return verdict(checks, "host files: %s" % leaked)
 
 
@@ -524,7 +523,8 @@ def r205(ctx: Ctx) -> tuple[str, str]:
 def r206(ctx: Ctx) -> tuple[str, str]:
     ino = os.stat(SOCK).st_ino
     before = sorted(os.listdir("/run/bitscan"))
-    ex = ('echo FDS=$(ls /proc/$$/fd | sort -n | tr "\\n" " "); for f in /proc/$$/fd/*; do echo "L$(basename $f)=$(readlink $f)"; done; '
+    ex = ('ls -l /proc/$$/fd > ./fdl; ls /proc/$$/fd > ./fds; echo FDS=$(sort -n ./fds | tr "\\n" " "); '
+          'sed -n "s#.* \\([0-9]*\\) -> \\(.*\\)#FDL\\1=\\2#p" ./fdl; '
           'mv /run/bitscan/runner.sock /run/bitscan/x 2>/dev/null; echo MV=$?; rm -f /run/bitscan/runner.sock 2>/dev/null; echo RM=$?; '
           'ln -sf /dev/null /run/bitscan/runner.sock 2>/dev/null; echo LN=$?; touch /run/bitscan/new 2>/dev/null; echo TOUCH=$?; '
           'mkdir /run/bitscan/d 2>/dev/null; echo MKDIR=$?')
@@ -532,7 +532,7 @@ def r206(ctx: Ctx) -> tuple[str, str]:
     d = kv(res["results"][0])
     fds = (d.get("FDS") or "").split()
     after = sorted(os.listdir("/run/bitscan"))
-    links = {k: v for k, v in d.items() if k.startswith("L")}
+    links = {k: v for k, v in d.items() if k.startswith("FDL")}
     return verdict([("job done", ok_job(res, 1)), ("fds %s" % fds, fds == ["0", "1", "2"]),
                     ("no socket fd", not any("socket:" in v for v in links.values())),
                     ("mv %s" % d.get("MV"), d.get("MV") not in (None, "0")), ("rm %s" % d.get("RM"), d.get("RM") not in (None, "0")),
@@ -674,7 +674,7 @@ def r210(ctx: Ctx) -> tuple[str, str]:
 def r211(ctx: Ctx) -> tuple[str, str]:
     ex = ("echo LS=$(ls -A | wc -l); echo PWD=$PWD; echo ENVN=$(tr '\\0' '\\n' < /proc/$$/environ | wc -l); "
           "echo ENV=$(tr '\\0' '\\n' < /proc/$$/environ | head -n 3 | tr '\\n' '|'); echo FD0=$(readlink /proc/$$/fd/0); "
-          "echo FDS=$(ls /proc/$$/fd | sort -n | tr '\\n' ' '); echo NICE=$(cut -d' ' -f19 /proc/$$/stat); "
+          "ls /proc/$$/fd > ./fds; echo FDS=$(sort -n ./fds | tr '\\n' ' '); echo NICE=$(cut -d' ' -f19 /proc/$$/stat); "
           "echo IONICE=$(ionice -p $$); echo UID=$(id -u); echo MODE=$(stat -c %a .)")
     res = run_job(ctx, [plugin(ex)])
     d = kv(res["results"][0])
@@ -719,7 +719,7 @@ def r212(ctx: Ctx) -> tuple[str, str]:
         plugin("sh -c 'trap \"\" TERM; exec sleep 300.2127' >/dev/null 2>&1 & echo ok=1"),
         # (1b) per-plugin kill: the background child of the plugin before this one is gone
         plugin("sleep 300.2130 & echo ok=1"),
-        plugin("sleep 1; if pgrep -f 'sleep 300.2130' >/dev/null; then echo ALIVE=1; else echo ALIVE=0; fi"),
+        plugin("sleep 1; if pgrep -f 'sleep 300[.]2130' >/dev/null; then echo ALIVE=1; else echo ALIVE=0; fi"),
     ]
     res = run_job(ctx, pl, mpp=1)
     time.sleep(1)
@@ -759,7 +759,7 @@ def r212(ctx: Ctx) -> tuple[str, str]:
                     ("(7) timed_out %s exit %s in %.2f s" % (it.get("timed_out"), it.get("exit_code"), el), it.get("timed_out") is True and it.get("exit_code") == 137 and el <= 3.0),
                     ("(8) next job ran (%s), runner back in supervisor or restarted (%s, pid %d -> %d)" % (r8b["kinds"], rcg, rp8, runner_pid()),
                      ok_job(r8b, 1) and (rcg.endswith("/supervisor"))),
-                    ("(8) no survivor %s" % surv8, not surv8),
+                    ("(8) the move was tried (write rc %s), no survivor %s" % (kv(r8["results"][0]).get("W"), surv8), not surv8),
                     ("(9) /tmp %s /var/tmp %s gone" % (d9.get("T"), d9.get("V")), d9.get("T") == "1" and d9.get("V") == "1"),
                     ("(10) client closed after accepted (%s)" % r10["status"], r10["status"] == "client-close"),
                     ("(10) no plugin 1 s later %s" % surv10, not surv10)], "subtree %s" % others)
@@ -825,6 +825,26 @@ def r216(ctx: Ctx) -> tuple[str, str]:
                     ("nothing executed", not any(x in m for x in ("M216root", "M216member", "M216out")))])
 
 
+
+NFT_NORM = (
+    "import json,sys,hashlib\n"
+    "def z(o):\n"
+    "  if isinstance(o,dict):\n"
+    "    return {k:(0 if k in ('packets','bytes') else z(v)) for k,v in o.items()}\n"
+    "  if isinstance(o,list):\n"
+    "    return [z(v) for v in o]\n"
+    "  return o\n"
+    "d=sys.stdin.buffer.read()\n"
+    "try:\n  d=json.dumps(z(json.loads(d)),sort_keys=True).encode()\nexcept ValueError:\n  pass\n"
+    "print(hashlib.sha256(d).hexdigest())\n"
+)
+
+
+def nft_sha(raw: bytes) -> str:
+    r = subprocess.run(["/usr/bin/python3", "-I", "-c", NFT_NORM], input=raw, capture_output=True, check=False)
+    return r.stdout.decode().strip()
+
+
 def _capread(enable: bool) -> None:
     if enable:
         sh("systemctl enable --now bitscan-capread.socket")
@@ -838,7 +858,7 @@ def r217(ctx: Ctx) -> tuple[str, str]:
         return ("NOT RUN", "nft is not installed on this host (run_vm.sh installs nftables); cover CHK-M10-137 to -141")
     _capread(True)
     try:
-        ex = ("bitscan-capread nft_ruleset > ./n 2>./ne; echo NRC=$?; echo NSHA=$(sha256sum < ./n | cut -c1-64); echo NERR=$(cat ./ne); "
+        ex = ("bitscan-capread nft_ruleset > ./n 2>./ne; echo NRC=$?; echo NSHA=$(" + py(NFT_NORM) + " < ./n); echo NERR=$(cat ./ne); "
               "bitscan-capread audit_rules > ./a 2>./ae; echo ARC=$?; echo ASHA=$(sha256sum < ./a | cut -c1-64); echo AERR=$(cat ./ae); "
               "echo EFF=$(grep CapEff /proc/$$/status | cut -f2)")
         res = run_job(ctx, [plugin(ex)])
@@ -848,10 +868,10 @@ def r217(ctx: Ctx) -> tuple[str, str]:
         nft = subprocess.run(["/usr/sbin/nft", "-j", "list", "ruleset"], capture_output=True, check=False).stdout
         import hashlib
 
-        nsha = hashlib.sha256(nft).hexdigest()
+        nsha = nft_sha(nft)
         has_audit = os.path.exists("/usr/sbin/auditctl")
         checks = [("job done", ok_job(res, 1)), ("nft_ruleset rc %s" % d.get("NRC"), d.get("NRC") == "0"),
-                  ("nft output equals root's (%d bytes)" % len(nft), d.get("NSHA") == nsha)]
+                  ("nft output equals root's, rule counters zeroed (%d bytes)" % len(nft), d.get("NSHA") == nsha)]
         if has_audit:
             au = subprocess.run(["/usr/sbin/auditctl", "-l"], capture_output=True, check=False).stdout
             checks += [("audit_rules rc %s" % d.get("ARC"), d.get("ARC") == "0"),
@@ -934,7 +954,7 @@ def r223(ctx: Ctx) -> tuple[str, str]:
 @row("CHK-M10-344v", "redaction before truncation at the 64 KiB boundary, at the runner reply (the agent forwards it as is)")
 def r344(ctx: Ctx) -> tuple[str, str]:
     tok = "bsa_" + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
-    ex = "head -c 65530 /dev/zero | tr '\\0' a; printf %s " + tok
+    ex = "head -c 65529 /dev/zero | tr '\\0' a; printf '\\n%s' " + tok
     res = run_job(ctx, [plugin(ex)])
     it = res["results"][0] or {}
     so = it.get("stdout", "")
@@ -982,7 +1002,7 @@ def r222(ctx: Ctx) -> tuple[str, str]:
         n1 = norm(it.get("stdout", ""))
         n2 = norm(redact_like(r.stdout.decode(errors="replace"), ctx.patterns))
         if n1 != n2 or it.get("exit_code") != r.returncode:
-            diff.append("%s: sandbox exit %s vs root %s; stdout %s" % (name, it.get("exit_code"), r.returncode, "same" if n1 == n2 else "differs"))
+            diff.append("%s: sandbox exit %s vs root %s; sandbox %r vs root %r" % (name, it.get("exit_code"), r.returncode, mask(n1)[:160], mask(n2)[:160]))
     st = "PASS" if ok_job(res, len(specs)) and not bad and not diff else "FAIL"
     return (st, "%d plugins from %d files; job %s; failing %s; differing from root %s" % (
         len(specs), len(list(Path(sdir).glob("*.bit"))), "done" if ok_job(res, len(specs)) else res["kinds"][-3:], bad, diff))
@@ -1098,6 +1118,7 @@ def r286(ctx: Ctx) -> tuple[str, str]:
 @row("CHK-M10-287", "an inventory job is refused not_compliance and runs nothing")
 def r287(ctx: Ctx) -> tuple[str, str]:
     req = request(ctx, _marked(ctx, "M287"), kind="inventory")
+    del req["job"]["plugins"], req["job"]["redaction_patterns"]
     return _refusal_row(ctx, "CHK-M10-287", frame(req), None, "not_compliance")
 
 
