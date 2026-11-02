@@ -1,5 +1,6 @@
-// Command bitscan-agent is the network-facing agent (TS §3.1–§3.4): it
-// enrols, heartbeats, pulls jobs and uploads inventory. It runs no plugin
+// Command bitscan-agent is the network-facing agent (TS §3.1–§3.5): it
+// enrols, heartbeats, pulls jobs, uploads inventory, hands whole compliance
+// jobs to bitscan-runner and posts their spooled results. It runs no plugin
 // command, opens no listening socket and writes only its state directory.
 package main
 
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -16,11 +18,13 @@ import (
 	"bitscan.local/agent/internal/agent/config"
 	"bitscan.local/agent/internal/agent/enrol"
 	"bitscan.local/agent/internal/agent/loops"
+	"bitscan.local/agent/internal/agent/runnerclient"
 	"bitscan.local/agent/internal/agent/schedule"
 	"bitscan.local/agent/internal/agent/state"
 	"bitscan.local/agent/internal/agent/token"
 	"bitscan.local/agent/internal/agent/transport"
 	"bitscan.local/agent/internal/inventory"
+	"bitscan.local/agent/internal/spool"
 )
 
 // version is set by the build: -ldflags "-X main.version=<version>" (TASK-102).
@@ -88,6 +92,16 @@ func run() int {
 		return 0
 	}
 
+	// The result spool (TS §3.3 L226). Without it compliance jobs are refused
+	// and logged; inventory still runs (TS §1.1 G2).
+	sp, dropped, spErr := spool.Open(filepath.Join(cfg.StateDir, "spool"), int64(cfg.SpoolMaxMB)<<20, clock.Now)
+	spoolBytes := func() int64 { return 0 }
+	if spErr == nil {
+		defer func() { _ = sp.Close() }()
+		sp.Log = log
+		spoolBytes = sp.Size
+	}
+
 	holder := token.NewHolder(res.Token)
 	r := loops.NewRun(ctx, loops.Deps{
 		Client:             client,
@@ -100,11 +114,25 @@ func run() int {
 		Log:                log,
 		JobPullSeconds:     cfg.JobPullSeconds,
 		MaxParallelPlugins: cfg.MaxParallelPlugins,
+		SpoolBytes:         spoolBytes,
 	})
 	inv := loops.NewInventory(r, inventory.CollectBody)
 	var wg sync.WaitGroup
+	var comp loops.ComplianceHandler // nil: compliance jobs are refused
+	if spErr != nil {
+		log.Error("the result spool could not be opened; compliance jobs are refused", "reason", spErr.Error())
+		r.SetLastError("spool: not opened; compliance jobs refused")
+	} else {
+		for _, d := range dropped {
+			log.Warn("spooled results dropped at start", "job_id", string(d.Job), "items", d.Items, "reason", d.Reason)
+			r.SetLastError("spool: results dropped at start (" + d.Reason + ")")
+		}
+		sender := loops.NewSender(r, sp)
+		wg.Go(sender.Loop)
+		comp = &loops.Compliance{Run: r, Spool: sp, Sender: sender, Runner: &runnerclient.Client{}}
+	}
 	wg.Go(r.Heartbeat)
-	wg.Go((&loops.Puller{Run: r, Seen: seen, Inventory: inv}).Loop)
+	wg.Go((&loops.Puller{Run: r, Seen: seen, Inventory: inv, Compliance: comp}).Loop)
 	wg.Go(func() { inv.Watch(r.Context(), inventory.NewWatcher(inventory.DpkgDir, clock)) })
 	log.Info("bitscan-agent started", "version", version, "agent_id", string(res.AgentID))
 

@@ -47,7 +47,7 @@ func (r *Run) heartbeat() transport.Class {
 		AgentVersion:  r.d.Version,
 		UptimeS:       int64(now.Sub(r.start).Seconds()), // the agent process (#78 (a))
 		CurrentJobID:  r.current.Load(),
-		SpoolBytes:    0, // no spool in 0.x (#78 (d))
+		SpoolBytes:    r.spoolBytes(),
 		LastError:     lastErr,
 		RunnerHelpers: r.helpers(),
 		Clock:         wire.NewTime(now),
@@ -85,6 +85,14 @@ func (r *Run) heartbeat() transport.Class {
 		r.log.Warn("token rotation failed; tried again after the next heartbeat")
 	}
 	return transport.Success
+}
+
+// spoolBytes is the spool's size in bytes on disk (#78 (d)).
+func (r *Run) spoolBytes() int64 {
+	if r.d.SpoolBytes == nil {
+		return 0
+	}
+	return max(r.d.SpoolBytes(), 0)
 }
 
 // helpers is ["capread"] when any file exists at the capread socket path

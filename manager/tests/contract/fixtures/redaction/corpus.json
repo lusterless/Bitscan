@@ -1,0 +1,556 @@
+{
+ "_about": "REQ-243 (3) shared redaction corpus (tester-m10). For each input, the expected whole-match texts of each TS 8.6 default pattern (index 0-4, in TS order), left to right. Byte spans are derived by sequential search in the UTF-8 input. Read by agent/internal/redact (Go regexp) and manager/tests/test_redaction_crosscheck.py (google-re2).",
+ "cases": [
+  {
+   "name": "shadow sha512",
+   "input": "root:$6$rounds=5000$saltsalt$hashhashhash:19000:0:99999:7:::",
+   "matches": [
+    [
+     "$6$rounds=5000$saltsalt$hashhashhash"
+    ],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "shadow yescrypt",
+   "input": "user:$y$j9T$abc$def:19000::",
+   "matches": [
+    [
+     "$y$j9T$abc$def"
+    ],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bcrypt",
+   "input": "$2b$12$abcdefghijklmnopqrstuv",
+   "matches": [
+    [
+     "$2b$12$abcdefghijklmnopqrstuv"
+    ],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "crypt ids",
+   "input": "$gy$x and $sha1$y and $md5$z $9$no",
+   "matches": [
+    [
+     "$gy$x",
+     "$sha1$y",
+     "$md5$z"
+    ],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "crypt id without hash",
+   "input": "x $1$ y",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "locked shadow",
+   "input": "root:!:19000:0:99999:7:::\ndaemon:*:19000::",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "pem full",
+   "input": "a\n-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----\nb",
+   "matches": [
+    [],
+    [
+     "-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----"
+    ],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "openssh cut off",
+   "input": "x\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbn",
+   "matches": [
+    [],
+    [
+     "-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbn"
+    ],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "two blocks",
+   "input": "-----BEGIN EC PRIVATE KEY-----\nA\n-----END EC PRIVATE KEY-----\n-----BEGIN PRIVATE KEY-----\nB\n-----END PRIVATE KEY-----",
+   "matches": [
+    [],
+    [
+     "-----BEGIN EC PRIVATE KEY-----\nA\n-----END EC PRIVATE KEY-----",
+     "-----BEGIN PRIVATE KEY-----\nB\n-----END PRIVATE KEY-----"
+    ],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "public key not matched",
+   "input": "-----BEGIN PUBLIC KEY-----\nabc",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "begin marker at end",
+   "input": "k: -----BEGIN ENCRYPTED PRIVATE KEY-----",
+   "matches": [
+    [],
+    [
+     "-----BEGIN ENCRYPTED PRIVATE KEY-----"
+    ],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bsa token",
+   "input": "bsa_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE",
+   "matches": [
+    [],
+    [],
+    [
+     "bsa_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"
+    ],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bse token after equals",
+   "input": "x=bse_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE.",
+   "matches": [
+    [],
+    [],
+    [
+     "bse_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"
+    ],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bsk 19 chars",
+   "input": "bsk_AAAAAAAAAAAAAAAAAAA",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bsk 20 chars after dash",
+   "input": "-bsk_AAAAAAAAAAAAAAAAAAAA",
+   "matches": [
+    [],
+    [],
+    [
+     "bsk_AAAAAAAAAAAAAAAAAAAA"
+    ],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bsu inside word",
+   "input": "abcbsu_xxxxxxxxxxxxxxxxxxxxxxxxx",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bsu after underscore",
+   "input": "_bsu_xxxxxxxxxxxxxxxxxxxxxxxxx",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bsa after non-ascii letter",
+   "input": "\u00e9bsa_xxxxxxxxxxxxxxxxxxxx",
+   "matches": [
+    [],
+    [],
+    [
+     "bsa_xxxxxxxxxxxxxxxxxxxx"
+    ],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "bsx not a prefix",
+   "input": "bsx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "akia",
+   "input": "id AKIAIOSFODNN7EXAMPLE end",
+   "matches": [
+    [],
+    [],
+    [],
+    [
+     "AKIAIOSFODNN7EXAMPLE"
+    ],
+    []
+   ]
+  },
+  {
+   "name": "asia",
+   "input": "ASIAY34FZKBOKMUTVV7A",
+   "matches": [
+    [],
+    [],
+    [],
+    [
+     "ASIAY34FZKBOKMUTVV7A"
+    ],
+    []
+   ]
+  },
+  {
+   "name": "akia 21 chars",
+   "input": "AKIAIOSFODNN7EXAMPLEX",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "akia glued before",
+   "input": "xAKIAIOSFODNN7EXAMPLE",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "akia lowercase",
+   "input": "AKIAiosfodnn7example",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "password equals",
+   "input": "password=hunter2",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "password=hunter2"
+    ]
+   ]
+  },
+  {
+   "name": "api_key colon",
+   "input": "api_key: abc",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "api_key: abc"
+    ]
+   ]
+  },
+  {
+   "name": "API-KEY spaced",
+   "input": "API-KEY = x y",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "API-KEY = x"
+    ]
+   ]
+  },
+  {
+   "name": "apikey",
+   "input": "apikey:z",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "apikey:z"
+    ]
+   ]
+  },
+  {
+   "name": "Token",
+   "input": "Token:abc def",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "Token:abc"
+    ]
+   ]
+  },
+  {
+   "name": "SECRET tabs",
+   "input": "SECRET\t=\tv",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "SECRET\t=\tv"
+    ]
+   ]
+  },
+  {
+   "name": "mypassword",
+   "input": "mypassword=x",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "password=x"
+    ]
+   ]
+  },
+  {
+   "name": "token equals nothing",
+   "input": "token= \n",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "crlf",
+   "input": "password=abc\r\nnext",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "password=abc"
+    ]
+   ]
+  },
+  {
+   "name": "nul value",
+   "input": "token=\u0000abc",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "token=\u0000abc"
+    ]
+   ]
+  },
+  {
+   "name": "fffd value",
+   "input": "secret=\ufffd",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "secret=\ufffd"
+    ]
+   ]
+  },
+  {
+   "name": "vertical tab",
+   "input": "token=\u000bX",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "token=\u000bX"
+    ]
+   ]
+  },
+  {
+   "name": "nbsp",
+   "input": "password=\u00a0x",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "password=\u00a0x"
+    ]
+   ]
+  },
+  {
+   "name": "long s fold",
+   "input": "\u017fecret=x",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "\u017fecret=x"
+    ]
+   ]
+  },
+  {
+   "name": "kelvin fold",
+   "input": "to\u212aen=1",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "to\u212aen=1"
+    ]
+   ]
+  },
+  {
+   "name": "install ok installed",
+   "input": "install ok installed",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "PasswordAuthentication",
+   "input": "PasswordAuthentication no",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "passwd files",
+   "input": "passwd: files",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "name": "db password",
+   "input": "DB_PASSWORD = s3cr3t # comment",
+   "matches": [
+    [],
+    [],
+    [],
+    [],
+    [
+     "PASSWORD = s3cr3t"
+    ]
+   ]
+  },
+  {
+   "name": "mixed line",
+   "input": "u:$5$ab$cd: token: tok bsa_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE",
+   "matches": [
+    [
+     "$5$ab$cd"
+    ],
+    [],
+    [
+     "bsa_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"
+    ],
+    [],
+    [
+     "token: tok"
+    ]
+   ]
+  }
+ ]
+}

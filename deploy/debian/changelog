@@ -1,3 +1,20 @@
+bitscan-agent (0.2.0~pre1-1) unstable; urgency=medium
+
+  * Pre-release: compliance runner. Not a supported release.
+  * bitscan-runner runs the checks of compliance jobs in its sandbox and
+    returns redacted output. It refuses to start without the unified
+    cgroup v2 hierarchy, and the agent then reports each check as
+    runner_unavailable.
+  * bitscan-agent hands compliance jobs to the runner and keeps their
+    results in an on-disk spool (spool_max_mb) until the manager has
+    answered them. Inventory runs as before.
+  * bitscan-capread answers nft_ruleset and audit_rules. It stays disabled
+    until an administrator enables bitscan-capread.socket on the host.
+  * Upgrades 0.1.0-1 in place and keeps its configuration, agent token
+    and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Fri, 30 Oct 2026 00:00:00 +0000
+
 bitscan-agent (0.1.0-1) unstable; urgency=medium
 
   * First supported release of the Bitscan agent: enrolment, heartbeat,

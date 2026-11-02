@@ -4,9 +4,12 @@ The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-
 
 **Release 0.1.0** (package `0.1.0-1`) is the first supported release. It supports enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list), which the manager shows on its host pages and in package search. Compliance scans are not in 0.1.0: the runner and the helper are installed but idle, no check command runs, and the agent reports every check of a compliance job as `runner_unavailable`. The earlier pre-release builds (`0.1.0~preN-1`) are not supported; upgrade them as in section 6.
 
+**Pre-release `0.2.0~pre1-1`** (not a supported release) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Sections 9 to 11 cover the runner, the optional helper and the spool.
+
 ## 1. Before you start
 
 - **Supported hosts:** Ubuntu 22.04 LTS and Ubuntu 24.04 LTS on amd64, with the default unified cgroup v2 hierarchy. No other release or architecture is supported.
+- **cgroup v2:** the host must boot with the unified cgroup v2 hierarchy, the Ubuntu default. `stat -fc %T /sys/fs/cgroup` must print `cgroup2fs`. Otherwise the runner refuses to start, and every check of a compliance job is reported as `runner_unavailable` (section 9). The usual cause is `systemd.unified_cgroup_hierarchy=0` on the kernel command line (see `cat /proc/cmdline`). Remove it from `GRUB_CMDLINE_LINUX` in `/etc/default/grub`, run `sudo update-grub` and reboot.
 - **Time:** the host must be NTP-synced. `timedatectl` must show `System clock synchronized: yes`. The manager alerts on a clock skew over 5 minutes.
 - **Network:** outbound HTTPS from the host to the manager URL, for example `https://mgr.example:8443`. Plain HTTP is refused.
 - **Cloned hosts:** hosts cloned from one image share `/etc/machine-id`, so the second host appears as a re-enrolment of the first. Regenerate the machine id on every clone before you install the agent. Remove both copies: if `/var/lib/dbus/machine-id` is still a file, `systemd-machine-id-setup` copies the old id from it instead of making a new one. Then restore the usual link:
@@ -138,7 +141,7 @@ systemctl is-active bitscan-agent.service bitscan-runner.socket
 sudo journalctl -u bitscan-agent -n 20
 ```
 
-Both units must be `enabled` and `active`. The capread units stay disabled.
+Both units must be `enabled` and `active`. The capread units stay disabled. `bitscan-runner.service` itself stays `inactive` until the first compliance job connects to its socket (section 9).
 
 The host then appears in the manager. Unless the enrolment token has `auto_approve` and the machine id is new, an admin must approve the enrolment request; until then the agent keeps retrying with back-off. After the agent's first enrolment call, even while the request still waits for approval, `/var/lib/bitscan-agent/` holds `agent_id` and `token` and `enroll.token` is gone, so these files do not show that the host is approved. The host is enrolled once an admin approves it in the manager (or at once with `auto_approve` and a new machine id). The first inventory follows the first inventory job.
 
@@ -172,7 +175,7 @@ Check the new package as in section 2, then:
 sudo apt install ./bitscan-agent_<new version>_amd64.deb
 ```
 
-An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A pre-release host upgrades in place the same way: `0.1.0~pre1-1` sorts below `0.1.0-1`.
+An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A pre-release host upgrades in place the same way: `0.1.0~pre1-1` sorts below `0.1.0-1`. A `0.1.0-1` host upgrades to the pre-release `0.2.0~pre1-1` the same way, since it sorts above `0.1.0-1`.
 
 Check the result:
 
@@ -209,3 +212,84 @@ sudo apt purge bitscan-agent
 also removes `/var/lib/bitscan-agent`, `/etc/bitscan/agent.yaml` and any leftover `/etc/bitscan/install.env`, and the package's debconf answers. It removes `/etc/bitscan` only if the folder is then empty, so a manager's `manager.env` and `secrets/` on the same host are kept. The `bitscan` and `bitscan-runner` users and a CA file you copied are kept; if that is `/etc/bitscan/ca.pem`, `/etc/bitscan` stays too.
 
 Removing the package does not deregister the host. It goes `offline` after 30 minutes and is decommissioned after `decommission_after_days` (default 7; 0 means never), which also revokes its token. To cut the host off at once, an admin revokes the agent in the manager.
+
+## 9. Compliance jobs and the runner
+
+`bitscan-agent` hands each compliance job whole to `bitscan-runner` over `/run/bitscan/runner.sock`. The runner runs each check as the `bitscan-runner` user. That user can read every file, but it cannot write outside its private `/tmp`, open IP connections or gain privileges. The runner redacts the output on the host before it returns it. It never logs a check command or its output.
+
+After the first compliance job:
+
+```sh
+systemctl is-active bitscan-runner.socket bitscan-runner.service
+sudo journalctl -u bitscan-runner -n 20
+```
+
+Both must be `active`, and the log shows `bitscan-runner started` with the package version.
+
+**`runner_unavailable`.** If the runner cannot take or finish a job, every check of that job without a result is reported as ERROR `runner_unavailable`. The job still finishes and is not sent again. The agent logs `the runner is unavailable; plugins without a result are reported runner_unavailable` with the `job_id` and a `reason`: `connect`, `timeout`, `broken`, `protocol` or `refused_<reason>`. Its next heartbeat carries `last_error` `runner_unavailable: <reason>`, which the manager writes to its own log as `agent last_error` with the agent id. To find the cause:
+
+```sh
+sudo journalctl -u bitscan-agent -n 50 | grep runner_unavailable
+sudo journalctl -u bitscan-runner -n 20
+```
+
+A runner that refuses to start logs one line, `start-up refused`, with a `reason`, and systemd tries again every 10 seconds:
+
+- `runner: refusing to start: /sys/fs/cgroup is not cgroup2` or `… not on the unified cgroup v2 hierarchy`: fix the boot as in section 1.
+- `runner: refusing to start: effective uid is 0` or `… holds capabilities beyond CAP_DAC_READ_SEARCH`: the unit was changed locally. `systemctl cat bitscan-runner.service` shows any drop-in under `/etc/systemd/system/`. Remove it, then run `sudo systemctl daemon-reload`. The units must stay as shipped.
+
+**Mount checks.** Checks see the runner's private `/tmp` and `/dev`, so `findmnt /tmp` describes the sandbox, not the host. Checks of mount options must read the host's view with `findmnt --task 1` or `/proc/1/mountinfo`. For example, `findmnt --task 1 -n -o OPTIONS --mountpoint /tmp` prints the host's options for `/tmp`, or nothing if `/tmp` is not a separate mount. A host shell shows the same result without `--task 1`.
+
+## 10. The capread helper (optional)
+
+Live firewall and audit rules need capabilities the runner never has. Checks that want them call `bitscan-capread nft_ruleset` (`nft -j list ruleset`) or `bitscan-capread audit_rules` (`auditctl -l`), and the helper answers. The helper is installed disabled. While it is off, the call exits 1 with `bitscan-capread: not enabled`, and checks read the rule files on disk instead.
+
+Only an administrator on the host enables the helper, by hand or with configuration management. The manager has no route, setting or job that can enable it, and the agent and runner never change a unit.
+
+Enable it:
+
+```sh
+sudo systemctl enable --now bitscan-capread.socket
+systemctl is-active bitscan-capread.socket
+ls -l /run/bitscan/capread.sock
+sudo -u bitscan-runner /usr/sbin/bitscan-capread nft_ruleset
+```
+
+The socket is `active`, and the socket file is `srw-rw----`, owned by `root bitscan-runner`. The last command prints the ruleset as JSON. If `nft` or `auditctl` is not installed, the answer is `bitscan-capread: not_installed`. The helper accepts only the `bitscan-runner` user.
+
+The next heartbeat (within about 5 minutes) reports `runner_helpers` as `["capread"]`. The manager shows that in `GET /agents` and writes a `runner_helper_changed` alert.
+
+Disable it:
+
+```sh
+sudo systemctl disable --now bitscan-capread.socket
+ls /run/bitscan/capread.sock
+```
+
+Stopping the socket also stops the helper and removes the socket file, so `ls` reports `No such file or directory`. The next heartbeat reports `[]`, with another alert.
+
+## 11. The result spool
+
+The agent keeps results in `/var/lib/bitscan-agent/spool/`, one folder per compliance job, until the manager has answered them. The spool holds only redacted output. A restart or upgrade keeps it, and results spooled before a restart are sent after it.
+
+- **Size:** `spool_max_mb` in `/etc/bitscan/agent.yaml`, 1 to 50 (default 50). Any other value refuses start-up with `agent.yaml: spool_max_mb: must be 1 to 50`. After a change, run `sudo systemctl restart bitscan-agent`.
+- **Full:** the oldest results are replaced first by ERROR `spool_overflow` entries. The agent logs `spool full: …`.
+- **Age:** results are kept for 7 days from when their job was received, since the manager refuses them after that. At start the agent drops older ones, or damaged ones, and logs `spooled results dropped at start` with `reason` `expired` or `unreadable`. `last_error` is then `spool: results dropped at start (<reason>)`.
+- **`spool_bytes`:** every heartbeat reports the spool's size. The manager in this version does not store or show it, so check it on the host with `sudo du -sb /var/lib/bitscan-agent/spool`.
+
+**If the spool cannot be opened**, the agent keeps sending heartbeats and running inventory, but it refuses every compliance job:
+
+- at start it logs `the result spool could not be opened; compliance jobs are refused`, with a `reason`;
+- for each compliance job it pulls, it logs `job refused; not run` with `reason=no compliance handler`;
+- `last_error` is `spool: not opened; compliance jobs refused`, then `job refused: no compliance handler`;
+- a refused job never starts, so the manager fails it 24 hours after it was handed out.
+
+Check:
+
+```sh
+sudo journalctl -u bitscan-agent | grep 'result spool'
+sudo ls -ld /var/lib/bitscan-agent /var/lib/bitscan-agent/spool
+df -h /var/lib/bitscan-agent
+```
+
+`spool` must be a directory (not a file or a symbolic link) owned by `bitscan:bitscan` with mode 0700, and the filesystem must be writable and have free space. If `spool` is missing, the agent creates it. Fix the cause, then run `sudo systemctl restart bitscan-agent`.

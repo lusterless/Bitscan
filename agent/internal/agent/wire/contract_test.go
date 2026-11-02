@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -79,6 +80,9 @@ type manifestDoc struct {
 	RequiredInvalidClasses map[string][]string      `json:"required_invalid_classes"`
 	Fixtures               []fixture                `json:"fixtures"`
 	SchemaGaps             map[string]string        `json:"schema_gaps"`
+	SharedFiles            []struct {
+		File string `json:"file"`
+	} `json:"shared_files"`
 }
 
 func (f fixture) key() string { return f.Route + "/" + f.Direction }
@@ -391,8 +395,31 @@ func TestContractManifest(t *testing.T) {
 		t.Error("schema_gaps has no 'nan_inf' entry")
 	}
 	seen := map[string]bool{}
+	// M10: shared non-wire files (the redaction corpus, TP-M10-03) are
+	// listed by name in "shared_files"; each must exist and is counted as
+	// listed, never as a wire fixture.
+	wantShared := []string{"redaction/corpus.json"}
+	if len(m.SharedFiles) != len(wantShared) {
+		t.Errorf("shared_files has %d entries, want %v", len(m.SharedFiles), wantShared)
+	}
+	for i, s := range m.SharedFiles {
+		if i < len(wantShared) && s.File != wantShared[i] {
+			t.Errorf("shared_files[%d] = %s, want %s", i, s.File, wantShared[i])
+		}
+		if seen[s.File] {
+			t.Errorf("duplicate shared_files entry %s", s.File)
+		}
+		seen[s.File] = true
+		if _, err := os.Stat(filepath.Join(fixturesDir, filepath.FromSlash(s.File))); err != nil {
+			t.Errorf("shared_files entry %s: %v", s.File, err)
+		}
+	}
+	shared := maps.Clone(seen)
 	classes := map[string]map[string]bool{}
 	for _, f := range m.Fixtures {
+		if shared[f.File] {
+			t.Errorf("%s is both a wire fixture and a shared file", f.File)
+		}
 		if seen[f.File] {
 			t.Errorf("duplicate manifest entry %s", f.File)
 		}

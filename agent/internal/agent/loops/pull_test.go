@@ -236,9 +236,9 @@ func startPull(t *testing.T, dir string, clock *fakeClock, jobs func(n int, now 
 		Log:            newLogger(h.logs),
 		JobPullSeconds: 60, MaxParallelPlugins: 2, CapreadSock: filepath.Join(dir, "no-capread.sock"),
 	})
-	if comp == nil {
-		comp = loops.Unavailable{Run: h.run}
-	}
+	// PD-45: the M4 #74 Unavailable fallback is gone (REQ-245). A nil handler
+	// now means "no compliance handler": each compliance job is refused,
+	// inventory still runs. The #74 rows are rewritten in compliance_test.go.
 	h.done = make(chan struct{})
 	go h.run.Heartbeat()
 	go func() {
@@ -610,155 +610,9 @@ func TestPullElevenJobsRefused(t *testing.T) {
 	}
 }
 
-// CHK-M4-220 (CHK-M4-356): the #74 answer to a compliance job: one final
-// batch, every plugin runner_unavailable; nothing executed or kept; the M3
-// manager's 409 is dropped and becomes last_error.
-func TestComplianceRunnerUnavailable(t *testing.T) {
-	// The canary file lives in this test's own directory, so a run that did
-	// execute it (a plant) cannot leave a stale file for a later run.
-	canaryFile := filepath.Join(t.TempDir(), "EXEC-CANARY-5f1c")
-	execute := "touch " + canaryFile + " && cat /etc/shadow"
-	var handled time.Time
-	h := newPullHarness(t, func(n int, now time.Time) reply {
-		if n == 1 {
-			handled = now
-			return reply{status: 200, body: jobsBody(t, compJob(uid(1), now.Add(time.Hour), 3, execute))}
-		}
-		return reply{status: 200, body: jobsBody(t)}
-	}, nil)
-	h.m.mu.Lock()
-	h.m.other = func(transport.Request) reply { return reply{status: 409, typ: "job_not_acceptable"} }
-	h.m.mu.Unlock()
-	res := h.m.waitOps(t, transport.OpResults, 1)
-	time.Sleep(30 * time.Millisecond)
-	if n := len(h.m.ops(transport.OpResults)); n != 1 {
-		t.Fatalf("%d results posts, want exactly 1 (a 409 is not retried)", n)
-	}
-	r := res[0].req
-	if r.JobID != uid(1) {
-		t.Fatalf("results for job %s", r.JobID)
-	}
-	var rr wire.ResultsRequest
-	if err := wire.DecodeStrict(r.Body, &rr); err != nil {
-		t.Fatalf("results body fails the contract: %v", err)
-	}
-	if !rr.Final || len(rr.Results) != 3 {
-		t.Fatalf("final %v, %d items", rr.Final, len(rr.Results))
-	}
-	for i, it := range rr.Results {
-		if it.PluginUUID != wire.UUID(fmt.Sprintf("00000000-0000-4000-8000-%012d", i+1)) || it.Error == nil || *it.Error != "runner_unavailable" ||
-			it.ExitCode != nil || it.Stdout != "" || it.Stderr != "" || it.TimedOut || it.Truncated ||
-			!it.StartedAt.Time().Equal(handled) || !it.FinishedAt.Time().Equal(handled) {
-			t.Fatalf("item %d: %+v", i, it)
-		}
-	}
-	if strings.Contains(string(r.Body), "CANARY") {
-		t.Fatal("the plugin command is in the results body")
-	}
-	// the 409 becomes last_error in the next heartbeat
-	for len(h.m.ops(transport.OpHeartbeat)) < 2 {
-		h.clock.fireEarliest(t, 2)
-		time.Sleep(time.Millisecond)
-	}
-	hb := h.m.waitOps(t, transport.OpHeartbeat, 2)
-	found := false
-	for _, c := range hb[1:] {
-		if hr, _ := decoded(t, c.req); hr.LastError != nil && *hr.LastError == "results 409 job_not_acceptable" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("the 409 did not become last_error")
-	}
-	// the clock has now moved past any back-off step (10 s … 300 s): a 409 is
-	// dropped, never retried (TS §3.3 L224, REQ-095)
-	if n := len(h.m.ops(transport.OpResults)); n != 1 {
-		t.Fatalf("%d results posts after the clock moved to %v, want exactly 1 (a 409 is not retried)", n, h.clock.Now().Sub(handled))
-	}
-	// nothing executed: no file appeared, no command anywhere
-	time.Sleep(100 * time.Millisecond) // give a planted background exec time to create the file
-	if _, err := os.Stat(canaryFile); err == nil {
-		t.Fatal("the plugin command was executed")
-	}
-	if strings.Contains(h.logs.String(), "CANARY") {
-		t.Fatal("the plugin command was logged")
-	}
-	entries, _ := os.ReadDir(h.dir)
-	var names []string
-	for _, e := range entries {
-		names = append(names, e.Name())
-		b, _ := os.ReadFile(filepath.Clean(filepath.Join(h.dir, e.Name())))
-		if strings.Contains(string(b), "CANARY") || strings.Contains(string(b), "shadow") {
-			t.Fatalf("the plugin command is stored in %s", e.Name())
-		}
-	}
-	if fmt.Sprint(names) != "[seen_jobs.json]" {
-		t.Fatalf("state files after the job: %v (only seen_jobs.json may change)", names)
-	}
-	// only heartbeat, jobs and results calls
-	for _, c := range h.m.calls {
-		if c.req.Op != transport.OpHeartbeat && c.req.Op != transport.OpJobs && c.req.Op != transport.OpResults {
-			t.Fatalf("unexpected %v call", c.req.Op)
-		}
-	}
-}
-
-// CHK-M4-221: batches of at most 50 (and 1.5 MB), only the last final;
-// retries of a batch use the same bytes.
-func TestComplianceBatches(t *testing.T) {
-	for _, n := range []int{1, 50, 51, 5000} {
-		t.Run(fmt.Sprint(n, " plugins"), func(t *testing.T) {
-			first503 := true
-			h := newPullHarness(t, func(k int, now time.Time) reply {
-				if k == 1 {
-					return reply{status: 200, body: jobsBody(t, compJob(uid(1), now.Add(time.Hour), n, "true"))}
-				}
-				return reply{status: 200, body: jobsBody(t)}
-			}, nil)
-			h.m.mu.Lock()
-			h.m.other = func(transport.Request) reply {
-				if first503 {
-					first503 = false
-					return reply{status: 503, typ: "about:blank"}
-				}
-				return reply{status: 200, body: []byte(`{"accepted":50,"duplicates":0}`)}
-			}
-			h.m.mu.Unlock()
-			want := (n + 49) / 50
-			deadline := time.Now().Add(20 * time.Second)
-			for len(h.m.ops(transport.OpResults)) < want+1 && time.Now().Before(deadline) {
-				if h.clock.pending() >= 3 {
-					h.clock.fireEarliest(t, 3)
-				}
-				time.Sleep(200 * time.Microsecond)
-			}
-			res := h.m.ops(transport.OpResults)
-			if len(res) != want+1 {
-				t.Fatalf("%d results posts, want %d batches + 1 retry", len(res), want)
-			}
-			if string(res[0].req.Body) != string(res[1].req.Body) {
-				t.Fatal("the retry after a 503 sent different bytes")
-			}
-			total := 0
-			for i, c := range res[1:] {
-				var rr wire.ResultsRequest
-				if err := wire.DecodeStrict(c.req.Body, &rr); err != nil {
-					t.Fatal(err)
-				}
-				if len(rr.Results) > 50 || len(c.req.Body) > 1_500_000 {
-					t.Fatalf("batch %d: %d items, %d bytes", i, len(rr.Results), len(c.req.Body))
-				}
-				if rr.Final != (i == want-1) {
-					t.Fatalf("batch %d of %d: final %v", i+1, want, rr.Final)
-				}
-				total += len(rr.Results)
-			}
-			if total != n {
-				t.Fatalf("%d items for %d plugins", total, n)
-			}
-		})
-	}
-}
+// CHK-M4-220 and CHK-M4-221 (the #74 handler) are replaced by requirement
+// (PD-45, REQ-245, REQ-246): see compliance_test.go, TestPD45ComplianceThroughRunner,
+// TestPD45RunnerUnavailableFill and TestPD45Batches.
 
 // CHK-M4-189 via the pull: a 401 on the pull stops both loops.
 func TestPull401StopsAll(t *testing.T) {
@@ -857,8 +711,12 @@ func (s *switchingDoer) Do(ctx context.Context, r transport.Request) (transport.
 	return s.m.Do(ctx, r)
 }
 
-// CHK-M4-223, -220: static: jobs reach the handlers only from the pull code;
-// nothing in the agent packages executes a process or opens runner.sock.
+// CHK-M4-220; CHK-M4-223 rewritten as CHK-M10-271 (user decision
+// 2026-11-01 (2), old-to-new rule): static: jobs reach the handlers only from
+// the pull code; nothing in the agent packages executes a process; the
+// runner socket (runner.sock, AF_UNIX) is reached only from
+// internal/agent/runnerclient (REQ-245); no agent package listens, and the
+// only other socket is the manager connection in internal/agent/transport.
 func TestNoOtherJobSourceStatic(t *testing.T) {
 	root, err := os.OpenRoot(filepath.Join("..", "..", "..", "internal", "agent"))
 	if err != nil {
@@ -866,7 +724,16 @@ func TestNoOtherJobSourceStatic(t *testing.T) {
 	}
 	defer func() { _ = root.Close() }()
 	callRe := regexp.MustCompile(`\.(RunJob|Handle)\(`)
+	// AF_UNIX in any spelling Go offers: network names, unix types and
+	// constants, the x/sys/unix import and raw socket calls.
+	unixRe := regexp.MustCompile(`runner\.sock|"unix(gram|packet)?"|\bnet\.(DialUnix|ListenUnix\w*|UnixAddr|UnixConn|ResolveUnixAddr)\b|\b(syscall|unix)\.(AF_UNIX|AF_LOCAL|Socket|Connect|Bind)\b|"golang\.org/x/sys/unix"`)
+	// Opening any socket at all: allowed only in runnerclient (the runner)
+	// and transport (the manager).
+	dialRe := regexp.MustCompile(`\bnet\.(Dial|DialTimeout|DialTCP|DialUDP|DialIP|Dialer)\b`)
+	// Listening is never allowed in the agent (TS §2.2; agent rule "Never").
+	listenRe := regexp.MustCompile(`\bnet\.(Listen\w*|FileListener|FileConn|FilePacketConn)\b`)
 	var callers []string
+	var runnerSites int
 	err = fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return err
@@ -876,10 +743,24 @@ func TestNoOtherJobSourceStatic(t *testing.T) {
 			return err
 		}
 		src := string(b)
-		for _, bad := range []string{`"os/exec"`, "syscall.Exec", "syscall.ForkExec", "os.StartProcess", "runner.sock", `"unix"`} {
+		pkg := filepath.ToSlash(filepath.Dir(p))
+		for _, bad := range []string{`"os/exec"`, "syscall.Exec", "syscall.ForkExec", "os.StartProcess"} {
 			if strings.Contains(src, bad) {
 				t.Errorf("%s contains %s", p, bad)
 			}
+		}
+		if m := unixRe.FindAllString(src, -1); len(m) > 0 {
+			if pkg == "runnerclient" {
+				runnerSites += len(m)
+			} else {
+				t.Errorf("%s reaches the runner socket or AF_UNIX (%v): only internal/agent/runnerclient may", p, m)
+			}
+		}
+		if m := dialRe.FindAllString(src, -1); len(m) > 0 && pkg != "runnerclient" && pkg != "transport" {
+			t.Errorf("%s opens a socket (%v): only runnerclient and transport may", p, m)
+		}
+		if m := listenRe.FindAllString(src, -1); len(m) > 0 {
+			t.Errorf("%s listens (%v): the agent never listens", p, m)
 		}
 		for i, line := range strings.Split(src, "\n") {
 			if callRe.MatchString(line) && !strings.HasPrefix(strings.TrimSpace(line), "//") && !strings.Contains(line, "func ") {
@@ -899,6 +780,11 @@ func TestNoOtherJobSourceStatic(t *testing.T) {
 	}
 	if len(callers) == 0 {
 		t.Fatal("no caller found: the walk is wrong")
+	}
+	// The allowed site must really be seen, or the walk is wrong: the client
+	// names runner.sock and dials "unix".
+	if runnerSites < 2 {
+		t.Fatalf("runnerclient shows %d runner-socket sites, want at least 2: the walk is wrong", runnerSites)
 	}
 }
 
@@ -962,6 +848,12 @@ func TestJobPickupRecheckedAtStart(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for len(b.seen()) < 1 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
+	}
+	// Fail fast instead of blocking on b.release below (tester-m10c): on
+	// Windows M4's state store refuses to record a seen id (the directory
+	// fsync), so no job ever reaches the handler (a known Windows row).
+	if len(b.seen()) < 1 {
+		t.Fatal("job 1 never reached the handler")
 	}
 	start := h.clock.Now()
 	for h.clock.Now().Sub(start) < 2*time.Minute {

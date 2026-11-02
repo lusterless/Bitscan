@@ -2249,3 +2249,294 @@ All are in `work/open-questions.md` ("M9"), each with a recommended answer. "Nee
 | TS §8.4 L1288 plugin ERROR rate; L1290 all-hosts API-token alert; L1291 thresholds | REQ-226, REQ-227, REQ-228 | Covered |
 | SR §2.3 `@timeout` used in the deadline | REQ-206 | Covered |
 | CLAUDE.md out of scope and owner decisions | none | Nothing planned: no job signing, push channel, ad-hoc command, remediation or inventory switch |
+
+## M10 agent runner and sandbox
+
+Planned 2026-10-30 (planner-m10) in the worktree `Bitscan-m10` (branch `m10-runner`, from main `328b097`, M9 merged). Consistency pass done: every TASK links a REQ and every REQ has a TASK (or is a named test requirement); waves are file-disjoint (one shared file, `ag/internal/spool/spool.go`, is touched by TASK-212 in W2 and TASK-219 in W3 only); every task is within 5 files and about 200 hand-written lines; the spine is acyclic; no gate is lowered. Summary for the user: `work/plans/M10-breakdown.md`.
+
+Scope: REQ-234 to REQ-263 in `work/requirements.md`. In this section `ag/` means `agent/`.
+
+**No new spec deviation, no manager change, no unit change.** Every open item (#130 to #143 new; #4, #28, #29, #30, #31, #57, #60, #74, #78, #113, #114, #116, #121, #124 (f) reused as agreed; PD-41 to PD-45) carries a recommended answer in `work/open-questions.md` ("M10"). No migration, route, setting or contract change. One new Go module if PD-41 (a) is taken (`golang.org/x/sys`). The TS §3.7 units and D-Bus policy stay verbatim; a run that shows a unit must change goes to the user as a spec question.
+
+Rules every M10 task follows:
+- **Testing by risk (user, 2026-10-25): M10 is the highest-risk milestone.** Full rigor for every agent, runner, redaction and capread task: a plant for every security row, every boundary and every race the task names, and a second review round if needed. Low risk, batched TEST and REVIEW allowed: TASK-231 (docs and changelog) only.
+- **Time-skewing (user, 2026-10-26):** clock control only (the agent's `schedule.Clock`, an injected clock in the runner); races driven by barriers, never by sleeps. The sandbox suites on real hosts measure wall time only where the spec gives one (timeouts).
+- **Linux only where the code is Linux:** the `_linux.go` files are tested in WSL (when `/sys/fs/cgroup` is cgroup2 there), in CI on `ubuntu-22.04` and `ubuntu-24.04`, and on the VMs; the pure packages (`runner/proto`, `redact`, `spool`, the agent loops with fakes) also run on Windows. G8 counts only on Linux.
+- Agent and runner code passes a cancellable `context.Context` through every job, wraps errors with `%w`, uses only the clock it is given, and never logs a plugin command, output, pattern or token. The agent never executes a plugin command; the runner takes only whole jobs; nothing listens except the two systemd sockets; no capability beyond the unit's; nothing can switch inventory off.
+- Implementers check `work/reviews/builder-checklist.md` before every hand-off. Planted violations are made in throwaway copies, never left in the tree.
+
+### M10 design notes (for the tasks with real design risk)
+
+Written out in four plans, each with interfaces, edge cases and spec quotes:
+- **D1 protocol, `work/plans/TASK-209.md`** (TASK-209, and the client TASK-218, the serve loop TASK-225 and the agent's failure mapping in TASK-223). One connection per job; a length-prefixed request `{v, job, max_parallel_plugins}`; replies `accepted` or `refused`, then `result` frames in completion order, then `done`; deadlines; one connection at a time (`busy`); the `Executor` interface that lets TASK-225 be built beside TASK-224.
+- **D2 cgroups and process start, `work/plans/TASK-215.md`** (TASK-215, 216, 221, 224's cleanup). Own cgroup from `/proc/self/cgroup`; `supervisor` leaf; plugins born in their own `p-<n>` by a cgroup hop under a spawn lock (not `clone3`, which `RestrictNamespaces=yes` may make fail with ENOSYS); niceness and I/O class set on a locked, discarded OS thread; no `Pdeathsig` (it fires when that thread exits); `cgroup.kill`, pidfd kills in `supervisor`, the subtree sweep and the runner-moved case.
+- **D3 redaction and capture, `work/plans/TASK-210.md`** (TASK-210, 214). Read 1 MiB, drain the rest, sanitise UTF-8, patterns in order, cut-off rule, growth guard, rune-boundary cut; one plugin redacted at a time to stay inside `MemoryMax=256M`.
+- **D4 spool and posting, `work/plans/TASK-212.md`** (TASK-212, 219, 220, 223). Per-job manifest and item files; size in bytes on disk; oldest-first `spool_overflow` markers; the sender's batch rules and the TS §3.3 L224 answer classes; interrupted jobs never get a final batch.
+
+### M10 tasks
+
+| TASK | Title | REQ links | Area | Owner | Risk | Files expected | Depends on | Est. LOC | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TASK-209 | Agent–runner protocol (interface, pure): `Request`, `Reply`, `Result` (only via `NewResult` or decoding), reason words, length-prefixed frames with caps, strict decoding (plan TASK-209 §2) | REQ-234 | agent | impl-agent-r | **high** (TS §8.2 second approval) | `ag/internal/runner/proto/proto.go`, `ag/internal/runner/proto/frame.go` | none (M4 `wire`); #29, #60, #130 | 170 | Unit on Windows and Linux: REQ-234 (1)–(5) hold. |
+| TASK-210 | Redaction engine (pure): `Compile` (count, compile, can-match-empty check), `Apply` (sanitise, ordered patterns, cut-off rule, growth guard, rune-boundary cut, `truncated`) (plan TASK-210 §2) | REQ-242, REQ-243, REQ-244 | agent | impl-agent-r | **high** (second approval) | `ag/internal/redact/redact.go`, `ag/internal/redact/cutoff.go`, `ag/internal/redact/patterns.go` | none; #113, #116 (a), #133, #134 | 180 | Unit on Windows and Linux: REQ-242 (1)–(8) and REQ-244 (1), (2) hold at package level, and the REQ-243 fixtures pass with the five patterns extracted from TS §8.6. |
+| TASK-211 | Lint exceptions and the new module: `net.FileListener` only in `internal/sdsock/listen_linux.go`; G204 only in `internal/runner/spawn_linux.go` and `internal/capread/serve_linux.go`; `os/exec`, `os.StartProcess`, `syscall.ForkExec`/`Exec` forbidden outside those two files and `internal/inventory/command.go`; `golang.org/x/sys` pinned (PD-41) | REQ-256 | agent | impl-agent-r | **high** (second approval) | `ag/.golangci.yml`, `ag/go.mod`, `ag/go.sum` | none; PD-41 | 60 | On Linux G8 and G9 are green, each REQ-256 (1) plant made in a throwaway copy turns G8 red, and `go mod verify` fails on an altered `go.sum` line. |
+| TASK-212 | Spool store: per-job manifest, item files, atomic writes through `os.Root`, size in bytes, ordered `Next`/`Ack`/`Drop`, reopen (interrupted jobs, 7-day expiry); `Put` answers `ErrFull` until TASK-219 (plan TASK-212 §2) | REQ-247 | agent | impl-agent-a | **high** (second approval) | `ag/internal/spool/spool.go`, `ag/internal/spool/manifest.go` | TASK-209; #4, #57, #139 | 180 | In a temporary directory with a fake clock, REQ-247 (1)–(7) hold. |
+| TASK-213 | Runner job checks: fixed check order, `agent_id` file read per job, pickup window, in-memory seen set with expiry and the 100,000 bound, shape rules, pattern list through `redact.Compile`, reason words | REQ-236, REQ-244 | agent | impl-agent-r | **high** (second approval) | `ag/internal/runner/checks.go` | TASK-209, 210; #132 | 150 | With a fake clock and a temporary `agent_id` file, REQ-236 (1)–(4) and REQ-244 (1), (2) hold and the exec counter of the test build stays 0 for every refused request. |
+| TASK-214 | Capture and result building: concurrent bounded reads of both pipes (1 MiB kept, the rest drained), `redact.Apply` per stream, wait status → exit code (#114), times, `timed_out`, `proto.NewResult`; the `runner_unavailable` item (plan TASK-210 §4) | REQ-241, REQ-242 | agent | impl-agent-r | **high** (second approval) | `ag/internal/runner/capture.go`, `ag/internal/runner/result.go` | TASK-209, 210; #113, #114 | 120 | Unit with pipes and synthetic wait statuses: REQ-241 (1), (2), (4) hold, a writer producing 3 MiB is never blocked, and REQ-242 (6) holds through the capture path. |
+| TASK-215 | cgroup v2 (Linux): start-up usability check, `supervisor` leaf and self-move, per-plugin cgroup create, `StartIn` hop, `Kill`, wait-empty, remove, the subtree sweep with pidfd kills in `supervisor`, runner-moved recovery (plan TASK-215 §2–§4) | REQ-238, REQ-240, REQ-237 | agent | impl-agent-r | **high** (second approval) | `ag/internal/runner/cgroup_linux.go`, `ag/internal/runner/cgroup.go` | TASK-211; #136 (a), #137, #138 | 190 | On a fake cgroup tree REQ-238 (1) holds; under `systemd-run -p Delegate=yes` (CI, sandbox host) a planted stray in `supervisor`, in a nested cgroup and in a plugin cgroup are all gone after `Sweep`, and the runner stays alive in `supervisor`. |
+| TASK-216 | Runner hygiene and start-up refusals (Linux): `PR_SET_DUMPABLE` 0 first, euid 0 refused, `CapEff`/`CapBnd` subset of `CAP_DAC_READ_SEARCH`, cgroup2 statfs check (plan TASK-215 §5) | REQ-237 | agent | impl-agent-r | **high** (second approval) | `ag/internal/runner/hygiene_linux.go` | TASK-211; #137 | 110 | Unit with injected readers: REQ-237 (1) holds; on Linux `PR_GET_DUMPABLE` returns 0 after `Harden()`. |
+| TASK-217 | systemd socket activation and peer check (Linux, shared by runner and capread): `LISTEN_*` validation, fd 3 checks, close-on-exec of every inherited descriptor above 2, `net.FileListener`, `SO_PEERCRED` uid check per connection, uid lookup by user name without CGO (plan TASK-209 §5) | REQ-235 | agent | impl-agent-r | **high** (second approval) | `ag/internal/sdsock/listen_linux.go`, `ag/internal/sdsock/peer_linux.go` | TASK-211; #130 (j) | 130 | Unit on Linux with a Unix socket passed as fd 3 to a child test process: REQ-235 (1), (2) and (5) hold. |
+| TASK-218 | Runner client (agent side): dial `runner.sock`, send one request, read replies with the #130 deadlines, `busy` retry, failure words of #131 (a), per-result callback; no other call (plan TASK-209 §6) | REQ-245, REQ-234 | agent | impl-agent-a | **high** (second approval) | `ag/internal/agent/runnerclient/client.go` | TASK-209; #130, #131 | 160 | Against a fake runner on a Unix socket with a fake clock, every #131 (a) failure kind yields its word, `busy` is retried every 2 s for 30 s, and a normal run delivers each result once, in order received. |
+| TASK-219 | Spool overflow: oldest-first conversion to `spool_overflow` markers across jobs, the new item as a marker, oldest markers dropped last, in-flight batches protected; `Put` calls it (plan TASK-212 §4) | REQ-248 | agent | impl-agent-a | **high** (second approval) | `ag/internal/spool/overflow.go`, `ag/internal/spool/spool.go` (the `Put` call site only) | TASK-212; #140 | 120 | In a temporary directory, REQ-248 (1), (2) and (4) hold and the size never exceeds the bound after any `Put`. |
+| TASK-220 | Results sender loop: start notice, batches (50 items, 1,572,864 bytes uncompressed), gzip, the 30 s rule, final batch, the M4 answer classes, back-off, `Wake()` (plan TASK-212 §5) | REQ-246 | agent | impl-agent-a | **high** (second approval) | `ag/internal/agent/loops/results.go` | TASK-212; #141 | 180 | Fake clock and fake manager: REQ-246 (1)–(6) hold. |
+| TASK-221 | Plugin start (Linux): locked OS thread with niceness 10 and I/O class idle, `StartIn` the plugin cgroup, `/bin/sh -c`, the exact environment, temp directory as working directory, stdin `/dev/null`, pipes, no `Pdeathsig`; temp directory create and remove (plan TASK-215 §3) | REQ-239, REQ-241 | agent | impl-agent-r | **high** (second approval) | `ag/internal/runner/spawn_linux.go` | TASK-211, 215; #31, #135, #136 | 170 | On Linux under `systemd-run -p Delegate=yes`, REQ-239 (1)–(5) and (7) hold for a test command and the child appears in its own cgroup from its first instruction. |
+| TASK-222 | capread helper server: the two-name table, request read and validation, peer uid `bitscan-runner` through `sdsock`, sequential serving, absolute path, empty environment, 10 s timeout, 1 MiB cap, reply lines (#142) | REQ-252 | agent | impl-agent-a | **high** (second approval) | `ag/internal/capread/capread.go`, `ag/internal/capread/serve_linux.go` | TASK-211, 217; #142 | 170 | Unit with the in-package command table swapped and a Unix socket: REQ-252 (1)–(4) hold. |
+| TASK-223 | Compliance handler and run state: replace the #74 `Unavailable` handler; record the job, run the runner client, spool results, the #131 (b) fill, finish, `last_error`, `current_job_id`; `Deps.SpoolBytes` and the heartbeat's `spool_bytes`; a nil handler is refused (plan TASK-209 §7, TASK-212 §6) | REQ-245, REQ-249, REQ-250 | agent | impl-agent-a | **high** (second approval) | `ag/internal/agent/loops/compliance.go`, `ag/internal/agent/loops/jobs.go`, `ag/internal/agent/loops/pull.go`, `ag/internal/agent/loops/run.go`, `ag/internal/agent/loops/heartbeat.go` | TASK-212, 218, 220; #28, #78, #131 | 190 | Fake manager, fake runner, fake clock: REQ-245 (1)–(6), REQ-249 (2)–(4) and REQ-250 (1)–(3) hold, and the M4 pull and heartbeat suites pass except the PD-45 rows. |
+| TASK-224 | Job executor: parallelism cap, per plugin cgroup → start → capture → timeout kill → wait empty → remove → temp delete → redact (one at a time) → emit; cancellation; after the job the sweep and the private `/tmp` and `/var/tmp` emptied (plan TASK-215 §6) | REQ-239, REQ-240, REQ-241 | agent | impl-agent-r | **high** (second approval) | `ag/internal/runner/job.go` | TASK-210, 214, 215, 221; #135, #136 (f), #138 | 190 | On Linux under `systemd-run -p Delegate=yes`, REQ-240 (1)–(7), (9), (10) and REQ-239 (6) hold through `Executor.Run`, and REQ-241 (5) holds with injected failures. |
+| TASK-225 | Runner serve loop: accept through `sdsock`, one connection at a time, read the request within 30 s, checks, `accepted` or `refused`, stream results through the `Executor` interface with the write deadline, `done`, cancel on close (plan TASK-209 §4) | REQ-234, REQ-235, REQ-236, REQ-261 | agent | impl-agent-r | **high** (second approval) | `ag/internal/runner/serve.go` | TASK-209, 213, 217; #130 | 170 | With a fake executor and a Unix socket, REQ-235 (4), REQ-236 (2) and the REQ-261 malformed-request cases hold, and closing the client cancels the executor's context within 1 s. |
+| TASK-226 | capread client and `bitscan-capread` main: argument check, connect, copy, exit codes; `--serve` wiring through `sdsock` and TASK-222 | REQ-253, REQ-252 | agent | impl-agent-a | **high** (second approval) | `ag/internal/capread/client.go`, `ag/cmd/bitscan-capread/main.go` | TASK-222; #142 | 120 | Unit with a fake server and the built binary run by hand: REQ-253 (1), (2) hold. |
+| TASK-227 | `bitscan-agent` main for M10: open the spool (`spool_max_mb`), start the results sender beside the heartbeat, pull and inventory loops, pass the compliance handler; SIGTERM closes the runner connection | REQ-245, REQ-246, REQ-247, REQ-249, REQ-251 | agent | impl-agent-a | **high** (second approval) | `ag/cmd/bitscan-agent/main.go` | TASK-219, 220, 223 | 80 | Against a fake manager and a fake runner the binary runs a compliance job end to end, SIGTERM mid-job exits 0 within 5 s with the spool intact, and REQ-251 (1) holds for `cmd/bitscan-agent`. |
+| TASK-228 | `bitscan-runner` main: `Harden()`, the start-up checks, cgroup set-up and start-up sweep, socket from systemd, serve loop with the executor, SIGTERM → cancel and sweep; structured logs without payload | REQ-237, REQ-238, REQ-240, REQ-251 | agent | impl-agent-r | **high** (second approval) | `ag/cmd/bitscan-runner/main.go` | TASK-215, 216, 217, 224, 225 | 110 | Under `systemd-run` with the verbatim runner unit's properties and a socket unit (WSL with cgroup2, or CI), the driver's job runs and REQ-237 (2) and REQ-251 (1), (3) hold for `cmd/bitscan-runner`. |
+| TASK-229 | Agent CI: replace the M0 stub step for runner and capread with start-up refusal checks; keep `go test` on `ubuntu-22.04` and `ubuntu-24.04` | REQ-257, REQ-260 | deploy | impl-deploy | medium (one approval) | `.github/workflows/agent.yml` | TASK-226, 228; PD-27 | 60 | On a PR, the new step passes on the M10 binaries and turns red when the M0 stub runner is put back, and `go test ./...` runs on both runners. |
+| TASK-230 | Sandbox CI: build the `.deb`, install it on `ubuntu-22.04` and `ubuntu-24.04` hosted runners, run `ag/test/sandbox` (G77), publish the row report; path filters per REQ-257 | REQ-257, REQ-259, REQ-261 | deploy | impl-deploy | **high** (lead's second look, PD-43) | `.github/workflows/sandbox.yml` | TASK-227, 228; tester TP-M10-20; PD-44 | 150 | On a PR the job runs both hosts, reports every G77 row as PASS, FAIL or NOT RUN with a reason, and turns red on a sandbox row made to fail in a throwaway branch. |
+| TASK-231 | Docs and version: runbook additions (cgroup v2, `runner_unavailable`, capread on the host, `findmnt --task 1`, spool), README paragraph, changelog entry per PD-42 | REQ-258, REQ-255 | deploy | impl-deploy | low (docs) | `deploy/runbooks/agent-install.md`, `README.md`, `deploy/debian/changelog` | TASK-226, 227, 228; PD-42 | 120 (docs) | The tester follows the new runbook steps on a sandbox VM and each behaves as written, `dpkg-parsechangelog` gives the PD-42 version, and no secret or process note appears. |
+
+Totals: 30 REQ (REQ-234 to REQ-263), 23 TASK (TASK-209 to TASK-231), 25 test-plan items (TP-M10-00 to TP-M10-24), 6 waves (W1 to W6) plus the gate. 22 tasks are high or medium risk, 1 low. Every task is within 5 files and about 200 hand-written lines; TASK-215, 223 and 224 are the largest (if one grows: TASK-215 moves the sweep into `ag/internal/runner/sweep_linux.go`; TASK-223 moves the heartbeat change into its own task; TASK-224 moves the `/tmp` emptying into `ag/internal/runner/tmpclean_linux.go`; one task id each, as in M7).
+
+REQ to TASK: REQ-234 TASK-209, 218, 225; REQ-235 TASK-217, 225; REQ-236 TASK-213, 225; REQ-237 TASK-215, 216, 228; REQ-238 TASK-215, 228; REQ-239 TASK-221, 224; REQ-240 TASK-215, 224, 228; REQ-241 TASK-214, 221, 224; REQ-242 TASK-210, 214; REQ-243 TASK-210 (fixtures: tester); REQ-244 TASK-210, 213; REQ-245 TASK-218, 223, 227; REQ-246 TASK-220, 227; REQ-247 TASK-212, 227; REQ-248 TASK-219; REQ-249 TASK-223, 227; REQ-250 TASK-223; REQ-251 TASK-227, 228 (and TASK-211 for G8); REQ-252 TASK-222, 226; REQ-253 TASK-226; REQ-254 TASK-231 (runbook) and the tester's static and package rows (test requirement: no code may enable a unit); REQ-255 TASK-231 (version) and the tester's package rows (G37–G40); REQ-256 TASK-211; REQ-257 TASK-229, 230; REQ-258 TASK-231; REQ-259 TASK-230 (CI) and tester TP-M10-20 (test requirement); REQ-260 TASK-229 and every agent task (test requirement); REQ-261 TASK-225, 230 and tester TP-M10-21 (test requirement); REQ-262 tester TP-M10-20, 24 (test requirement); REQ-263 tester TP-M10-22 (test requirement; product code from every task). Every M10 REQ has at least one TASK or is a named test requirement, and every TASK has at least one REQ.
+
+### M10 owner and review notes
+
+- **Owners:** two impl-agent instances (agent type `implementer`). **impl-agent-r** (runner side): TASK-209, 210, 211, 213, 214, 215, 216, 217, 221, 224, 225, 228. **impl-agent-a** (agent side and capread): TASK-212, 218, 219, 220, 222, 223, 226, 227. **impl-deploy:** TASK-229, 230, 231 (and `README.md` in TASK-231, at the lead's routing, since no area owns it). No impl-manager, impl-web or impl-bits task: no manager, web or sample change (a sample that fails #143 is a finding routed to impl-bits by the lead). The tester owns every `*_test.go`, `ag/test/sandbox/`, `deploy/tests/`, `e2e/`, `manager/tests/` (the RE2 cross-check) and `tests/m10/`. Suggested two testers: tester-m10 (Go unit and Linux suites, W1–W5) and tester-m10b (the sandbox harness, CI rows and VM rows from W2 on, harness first).
+- **Approvals (TS §8.2 L1268, PD-43):** the TS §8.2 second approval for every agent, runner, redaction and capread task (TASK-209 to TASK-228, including the lint task TASK-211), applied under the user's M10 pre-authorisation on a clean TEST PASS and "APPROVED, no open blocking or should-fix findings". A lead's second look at TASK-230 (it gates the sandbox and security suites). One approval for TASK-229 and TASK-231.
+- **Shared files (never in one wave):** `ag/internal/spool/spool.go` (TASK-212 in W2; TASK-219 in W3 changes only the `Put` call site); `ag/internal/agent/loops/` (TASK-220 adds `results.go` in W3; TASK-223 changes `compliance.go`, `jobs.go`, `pull.go`, `run.go`, `heartbeat.go` in W4); `ag/go.mod`, `ag/go.sum` (TASK-211 only; any further module asks the lead first, PD-25). Every other file has exactly one task.
+- **Frozen interfaces once W1 passes:** `proto` (TASK-209), `redact` (TASK-210); once W2 passes: the `spool` API (TASK-212), the `runnerclient` API (TASK-218), the `cgroup` API (TASK-215); the `Executor` interface is fixed in plan TASK-209 §4 before W4.
+- **M4 checks replaced by requirement (PD-45):** in TASK-223 TEST the tester rewrites only the TP-M4-18 checks of the #74 compliance handler to REQ-245, listing each old CHK id with its replacement in `tests/m10/report.md`; every other M4 assertion stays.
+- **Units are not edited.** If a sandbox row fails because of a unit directive (for example a read-only cgroup tree or a blocked system call), the lead raises a spec question; no task changes `deploy/systemd/` or `deploy/dbus/`.
+- **Carry-over, not planned:** TASK-146 (the BIT102 review, its TS §8.2 second approval and r2) waits for a fresh session (decisions 2026-10-30 (3)).
+
+### M10 test-plan items (tester)
+
+Drafted from the acceptance criteria at phase start (`tests/m10/test-plan.md`, check ids `CHK-M10-###`; suggested ranges: 001–079 pure packages (proto, redact, checks, capture, spool, client, sender), 080–099 fuzz and property, 100–199 Linux integration (cgroup, spawn, executor, serve, binaries under `systemd-run`), 200–259 sandbox rows (CI and VM), 260–289 security rows, 290–299 first compliance run, 300–319 gate rows, 320 onwards the mutation table). "WSL" means the WSL Ubuntu 24.04 distro with systemd, used for the delegated-cgroup items only when `stat -fc %T /sys/fs/cgroup` there prints `cgroup2fs` (otherwise those items run in CI and on the VMs). "VM" means `bitscan-u2204` and `bitscan-u2404` restored to `clean` (PD-44).
+
+| TP | What | REQ | Runs in | Files (tester) | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| TP-M10-00 | Phase test plan and the M10 index row | all M10 | phase start; report at the gate | `tests/m10/test-plan.md`, `tests/test-plan.md` | none |
+| TP-M10-01 | Harness: fake runner (Unix socket), fake manager (M4's), exec counter build tag for unit builds, the driver (`ag/test/sandbox/driver/`), the probe (`ag/test/sandbox/probe/`), the VM runner script on top of `e2e/m6/vm.sh`, planted test listeners for the blocked sockets, the redaction corpus | REQ-234 to REQ-263 | W1 (before TASK-213 TEST); VM parts before the gate | `ag/test/sandbox/…`, `ag/internal/redact/testdata/`, `manager/tests/contract/fixtures/redaction/` | none |
+| TP-M10-02 | Protocol | REQ-234 | TASK-209 TEST | `ag/internal/runner/proto/proto_test.go` | TASK-209 IMPL |
+| TP-M10-03 | Redaction: fixtures with patterns extracted from TS §8.6, fuzz, growth guard, boundaries; the Go vs `google-re2` cross-check | REQ-242, REQ-243, REQ-244 | TASK-210 TEST (local, WSL, CI) | `ag/internal/redact/redact_test.go`, `manager/tests/test_redaction_crosscheck.py` | TP-M10-01 |
+| TP-M10-04 | Lint plants and `go mod verify` | REQ-256 | TASK-211 TEST | none in the tree (evidence) | TASK-211 IMPL |
+| TP-M10-05 | Spool store: order, sizes, crash injection, reopen, expiry, modes, `os.Root` | REQ-247 | TASK-212 TEST | `ag/internal/spool/spool_test.go` | TASK-212 IMPL |
+| TP-M10-06 | Runner job checks | REQ-236, REQ-244 | TASK-213 TEST | `ag/internal/runner/checks_test.go` | TASK-213 IMPL |
+| TP-M10-07 | Capture and result | REQ-241, REQ-242 | TASK-214 TEST | `ag/internal/runner/capture_test.go` | TP-M10-03 |
+| TP-M10-08 | cgroup: fake tree; delegated cgroup under `systemd-run -p Delegate=yes` | REQ-238, REQ-240 | TASK-215 TEST (WSL or CI) | `ag/internal/runner/cgroup_linux_test.go` | TASK-215 IMPL |
+| TP-M10-09 | Hygiene and start-up refusals | REQ-237 | TASK-216 TEST | `ag/internal/runner/hygiene_linux_test.go` | TASK-216 IMPL |
+| TP-M10-10 | Socket activation and peer check (child process with fd 3) | REQ-235 | TASK-217 TEST | `ag/internal/sdsock/sdsock_linux_test.go` | TASK-217 IMPL |
+| TP-M10-11 | Runner client against the fake runner | REQ-245, REQ-234 | TASK-218 TEST | `ag/internal/agent/runnerclient/client_test.go` | TP-M10-02 |
+| TP-M10-12 | Spool overflow | REQ-248 | TASK-219 TEST | `ag/internal/spool/overflow_test.go` | TP-M10-05 |
+| TP-M10-13 | Results sender | REQ-246 | TASK-220 TEST | `ag/internal/agent/loops/results_test.go` | TP-M10-05 |
+| TP-M10-14 | capread server and client | REQ-252, REQ-253 | TASK-222, 226 TEST | `ag/internal/capread/capread_test.go` | TP-M10-10 |
+| TP-M10-15 | Plugin start (Linux, delegated cgroup) | REQ-239, REQ-241 | TASK-221 TEST | `ag/internal/runner/spawn_linux_test.go` | TP-M10-08 |
+| TP-M10-16 | Compliance handler and heartbeat; the PD-45 rewrite of the #74 checks | REQ-245, REQ-249, REQ-250 | TASK-223 TEST | `ag/internal/agent/loops/compliance_test.go`, the affected M4 test files | TP-M10-11, 13 |
+| TP-M10-17 | Executor (Linux, delegated cgroup) | REQ-239, REQ-240, REQ-241 | TASK-224 TEST | `ag/internal/runner/job_linux_test.go` | TP-M10-15 |
+| TP-M10-18 | Serve loop with a fake executor | REQ-234, REQ-235, REQ-236, REQ-261 | TASK-225 TEST | `ag/internal/runner/serve_test.go` | TP-M10-06, 10 |
+| TP-M10-19 | Binaries: agent main against fakes; runner main under `systemd-run` with the unit's properties; import-boundary test (`go list -deps`) | REQ-245 to REQ-251, REQ-237 | TASK-227, 228 TEST | `ag/cmd/bitscan-agent/main_test.go`, `ag/cmd/bitscan-runner/main_test.go`, `ag/internal/boundary_test.go` | TP-M10-16, 17, 18 |
+| TP-M10-20 | Sandbox suite (G76 on the VMs, G77 on hosted runners): every REQ-259 row, REQ-237 (2), REQ-238 (2)–(4), REQ-239 (1)–(6), REQ-240, REQ-252 (5), (6), REQ-254 (1), the #143 sample run, `systemd-analyze verify` | REQ-259, REQ-262 | from W5; whole at the gate | `ag/test/sandbox/…` | TP-M10-01, 19 |
+| TP-M10-21 | Runner security suite (G78): expired, foreign, replayed, wrong peer, non-job requests, capread names; agent half re-run (G36) | REQ-261 | TASK-225 TEST (unit part); gate (host part) | `ag/test/sandbox/security_test.go`, `ag/internal/agent/security_test.go` (extend) | TP-M10-18, 20 |
+| TP-M10-22 | First compliance run on `bitscan-u2404` against the WSL manager (G79) | REQ-263 | gate | `e2e/m10/first_run.sh` | TP-M10-20 |
+| TP-M10-23 | CI plants (TASK-229, 230) and the runbook walk (TASK-231) | REQ-257, REQ-258 | TASK-229, 230, 231 TEST | none in the tree (evidence) | TASK-229, 230, 231 IMPL |
+| TP-M10-24 | M10 gate, VM plan rows and the mutation table | all M10 | M10 gate | `tests/m10/report.md` | all above |
+
+### M10 waves and dependency spine
+
+Spine (runner side): `TASK-211 → TASK-215, 216, 217`; `TASK-215 → TASK-221 → TASK-224 → TASK-228`; `TASK-209, 210 → TASK-213, 214`; `TASK-210, 214, 215, 221 → TASK-224`; `TASK-209, 213, 217 → TASK-225 → TASK-228`; `TASK-216, 217 → TASK-228`. Agent side: `TASK-209 → TASK-212 → TASK-219, 220`; `TASK-209 → TASK-218`; `TASK-212, 218, 220 → TASK-223 → TASK-227`; `TASK-219 → TASK-227`. capread: `TASK-211, 217 → TASK-222 → TASK-226`. CI and docs: `TASK-226, 228 → TASK-229`; `TASK-227, 228 → TASK-230`; `TASK-226, 227, 228 → TASK-231`. The graph is acyclic; the longest path is `TASK-211 → 215 → 221 → 224 → 228 → 230` (six waves).
+
+Interface first: W1 fixes the protocol, the redaction API and the lint and dependency rules; W2 fixes the spool, client, cgroup and socket APIs; the `Executor` interface (plan TASK-209 §4) lets TASK-225 be built beside TASK-224.
+
+| Wave | Tasks (parallel) | Files touched (disjoint within the wave) |
+| --- | --- | --- |
+| W1 | TASK-209, 210, 211; tester TP-M10-00, 01 | `ag/internal/runner/proto/{proto,frame}.go` · `ag/internal/redact/{redact,cutoff,patterns}.go` · `ag/.golangci.yml`, `ag/go.{mod,sum}` · tester files |
+| W2 | TASK-212, 213, 214, 215, 216, 217, 218 | `ag/internal/spool/{spool,manifest}.go` · `ag/internal/runner/checks.go` · `ag/internal/runner/{capture,result}.go` · `ag/internal/runner/{cgroup,cgroup_linux}.go` · `ag/internal/runner/hygiene_linux.go` · `ag/internal/sdsock/{listen_linux,peer_linux}.go` · `ag/internal/agent/runnerclient/client.go` |
+| W3 | TASK-219, 220, 221, 222 | `ag/internal/spool/overflow.go` (+ the `Put` call site in `spool.go`) · `ag/internal/agent/loops/results.go` · `ag/internal/runner/spawn_linux.go` · `ag/internal/capread/{capread,serve_linux}.go` |
+| W4 | TASK-223, 224, 225, 226 | `ag/internal/agent/loops/{compliance,jobs,pull,run,heartbeat}.go` · `ag/internal/runner/job.go` · `ag/internal/runner/serve.go` · `ag/internal/capread/client.go`, `ag/cmd/bitscan-capread/main.go` |
+| W5 | TASK-227, 228; tester TP-M10-19, sandbox rows begin | `ag/cmd/bitscan-agent/main.go` · `ag/cmd/bitscan-runner/main.go` |
+| W6 | TASK-229, 230, 231 | `.github/workflows/agent.yml` · `.github/workflows/sandbox.yml` · `deploy/runbooks/agent-install.md`, `README.md`, `deploy/debian/changelog` |
+| Gate | tester TP-M10-20 (whole, VMs and CI), 21, 22, 24; reviewer's M10 closing review | tester files only |
+
+impl-agent-r carries the runner spine (W1: 209, 210, 211; W2: 213–217; W3: 221; W4: 224, 225; W5: 228); impl-agent-a carries the agent spine and capread (W2: 212, 218; W3: 219, 220, 222; W4: 223, 226; W5: 227). Every task is tested and reviewed on its own; only TASK-231 may be batched.
+
+### M10 gate
+
+On a clean tree every command is green, and each gate turns red on its planted violation. G1–G6, G16, G18, G19 and G30–G34 are not re-run beyond CI: M10 changes no manager, web or contract file (TP-M10-03's cross-check is a new manager test file only).
+
+| Gate | Command (summary) | Planted violation that must turn it red | Where |
+| --- | --- | --- | --- |
+| G7–G11 | gofmt; golangci-lint on Linux; `go mod verify`; `CGO_ENABLED=0` static amd64 build of the three binaries; the nolint grep | CHK-M10-378, -379; an altered `go.sum` line; `import "C"` in `runner` | WSL; CI |
+| G17 | units and D-Bus verbatim check, then `systemd-analyze verify` with the real binaries installed | one character changed in `bitscan-runner.service` | WSL; CI |
+| G35, G36 | Go contract test (unchanged); agent security subset (M4 rows plus the agent half of REQ-261) | the M4 rows; CHK-M10-356, -358 | WSL; CI |
+| G37–G40 | lintian; maintainer scripts with the `0.1.0-1` → M10 upgrade; reproducible double build; SBOM (with the PD-41 module) | the M4 rows | WSL; CI |
+| G41 | `e2e/agent_manager.sh` inventory chain against the real manager in WSL (regression) | the reverse-order `list_sha256` `.deb` | WSL |
+| G71 | redaction: `go test ./internal/redact/...` (fixtures, fuzz seed corpus, boundaries) and `manager/tests/test_redaction_crosscheck.py` | the G71 rows | local; WSL; CI |
+| G72 | runner Linux suites: `go test ./internal/runner/... ./internal/sdsock/...`, the delegated parts under `systemd-run -p Delegate=yes` | the G72 rows | WSL (cgroup2 only); CI |
+| G73 | agent suites: `go test ./internal/agent/... ./internal/spool/...` | the G73 rows | local (pure parts); WSL; CI |
+| G74 | capread: `go test ./internal/capread/...` | the G74 rows | WSL; CI |
+| G75 | protocol suite and the import-boundary test (`go list -deps`, REQ-251 (1)) | CHK-M10-323, -380 | local; CI |
+| G76 | sandbox suite on `bitscan-u2204` and `bitscan-u2404` (`ag/test/sandbox/run_vm.sh`), plus the VM-only rows (cgroup v1 boot on u2204, capread with `nft` and `auditd`) | the rows marked VM | VM |
+| G77 | sandbox suite on GitHub `ubuntu-22.04` and `ubuntu-24.04` runners (`sandbox.yml`) | the rows marked VM, re-planted on a throwaway branch where a hosted runner can run them | CI |
+| G78 | runner security suite (unit parts everywhere; host parts through the driver) | the rows marked S | WSL; CI; VM |
+| G79 | first compliance run on `bitscan-u2404` against the M9 manager in WSL (`e2e/m10/first_run.sh`) | CHK-M10-344 (a canary reaches the stored stdout) | VM + WSL |
+
+**No gate is lowered.** NOT RUN at the M10 gate, with reasons: the nightly end-to-end run on three VMs, the results views, CSV and re-evaluation (**M11**); the N / N−1 matrix (**M11**); load tests (deferred by the user); Debian 12 and arm64 rows of TS §8.3 (not supported, decisions 2026-10-24). A VM row refused by a safety check is NOT RUN with its reason and its lower-level cover (see "M10 VM plan"); M10 does not merge with such a row until the user decides whether it is a gate exception (decisions 2026-10-30 (2)).
+
+### M10 VM plan
+
+| Row group | Needs | Lower-level cover if the VM row is NOT RUN |
+| --- | --- | --- |
+| Plugin cannot write, open IP sockets, exec outside system paths, gain privileges, load modules, change clock or hostname (REQ-259) | VM (G76) | G77 on both hosted runners (same suite, same units); `check_units_verbatim.py` (G17) for the directives |
+| Blocked local sockets (Docker, containerd, snapd, journald) | VM with planted test listeners (G76) | G77 (hosted runners have a real `/run/docker.sock`); G17 for `InaccessiblePaths=` |
+| `ptrace`, `process_vm_readv`, `/proc/<pid>/mem`, inherited socket, socket replacement | VM (G76) | G77; TP-M10-09 (`PR_GET_DUMPABLE`), TP-M10-10 (fdinfo `O_CLOEXEC`) |
+| D-Bus: state-changing calls refused, read-only calls work | VM (G76) | G77; G17 verbatim policy |
+| No plugin outlives its job; cgroup layout; environment; niceness and I/O class | VM (G76) | G77; TP-M10-08, 15, 17 under `systemd-run -p Delegate=yes` in CI |
+| Runner refuses to start without unified cgroup v2 | VM only: `bitscan-u2204` booted with `systemd.unified_cgroup_hierarchy=0`, then restored | TP-M10-09 unit with injected statfs and `/proc/self/cgroup` |
+| capread with real `nft` and `auditctl`, its capabilities | VM (G76; `auditd` installed on the VM from the Ubuntu archive) | G77 (`nft` only); TP-M10-14 |
+| Full sample plugin set under the sandbox (#143) | VM (G76) | G77 |
+| Planted-fault builds (rows marked VM) | VM, one throwaway `.deb` per plant, VM restored to `clean` after each | the same plant on a throwaway branch run by G77; the unit-level row named in the mutation table |
+| First compliance run with the real manager (G79) | `bitscan-u2404` plus the manager in WSL (M6 network set-up) | the same walk against the fake manager in G77, plus TP-M10-16 |
+
+### M10 mutation table (tester; CHK-M10-320 onwards)
+
+Each row is planted in a throwaway copy and must turn the named gate red. S = security row (targeted mini-run). VM = also planted as a throwaway `.deb` on a sandbox host.
+
+| CHK | Plant | Red in | Target | S / VM |
+| --- | --- | --- | --- | --- |
+| CHK-M10-320 | Peer check removed (any uid served) | G72, G78, G76 | TASK-217 | S, VM |
+| CHK-M10-321 | Peer check compares the gid, not the uid | G72, G78 | TASK-217 | S |
+| CHK-M10-322 | A second request frame on one connection is run | G72, G78 | TASK-225 | S |
+| CHK-M10-323 | Unknown key (`"command"`) beside `job` accepted | G75, G78 | TASK-209 | S |
+| CHK-M10-324 | Inventory job accepted by the runner | G72, G78 | TASK-209, 213 | S |
+| CHK-M10-325 | `agent_id` check removed in the runner | G72, G78, G76 | TASK-213 | S, VM |
+| CHK-M10-326 | `pickup_by` more than 25 h ahead accepted | G72, G78 | TASK-213 | S |
+| CHK-M10-327 | Runner seen set removed (replay runs) | G72, G78, G76 | TASK-213 | S, VM |
+| CHK-M10-328 | `pickup_by` = now accepted | G72 | TASK-213 | S |
+| CHK-M10-329 | `PR_SET_DUMPABLE` not set | G72, G76 | TASK-216 | S, VM |
+| CHK-M10-330 | fd 3 left without close-on-exec | G72, G76 | TASK-217 | S, VM |
+| CHK-M10-331 | Plugin inherits the runner's environment | G72, G76 | TASK-221 | S, VM |
+| CHK-M10-332 | `TMPDIR` added, or `PATH` changed | G72 | TASK-221 | |
+| CHK-M10-333 | stdin inherited instead of `/dev/null` | G72, G76 | TASK-221 | VM |
+| CHK-M10-334 | Niceness not applied | G72, G76 | TASK-221 | VM |
+| CHK-M10-335 | I/O class not applied | G72, G76 | TASK-221 | VM |
+| CHK-M10-336 | Plugin started in `supervisor` (no own cgroup) | G72, G76 | TASK-221, 224 | S, VM |
+| CHK-M10-337 | `cgroup.kill` not written when a plugin exits (a background child survives) | G72, G76 | TASK-224 | S, VM |
+| CHK-M10-338 | Subtree sweep removed (a plugin moved into `supervisor` survives) | G72, G76 | TASK-215 | S, VM |
+| CHK-M10-339 | Sweep skips cgroups nested under `supervisor` | G72, G76 | TASK-215 | S, VM |
+| CHK-M10-340 | Runner starts on cgroup v1 (statfs check removed) | G72, G76 (u2204 v1 boot) | TASK-216 | S, VM |
+| CHK-M10-341 | Plugin temp directory not deleted | G72, G76 | TASK-221, 224 | |
+| CHK-M10-342 | Private `/tmp` not emptied after a job | G72, G76 | TASK-224 | |
+| CHK-M10-343 | Timeout not enforced | G72, G76 | TASK-224 | S, VM |
+| CHK-M10-344 | Redaction after truncation (a secret on the 64 KiB boundary partly returned) | G71, G79 | TASK-210, 214 | S |
+| CHK-M10-345 | Cut-off key rule skipped when pattern 2 is absent | G71 | TASK-210 | S |
+| CHK-M10-346 | Read limit removed, or the drain removed (a 3 MiB writer blocks and times out) | G71, G72 | TASK-214 | |
+| CHK-M10-347 | `truncated` not set when over 1 MiB but under 64 KiB after redaction | G71 | TASK-210 | |
+| CHK-M10-348 | Cut splits a UTF-8 rune | G71 | TASK-210 | |
+| CHK-M10-349 | Cutting stderr sets `truncated` | G71 | TASK-210 | |
+| CHK-M10-350 | Replacement with capture-group expansion (`Expand` instead of literal) | G71 | TASK-210 | |
+| CHK-M10-351 | 51 patterns accepted | G71, G72 | TASK-210, 213 | S |
+| CHK-M10-352 | A pattern that fails to compile is skipped and the others applied | G71, G72 | TASK-210, 213 | S |
+| CHK-M10-353 | A pattern that can match the empty string accepted | G71 | TASK-210 | |
+| CHK-M10-354 | Growth guard removed | G71 | TASK-210 | |
+| CHK-M10-355 | Signal death reported as −1 | G72 | TASK-214 | |
+| CHK-M10-356 | The agent writes the job (with `execute`) into the spool or state directory | G73, G36 | TASK-212, 223 | S |
+| CHK-M10-357 | The runner sends raw output when redaction fails | G71, G72 | TASK-214 | S |
+| CHK-M10-358 | The agent resends the job to a restarted runner | G73, G36 | TASK-223 | S |
+| CHK-M10-359 | The agent posts a final batch for a job interrupted by its own restart | G73 | TASK-212, 223 | |
+| CHK-M10-360 | A batch of 51 items | G73 | TASK-220 | |
+| CHK-M10-361 | A batch over 1,572,864 bytes uncompressed | G73 | TASK-220 | |
+| CHK-M10-362 | A 409 retried | G73 | TASK-220 | |
+| CHK-M10-363 | A 429 dropped | G73 | TASK-220 | |
+| CHK-M10-364 | Overflow drops the newest first | G73 | TASK-219 | |
+| CHK-M10-365 | Overflow drops a result without a `spool_overflow` marker | G73 | TASK-219 | |
+| CHK-M10-366 | Spool write not atomic (crash leaves a partial item the reader accepts) | G73 | TASK-212 | |
+| CHK-M10-367 | Heartbeat `spool_bytes` still 0 | G73 | TASK-223 | |
+| CHK-M10-368 | Start notice missing, or sent after results | G73 | TASK-220 | |
+| CHK-M10-369 | Two compliance jobs handed to the runner at once | G73 | TASK-223 | |
+| CHK-M10-370 | An inventory job waits for the running compliance job | G73, G41 | TASK-223, 227 | S |
+| CHK-M10-371 | capread accepts a third name | G74, G76 | TASK-222 | S, VM |
+| CHK-M10-372 | capread passes request text as an argument | G74 | TASK-222 | S |
+| CHK-M10-373 | capread passes its environment to the command | G74, G76 | TASK-222 | S, VM |
+| CHK-M10-374 | capread peer check removed | G74, G76 | TASK-222 | S, VM |
+| CHK-M10-375 | capread timeout 60 s | G74 | TASK-222 | |
+| CHK-M10-376 | capread output cap removed, or a cut ruleset sent | G74 | TASK-222 | |
+| CHK-M10-377 | capread serves two requests at once | G74 | TASK-222 | |
+| CHK-M10-378 | `net.FileListener` in a non-`sdsock` file | G8 | TASK-211 | S |
+| CHK-M10-379 | `exec.Command` in `ag/internal/agent/loops/compliance.go` | G8 | TASK-211 | S |
+| CHK-M10-380 | `cmd/bitscan-agent` imports `internal/runner` or `internal/redact` | G75 | TASK-227 | S |
+| CHK-M10-381 | `cmd/bitscan-runner` imports `net/http` or the agent transport | G75 | TASK-228 | S |
+| CHK-M10-382 | The runner logs a stdout canary at debug level | G72, G76 (canary sweep) | TASK-224, 225 | S |
+| CHK-M10-383 | The agent logs a received result's stdout | G73 | TASK-223 | S |
+| CHK-M10-384 | A heartbeat answer makes the agent connect to the runner | G73 | TASK-223 | S |
+| CHK-M10-385 | euid 0 accepted at start-up | G72 | TASK-216 | S |
+| CHK-M10-386 | Capability self-check removed, with a planted unit holding `CAP_SYS_ADMIN` | G72, G76 | TASK-216 | S, VM |
+| CHK-M10-387 | One character changed in a shipped unit | G17 | units (no task) | S |
+| CHK-M10-388 | Planted D-Bus policy allowing `StartUnit` | G17, G76 | units (no task) | S, VM |
+| CHK-M10-389 | Planted runner unit without its `InaccessiblePaths=` lines | G17, G76 | units (no task) | S, VM |
+| CHK-M10-390 | Planted runner unit without `NoExecPaths=` | G17, G76 | units (no task) | S, VM |
+| CHK-M10-391 | The runner keeps running plugins after the agent closes the connection | G72, G76 | TASK-224, 225 | S, VM |
+| CHK-M10-392 | A result for a plugin not in the job is spooled by the agent | G73 | TASK-218, 223 | S |
+| CHK-M10-393 | The runner reads the `agent_id` file once at start instead of per job | G72 | TASK-213 | |
+
+### Open items for M10
+
+All are in `work/open-questions.md` ("M10"), each with a recommended answer. "Needed by" is the start of the wave whose task or test cannot finish without it.
+
+| Item | Blocks | Needed by |
+| --- | --- | --- |
+| #130 (new): protocol framing, replies, deadlines, busy | TASK-209 (W1), 218, 225 | W1 |
+| #133 (new; the `runner-sandbox.md:43` marker): cut-off key rule always applies | TASK-210 | W1 |
+| #134 (new): redaction units, UTF-8, growth guard, empty-match refusal, Go `regexp` | TASK-210 | W1 |
+| PD-41 (new): `golang.org/x/sys` | TASK-211 | W1 |
+| #132 (new): runner job-check details | TASK-213 | W2 |
+| #136 (new): plugin start mechanics, exit codes | TASK-214, 215, 221 | W2 |
+| #137 (new): runner start-up refusals | TASK-216 | W2 |
+| #138 (new): sweep semantics, runner moved | TASK-215 | W2 |
+| #139 (new): spool layout and rules | TASK-212 | W2 |
+| #131 (new; refines #28): runner failures as the agent sees them | TASK-218, 223 | W2 |
+| #140 (new): overflow details | TASK-219 | W3 |
+| #141 (new): posting cadence and size | TASK-220 | W3 |
+| #142 (new): capread wire and output | TASK-222, 226 | W3 |
+| #135 (new; refines #31): temp directory and private `/tmp` | TASK-221, 224 | W3 |
+| #143 (new): "the full CIS set passes under the sandbox" | TP-M10-20 | W5 |
+| PD-42 (new): package version | TASK-231 | W6 |
+| PD-43 (new): approvals | each task's REVIEW | W1 |
+| PD-44 (new): VM and plant execution | TP-M10-20, 22, 24 | W2 (harness) |
+| PD-45 (new): M4 checks replaced by requirement | TASK-223 TEST | W4 |
+| #4, #28, #29, #30, #31, #57, #60, #74, #78, #113, #114, #116, #121, #124 (f) (agreed, reused) | TASK-209 to 231 | W1 |
+
+### Coverage matrix (M10)
+
+| Spec section | Covered by | Status in M10 |
+| --- | --- | --- |
+| TS §1.1 G1 (`.deb` agent pulls compliance jobs) | REQ-245, REQ-246, REQ-255 | Covered (agent side) |
+| TS §1.1 G2 inventory cannot be disabled | REQ-249 | Covered (regression) |
+| TS §1.2 no remediation | REQ-259 (plugins cannot change the host) | Covered: nothing added |
+| TS §2.2 L111 pull-only, agent opens every connection | REQ-235, REQ-251 | Covered |
+| TS §2.3 compliance flow steps 3–6 | REQ-245, REQ-246, REQ-263 | Covered; step 7 (views) **M11** |
+| TS §3 L152 unified cgroup v2 or `runner_unavailable` | REQ-237, REQ-245 | Covered (#131, #137) |
+| TS §3.1 package, units, install, logs | REQ-255, REQ-254, REQ-251 | Covered; Debian 12 and arm64 **not supported** (decisions 2026-10-24) |
+| TS §3.3 L212 job checks (agent and runner) | REQ-236, REQ-249, REQ-261 | Covered |
+| TS §3.3 L222 one at a time, start notice; L224 answers; L226 back-off and spool | REQ-245, REQ-246, REQ-247, REQ-248 | Covered |
+| TS §3.4 inventory | REQ-249 | Unchanged, regression only |
+| TS §3.5 L248–L253 job execution, cleanup, redaction, capture, batches | REQ-239 to REQ-242, REQ-246 | Covered |
+| TS §3.6 `spool_max_mb`, `max_parallel_plugins` | REQ-245, REQ-247 | Covered (#4) |
+| TS §3.7 L273–L285 privilege model, socket, peer check, hygiene, supervisor, re-checks | REQ-235 to REQ-240 | Covered |
+| TS §3.7 L289–L482 units and D-Bus policy | REQ-255, REQ-259 | Verbatim, unchanged; verified under test |
+| TS §3.7 L484 capread helper; L486–L496 file ownership; L500–L505 trade-offs | REQ-252 to REQ-254, REQ-258, REQ-259 | Covered |
+| TS §4.4 L577 retry after agent crash | REQ-245 (4), REQ-247 | Covered (no final for an interrupted job, #131 (d)) |
+| TS §4.5 L593, L596, L599 (ERROR cases, redacted input, caps) | REQ-241, REQ-242, REQ-248 | Covered on the host side; manager side M8/M9 |
+| TS §6.5 Job and Results contracts | REQ-234, REQ-246 | Unchanged contract, used by M10 |
+| TS §8.1 L1239, L1244–L1249 (unintended command, plugin changes host, outlives job, agent compromise, in transit, sensitive output) | REQ-235 to REQ-242, REQ-259, REQ-261 | Covered; the accepted risks stay accepted (no signing) |
+| TS §8.2 L1265, L1268 Go standards, two approvals | REQ-251, REQ-256; PD-43 | Covered |
+| TS §8.3 Unit (redaction fixtures), Agent, Sandbox, Security | REQ-243, REQ-260, REQ-259, REQ-261, REQ-262 | Covered on Ubuntu 22.04 and 24.04 amd64; End-to-end **M11**; Load deferred |
+| TS §8.4 L1287 logs without output or tokens | REQ-251 | Covered |
+| TS §8.6 L1324, L1329–L1339 redaction patterns | REQ-242 to REQ-244 | Covered (runner side) |
+| TS §6.2 L1121, L1123, CSV; TS §8.3 End-to-end; N / N−1 | none | **M11** |
+| CLAUDE.md out of scope and owner decisions | none | Nothing planned: no job signing, client certificates, push channel, listening port, ad-hoc command, remediation, inventory switch or manager-side host change |

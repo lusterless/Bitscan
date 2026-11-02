@@ -2,9 +2,10 @@
 
 Usage: python deploy/tests/check_debian_meta.py [--root DIR]
 Exit 0 when every check passes. Expected values come from TS §3.1 (L158-L159),
-PD-26 (a) (debhelper compat 13, amd64 only), #90 (M6: the first supported
-release is 0.1.0, package 0.1.0-1, so the first entry has no pre-release "~")
-and the decisions of 2026-10-24 (arm64 dropped from v1), not from the files.
+PD-26 (a) (debhelper compat 13, amd64 only), #90 (M6: a pre-release must never
+be published), PD-42 (M10: builds are versioned 0.2.0~pre1-1; decisions
+2026-10-30 "PD-42 against check_debian_meta.py") and the decisions of
+2026-10-24 (arm64 dropped from v1), not from the files.
 
 Checks:
 - rules: dh_installsystemd is called so that bitscan-agent.service and
@@ -17,10 +18,13 @@ Checks:
 - control: source and package bitscan-agent, Architecture amd64 only,
   debhelper-compat (= 13), Rules-Requires-Root: no, Depends with adduser and
   ${misc:Depends}.
-- changelog: first entry bitscan-agent (X.Y.Z-R), a release version with no
-  "~" (#90), and a parseable RFC 2822 trailer date (the SOURCE_DATE_EPOCH
-  source); every trailer's weekday matches its date, and the dates strictly
-  decrease down the file (lintian's new-date rules).
+- changelog: first entry bitscan-agent (X.Y.Z-R) or (X.Y.Z~preN-R) with
+  N >= 1 and R >= 1 (PD-42; no other "~" form), and a parseable RFC 2822
+  trailer date (the SOURCE_DATE_EPOCH source); every trailer's weekday
+  matches its date, and the dates strictly decrease down the file (lintian's
+  new-date rules).
+- release.yml: the release job refuses a changelog version holding "~", so a
+  "~preN" build is never published (#90, kept as the release gate).
 - copyright: DEP-5 1.0; every Files stanza has Copyright and License; every
   short licence name has its text (inline or a standalone License stanza).
 - bitscan-agent.install (TASK-096, CHK-M4-122): exactly the three binaries to
@@ -56,7 +60,8 @@ EXPECTED_FLAGS: dict[str, frozenset[str]] = {
     "bitscan-capread.socket": frozenset({"--no-enable", "--no-start"}),
     "bitscan-capread.service": frozenset({"--no-enable", "--no-start"}),
 }
-VERSION_RE = re.compile(r"^\d+\.\d+\.\d+-[1-9]\d*$")
+# PD-42: a release X.Y.Z-R, or a pre-release build X.Y.Z~preN-R (N, R >= 1).
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:~pre[1-9]\d*)?-[1-9]\d*$")
 
 
 class Report:
@@ -236,7 +241,7 @@ def check_changelog(debian: Path, r: Report) -> None:
     if m:
         r.ok(
             bool(VERSION_RE.match(m.group(1))),
-            f"changelog: version {m.group(1)} is a release X.Y.Z-R (no ~)",
+            f"changelog: version {m.group(1)} is X.Y.Z-R or X.Y.Z~preN-R (N, R >= 1)",
         )
     trailers = [ln for ln in lines if ln.startswith(" -- ")]
     r.ok(len(trailers) >= 1, "changelog: has a trailer line")
@@ -275,6 +280,33 @@ def check_changelog(debian: Path, r: Report) -> None:
     r.ok(
         text.endswith("\n") and "\r" not in text,
         "changelog: LF endings and final newline",
+    )
+
+
+# release.yml's guard (#90): a "~" version stops the release job. The case arm
+# must name "~" and exit non-zero, on the changelog version it read.
+TILDE_GUARD_RE = re.compile(
+    r'^\s*\*"~"\*\)\s[^\n]*\bexit\s+1\b[^\n]*;;\s*$', re.MULTILINE
+)
+READS_VERSION_RE = re.compile(
+    r'deb="\$\(dpkg-parsechangelog -l deploy/debian/changelog -S Version\)"'
+)
+
+
+def check_release_refuses_tilde(root: Path, r: Report) -> None:
+    path = root / ".github" / "workflows" / "release.yml"
+    if not path.is_file():
+        r.ok(False, "release.yml: file present")
+        return
+    text = path.read_text(encoding="utf-8")
+    r.ok(
+        bool(TILDE_GUARD_RE.search(text)),
+        'release.yml: refuses a changelog version holding "~" (*"~"*) ... exit 1)',
+    )
+    r.ok(
+        READS_VERSION_RE.search(text) is not None
+        and re.search(r'case "\$deb" in', text) is not None,
+        "release.yml: the guard tests the changelog version (dpkg-parsechangelog)",
     )
 
 
@@ -392,6 +424,7 @@ def main() -> int:
         except ValueError as exc:
             r.ok(False, f"{name}: parses ({exc})")
     check_no_arm64(root, r)
+    check_release_refuses_tilde(root, r)
     print(
         "FAIL" if r.failures else "OK",
         f"{r.checks - r.failures}/{r.checks} checks passed",

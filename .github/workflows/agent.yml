@@ -80,34 +80,83 @@ jobs:
             fi
           done
 
-      # bitscan-agent is no longer a stub in M4; the 0.x runner and capread
-      # stay the M0 stubs (#74).
-      - name: Run linux/amd64 runner and capread stubs
+      # The M10 runner and capread refuse to start outside systemd (TS §3,
+      # §3.7; REQ-257). Each case wants its exit code, exactly one stderr line
+      # (a slog line is compared without its time= field), an empty stdout,
+      # and no socket call under strace beyond what the case allows. The M0
+      # stubs ("<name>: not implemented", exit 1) fail every case.
+      - name: Runner and capread start-up refusals (linux/amd64)
         working-directory: agent
         run: |
-          for name in bitscan-runner bitscan-capread; do
-            bin="bin/linux_amd64/$name"
-            out="$RUNNER_TEMP/$name.stdout"
-            err="$RUNNER_TEMP/$name.stderr"
-            if timeout 1 "$bin" >"$out" 2>"$err"; then
-              echo "$name exited 0; want non-zero"
-              exit 1
-            else
-              rc=$?
-            fi
-            if [ "$rc" -ge 124 ]; then
-              echo "$name: timeout or exec failure (exit $rc); want a non-zero exit within 1 s"
-              exit 1
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends strace
+          # The packaged users, so the user lookups pass and the systemd
+          # socket check is the refusal that fires.
+          for u in bitscan bitscan-runner; do
+            id -u "$u" >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$u"
+          done
+          bins="$(mktemp -d)"
+          chmod 0755 "$bins"
+          install -m 0755 bin/linux_amd64/bitscan-runner bin/linux_amd64/bitscan-capread "$bins/"
+          trace="$RUNNER_TEMP/refusal.trace"
+          out="$RUNNER_TEMP/refusal.out"
+          err="$RUNNER_TEMP/refusal.err"
+          st=(strace -f -qq -e signal=none -e trace=execve,socket,bind,listen,accept,accept4,connect -o "$trace" --)
+          nolisten=(env -u LISTEN_PID -u LISTEN_FDS -u LISTEN_FDNAMES)
+          # This job's user, with a hosted runner's full bounding set.
+          self=("${nolisten[@]}" "${st[@]}")
+          # As bitscan-runner.service runs it (user bitscan-runner, bounding
+          # set CAP_DAC_READ_SEARCH only, no new privileges), minus the socket.
+          unit=(sudo "${nolisten[@]}" "${st[@]}" setpriv --reuid="$(id -u bitscan-runner)" --regid="$(id -g bitscan-runner)" --clear-groups --bounding-set=-all,+dac_read_search --inh-caps=-all --no-new-privs --)
+          fail=0
+          # expect <case> <exit> <stderr line> <forbidden syscalls> <command...>
+          expect() {
+            local name="$1" want_rc="$2" want_err="$3" forbid="$4" rc line
+            shift 4
+            rm -f "$trace" "$out" "$err"
+            if timeout 10 "$@" >"$out" 2>"$err"; then rc=0; else rc=$?; fi
+            line="$(cat "$err")"
+            if [[ "$line" == time=* ]]; then line="${line#time=* }"; fi
+            if [ "$rc" -ne "$want_rc" ]; then
+              echo "$name: exit $rc; want $want_rc"
+              fail=1
             fi
             if [ -s "$out" ]; then
               printf '%s wrote to stdout:\n%s\n' "$name" "$(cat "$out")"
-              exit 1
+              fail=1
             fi
-            if [ "$(wc -l <"$err")" -ne 1 ] || [ "$(cat "$err")" != "$name: not implemented" ]; then
-              printf '%s stderr is not one "%s: not implemented" line:\n%s\n' "$name" "$name" "$(cat "$err")"
-              exit 1
+            if [ "$(wc -l <"$err")" -ne 1 ] || [ "$line" != "$want_err" ]; then
+              printf '%s: stderr is not the one expected line\n  want: %s\n  got:  %s\n' "$name" "$want_err" "$(cat "$err")"
+              fail=1
             fi
-          done
+            # Only calls after the binary's execve count: setpriv's own user
+            # lookups (nscd, userdb) come before it.
+            if [ ! -f "$trace" ] || ! grep -qF "execve(\"$bins/" "$trace"; then
+              echo "$name: strace saw no execve of the binary"
+              fail=1
+            elif awk -v m="execve(\"$bins/" 'on; index($0, m) {on=1}' "$trace" | grep -E "(^|[[:space:]])($forbid)\("; then
+              echo "$name: made the socket calls above; want none of $forbid"
+              fail=1
+            fi
+          }
+          all='socket|bind|listen|accept|accept4|connect'
+          refused='level=ERROR msg="start-up refused" reason='
+          usage='bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules'
+          expect "runner, full bounding set" 1 \
+            "$refused\"runner: refusing to start: CapBnd holds capabilities beyond CAP_DAC_READ_SEARCH\"" \
+            "$all" "${self[@]}" "$bins/bitscan-runner"
+          expect "runner, the unit's user and bounding set, no LISTEN_*" 1 \
+            "$refused\"sdsock: LISTEN_PID is not this process\"" \
+            "$all" "${unit[@]}" "$bins/bitscan-runner"
+          expect "capread --serve, no LISTEN_*" 1 \
+            'level=ERROR msg="no usable socket from systemd; not serving" reason="sdsock: LISTEN_PID is not this process"' \
+            "$all" "${self[@]}" "$bins/bitscan-capread" --serve
+          expect "capread client, no argument" 2 "$usage" "$all" "${self[@]}" "$bins/bitscan-capread"
+          expect "capread client, /bin/sh" 2 "$usage" "$all" "${self[@]}" "$bins/bitscan-capread" /bin/sh
+          # The helper is off: the client may try to connect, never bind or listen.
+          expect "capread client, helper not enabled" 1 "bitscan-capread: not enabled" \
+            'bind|listen|accept|accept4' "${self[@]}" "$bins/bitscan-capread" nft_ruleset
+          exit "$fail"
 
       - name: No cgo, assembly or object files (go list)
         working-directory: agent
@@ -149,3 +198,89 @@ jobs:
       - name: go test (linux/amd64)
         working-directory: agent
         run: GOOS=linux GOARCH=amd64 go test ./...
+
+      # Root-only rows (named skips in the non-root go test above): the
+      # sdsock and capread peer checks and the runner client's EACCES case
+      # run peers or the client as other uids through setpriv, which needs
+      # root. Built as this user, run under sudo. Red unless each named test
+      # passed; a skip, a missing row or any FAIL is red.
+      - name: Root-only tests (sudo)
+        working-directory: agent
+        run: |
+          dir="$(mktemp -d)"
+          chmod 0755 "$dir"
+          rc=0
+          for spec in \
+            "internal/agent/runnerclient:TestConnectPermissionDeniedLinux" \
+            "internal/capread:TestPeerCheckThroughSdsock" \
+            "internal/sdsock:TestPeerCheck"; do
+            pkg="${spec%%:*}"
+            test="${spec#*:}"
+            name="$(basename "$pkg")"
+            GOOS=linux GOARCH=amd64 go test -c -race -o "$dir/$name.test" "./$pkg/"
+            log="$RUNNER_TEMP/root-$name.log"
+            (cd "$pkg" && sudo "$dir/$name.test" -test.run "^$test\$" -test.count=1 -test.v) 2>&1 | tee "$log" || rc=1
+            if ! grep -qE "^--- PASS: $test \(" "$log"; then
+              echo "root-only row $test did not pass as root"
+              rc=1
+            fi
+            if grep -qE -- '--- (FAIL|SKIP)' "$log"; then
+              echo "$name: a root-only row failed or skipped (above)"
+              rc=1
+            fi
+          done
+          exit "$rc"
+
+      # The runner's delegated cgroup tests (build tag delegated) need a
+      # delegated cgroup v2 subtree, so go test ./... never runs them. They run
+      # as bitscan-runner.service runs (TS §3.7): user bitscan-runner, only
+      # CAP_DAC_READ_SEARCH, no new privileges, Delegate=yes. systemd-run
+      # --wait returns the test binary's exit code. Red on any failure and
+      # when no TestDelegated test passed. The job rows need a private /tmp
+      # (their /tmp row refuses to run without one), /var/lib/m10c-job, and
+      # the TS at ../../../docs/spec from the working directory (TS-extracted
+      # redaction patterns).
+      - name: Runner delegated cgroup tests (systemd-run, Delegate=yes)
+        working-directory: agent
+        run: |
+          for u in bitscan bitscan-runner; do
+            id -u "$u" >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$u"
+          done
+          # Outside /tmp (PrivateTmp hides it) and $HOME, so bitscan-runner can execute it.
+          dir=/opt/delegated
+          sudo install -d -m 0755 -o "$(id -u)" -g "$(id -g)" "$dir"
+          GOOS=linux GOARCH=amd64 go test -c -race -tags delegated -o "$dir/runner.test" ./internal/runner/
+          chmod 0755 "$dir/runner.test"
+          # bitscan-runner needs search (o+x) on every directory down to the
+          # working directory and the TS, and read (o+r) on the TS. The hosted
+          # runner's home may be 0750. Nothing gets o+r except the TS.
+          wd="$GITHUB_WORKSPACE/agent/internal/runner"
+          spec="$GITHUB_WORKSPACE/docs/spec/Technical_Specification.md"
+          for p in "$wd" "$(dirname "$spec")"; do
+            while [ "${#p}" -gt 1 ]; do
+              sudo chmod o+x "$p"
+              p="$(dirname "$p")"
+            done
+          done
+          chmod o+r "$spec"
+          log="$RUNNER_TEMP/delegated.log"
+          rc=0
+          sudo systemd-run --wait --pipe --collect --quiet \
+            -p Delegate=yes -p User=bitscan-runner -p Group=bitscan-runner \
+            -p AmbientCapabilities=CAP_DAC_READ_SEARCH -p CapabilityBoundingSet=CAP_DAC_READ_SEARCH \
+            -p NoNewPrivileges=yes \
+            -p PrivateTmp=yes -p StateDirectory=m10c-job \
+            -p WorkingDirectory="$wd" \
+            "$dir/runner.test" -test.run Delegated -test.v 2>&1 | tee "$log" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "delegated runner tests: exit $rc; want 0"
+            exit 1
+          fi
+          if grep -q -- '--- FAIL' "$log"; then
+            echo "delegated runner tests: a test failed (above)"
+            exit 1
+          fi
+          if ! grep -qE '^--- PASS: TestDelegated' "$log"; then
+            echo "delegated runner tests: no TestDelegated test passed; want at least one"
+            exit 1
+          fi

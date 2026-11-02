@@ -45,10 +45,11 @@ linters:
         - pattern: ^unix\.(Listen|Socket|Bind)$
           pkg: ^golang\.org/x/sys/unix$
           msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
-        # M10 adds narrow exceptions for runner and capread socket activation (TS §3.7).
+        # The one exception (REQ-256): internal/sdsock/listen_linux.go adopts the
+        # socket systemd passes to the runner and capread (TS §3.7).
         - pattern: ^net\.FileListener$
           pkg: ^net$
-          msg: the agent opens no listening socket; it pulls, never listens (TS §2.2).
+          msg: the agent opens no listening socket; only the sdsock listener adopts the systemd socket (TS §2.2, §3.7).
         # An inherited or adopted descriptor (stdin, systemd, os.NewFile) can be a
         # bound or listening socket, so adopting one is forbidden too (REQ-144).
         - pattern: ^net\.(FileConn|FilePacketConn)$
@@ -61,6 +62,21 @@ linters:
         - pattern: ^tls\.Config\.InsecureSkipVerify$
           pkg: ^crypto/tls$
           msg: never skip manager certificate verification; tests use a test CA via ca_file (TS §8.1).
+        # REQ-256: no ad-hoc command path (TS §3.3). Processes start only in the
+        # inventory command runner, the runner's plugin start and capread's
+        # fixed table. The whole os/exec package is covered, types included.
+        - pattern: ^exec\.
+          pkg: ^os/exec$
+          msg: processes start only in the inventory command runner, runner spawn_linux.go and capread serve_linux.go (REQ-256, TS §3.3).
+        - pattern: ^os\.StartProcess$
+          pkg: ^os$
+          msg: processes start only in the inventory command runner, runner spawn_linux.go and capread serve_linux.go (REQ-256, TS §3.3).
+        - pattern: ^syscall\.(ForkExec|Exec|StartProcess)$
+          pkg: ^syscall$
+          msg: processes start only in the inventory command runner, runner spawn_linux.go and capread serve_linux.go (REQ-256, TS §3.3).
+        - pattern: ^unix\.Exec$
+          pkg: ^golang\.org/x/sys/unix$
+          msg: processes start only in the inventory command runner, runner spawn_linux.go and capread serve_linux.go (REQ-256, TS §3.3).
   exclusions:
     generated: disable
     rules:
@@ -78,6 +94,29 @@ linters:
         linters:
           - gosec
         text: G204
+      # REQ-256 (M10). The runner starts the job's `execute` with /bin/sh -c by
+      # design (TS §3.5); capread runs only its fixed two-name table (TS §3.7).
+      # Only G204, only these two files.
+      - path: ^internal/(runner/spawn|capread/serve)_linux\.go$
+        linters:
+          - gosec
+        text: G204
+      # Where processes may start (REQ-256). command_linux.go is the Linux half
+      # of the inventory command runner (TASK-094); it starts nothing itself.
+      - path: ^internal/(inventory/command(_linux)?|runner/spawn_linux|capread/serve_linux)\.go$
+        linters:
+          - forbidigo
+        text: processes start only in
+      # Tests may start helper processes (oracles, child processes given fd 3).
+      - path: _test\.go$
+        linters:
+          - forbidigo
+        text: processes start only in
+      # The only systemd socket adoption (REQ-256, plan TASK-209 §5).
+      - path: ^internal/sdsock/listen_linux\.go$
+        linters:
+          - forbidigo
+        text: only the sdsock listener adopts
 
 formatters:
   enable:

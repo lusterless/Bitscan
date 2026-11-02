@@ -885,12 +885,28 @@ func TestCommandEnvironmentStdinStderrDir(t *testing.T) { // CHK-M4-100 (runtime
 	}
 }
 
-func TestNoOtherProcessExecutionInAgent(t *testing.T) { // CHK-M4-100 (static), CHK-M4-344, -345
+// CHK-M4-100 (static), CHK-M4-344, -345, rewritten as CHK-M10-272 (decisions
+// "CHK-M4-100 … is rewritten as CHK-M10-272"; REQ-256, the TASK-211 lint
+// allow-list): process execution exists in exactly three non-test files,
+// each exactly as allowed, and nowhere else in the agent module:
+//   - internal/inventory/command.go: the one exec.CommandContext and the
+//     three #35 command literals (M4, unchanged);
+//   - internal/runner/spawn_linux.go: the plugin start, one exec.Cmd struct
+//     literal, the "/bin/sh" and "-c" literals once each, no exec.Command*;
+//   - internal/capread/serve_linux.go: one exec.CommandContext over the
+//     fixed table, no shell literal.
+func TestNoOtherProcessExecutionInAgent(t *testing.T) {
+	const (
+		invCmd   = "internal/inventory/command.go"
+		spawn    = "internal/runner/spawn_linux.go"
+		capServe = "internal/capread/serve_linux.go"
+	)
 	root := itModuleRoot(t)
 	fset := token.NewFileSet()
-	type site struct{ file, call string }
-	var sites []site
-	var shellLits, cmdLits []string
+	calls := map[string]map[string]int{} // file -> call -> count
+	structLits := map[string]int{}       // exec.Cmd composite literals per file
+	shellLits := map[string]map[string]int{}
+	var cmdLits []string
 	execImports := map[string]bool{}
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -919,7 +935,10 @@ func TestNoOtherProcessExecutionInAgent(t *testing.T) { // CHK-M4-100 (static), 
 						switch name {
 						case "exec.Command", "exec.CommandContext", "os.StartProcess", "syscall.Exec", "syscall.ForkExec",
 							"syscall.StartProcess", "unix.Exec", "exec.LookPath":
-							sites = append(sites, site{rel, name})
+							if calls[rel] == nil {
+								calls[rel] = map[string]int{}
+							}
+							calls[rel][name]++
 						}
 					}
 				}
@@ -928,13 +947,21 @@ func TestNoOtherProcessExecutionInAgent(t *testing.T) { // CHK-M4-100 (static), 
 					if v, err := strconv.Unquote(x.Value); err == nil {
 						switch v {
 						case "sh", "bash", "/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash", "dash", "-c":
-							shellLits = append(shellLits, fmt.Sprintf("%s: %q", fset.Position(x.Pos()), v))
+							if shellLits[rel] == nil {
+								shellLits[rel] = map[string]int{}
+							}
+							shellLits[rel][v]++
 						}
 					}
 				}
 			case *ast.CompositeLit:
 				if id, ok := x.Type.(*ast.Ident); ok && id.Name == "command" {
 					cmdLits = append(cmdLits, rel)
+				}
+				if sel, ok := x.Type.(*ast.SelectorExpr); ok {
+					if id, ok := sel.X.(*ast.Ident); ok && id.Name == "exec" && sel.Sel.Name == "Cmd" {
+						structLits[rel]++
+					}
 				}
 			}
 			return true
@@ -944,29 +971,33 @@ func TestNoOtherProcessExecutionInAgent(t *testing.T) { // CHK-M4-100 (static), 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sites) != 1 || sites[0] != (site{"internal/inventory/command.go", "exec.CommandContext"}) {
-		t.Errorf("process execution sites %v; want exactly one exec.CommandContext in internal/inventory/command.go", sites)
+	wantCalls := map[string]map[string]int{invCmd: {"exec.CommandContext": 1}, capServe: {"exec.CommandContext": 1}}
+	if fmt.Sprint(calls) != fmt.Sprint(wantCalls) {
+		t.Errorf("process execution calls %v; want exactly %v", calls, wantCalls)
 	}
-	// the command runner's own files may name the exec types; nothing else
-	// may import os/exec (exec calls are checked above: one site only)
+	if fmt.Sprint(structLits) != fmt.Sprint(map[string]int{spawn: 1}) {
+		t.Errorf("exec.Cmd literals %v; want exactly one, in %s", structLits, spawn)
+	}
+	// the command runner's own files, the plugin start and the capread
+	// helper may import os/exec; nothing else may
 	for f := range execImports {
-		runnerFile := f == "internal/inventory/command.go" ||
+		allowed := f == invCmd || f == spawn || f == capServe ||
 			(strings.HasPrefix(f, "internal/inventory/command_") && strings.Count(f, "/") == 2)
-		if !runnerFile {
-			t.Errorf("os/exec imported by %s; want only the command runner files internal/inventory/command*.go", f)
+		if !allowed {
+			t.Errorf("os/exec imported by %s; want only %s, %s, %s and internal/inventory/command_*.go", f, invCmd, spawn, capServe)
 		}
 	}
-	if !execImports["internal/inventory/command.go"] {
-		t.Error("command.go no longer imports os/exec: the static check is out of date")
+	if !execImports[invCmd] || !execImports[spawn] || !execImports[capServe] {
+		t.Errorf("os/exec imports %v: an allowed site no longer imports it; the static check is out of date", execImports)
 	}
-	if len(shellLits) > 0 {
-		t.Errorf("shell names or -c in non-test code: %v", shellLits)
+	if fmt.Sprint(shellLits) != fmt.Sprint(map[string]map[string]int{spawn: {"-c": 1, "/bin/sh": 1}}) {
+		t.Errorf("shell names or -c in non-test code: %v; want exactly \"/bin/sh\" and \"-c\" once each in %s", shellLits, spawn)
 	}
 	if len(cmdLits) != 3 {
 		t.Errorf("command literals in %v; want exactly the three #35 entries in command.go", cmdLits)
 	}
 	for _, f := range cmdLits {
-		if f != "internal/inventory/command.go" {
+		if f != invCmd {
 			t.Errorf("a command value is built outside command.go: %s", f)
 		}
 	}
