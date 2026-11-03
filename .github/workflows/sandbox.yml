@@ -119,7 +119,7 @@ jobs:
           if-no-files-found: warn
 
   plants:
-    name: Plant ${{ matrix.plant }} turns ${{ matrix.row }} red
+    name: Plant ${{ matrix.plant }} on ${{ matrix.row }} (${{ matrix.expect || 'red' }})
     if: github.event_name == 'workflow_dispatch' && inputs.plants || github.event_name == 'push' && contains(github.event.head_commit.message, '[sandbox-plants]')
     needs: build
     strategy:
@@ -132,7 +132,10 @@ jobs:
           - { plant: "329", row: CHK-M10-205 }
           - { plant: "330", row: "CHK-M10-206@fds" }
           - { plant: "331", row: "CHK-M10-211@environ" }
-          - { plant: "333", row: "CHK-M10-211@stdin" }
+          # 333 and 382 cannot show on a host (systemd already gives the runner
+          # /dev/null as stdin; the runner never writes debug lines): expected
+          # not red, and their G72 unit plants stay the gate (user, 2026-11-03).
+          - { plant: "333", row: "CHK-M10-211@stdin", expect: not-red }
           - { plant: "334", row: "CHK-M10-211@niceness" }
           - { plant: "335", row: "CHK-M10-211@ionice" }
           - { plant: "336", row: "CHK-M10-210@plugin cgroups" }
@@ -144,11 +147,13 @@ jobs:
           - { plant: "371", row: "CHK-M10-289@'id" }
           - { plant: "373", row: "CHK-M10-217@environment" }
           - { plant: "374", row: "CHK-M10-289@peer root" }
-          - { plant: "382", row: CHK-M10-220 }
+          - { plant: "382", row: CHK-M10-220, expect: not-red }
           - { plant: "386", row: CHK-M10-215 }
           - { plant: "388", row: "CHK-M10-207@busctl" }
           - { plant: "389", row: CHK-M10-204 }
           - { plant: "390", row: "CHK-M10-203@/home copy" }
+          - { plant: "394", row: "CHK-M10-201@/dev/shm" }
+          - { plant: "395", row: "CHK-M10-203@/tmp copy" }
           - { plant: "391", row: "CHK-M10-212@(10) no plugin" }
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -175,11 +180,19 @@ jobs:
           bash src/agent/test/sandbox/plants.sh apply "${{ matrix.plant }}" "$RUNNER_TEMP/copy"
           bash "$RUNNER_TEMP/copy/deploy/debian/build-deb.sh" "$RUNNER_TEMP/out"
 
-      - name: Run ${{ matrix.row }}; it must turn red
+      - name: Run ${{ matrix.row }}; it must turn red (or, for expected not-red plants, stay green)
+        env:
+          EXPECT: ${{ matrix.expect || 'red' }}
         run: |
           deb=$(ls "$RUNNER_TEMP"/out/bitscan-agent_*_amd64.deb)
-          sudo bash src/agent/test/sandbox/run_vm.sh "$deb" "$RUNNER_TEMP/report" --with-nft \
-            --rows "${{ matrix.row }}" --expect-red "${{ matrix.row }}" --label "plant ${{ matrix.plant }}"
+          if [ "$EXPECT" = not-red ]; then
+            echo "Plant ${{ matrix.plant }} is expected not red on a host; its unit-level plant (G72) is the gate."
+            sudo bash src/agent/test/sandbox/run_vm.sh "$deb" "$RUNNER_TEMP/report" --with-nft \
+              --rows "${{ matrix.row }}" --label "plant ${{ matrix.plant }} (expected not red)"
+          else
+            sudo bash src/agent/test/sandbox/run_vm.sh "$deb" "$RUNNER_TEMP/report" --with-nft \
+              --rows "${{ matrix.row }}" --expect-red "${{ matrix.row }}" --label "plant ${{ matrix.plant }}"
+          fi
 
       - name: Row report
         if: always()

@@ -35,6 +35,8 @@ PLANTS='
 388|CHK-M10-207|D-Bus policy also allows StartUnit
 389|CHK-M10-204|runner unit without its InaccessiblePaths= lines
 390|CHK-M10-203|runner unit without NoExecPaths=
+394|CHK-M10-201|runner unit without ReadOnlyPaths=/dev/shm (2026-11-03 fix)
+395|CHK-M10-203|runner unit with NoExecPaths=/ only (2026-11-03 fix undone)
 391|CHK-M10-212|runner keeps running plugins after the agent closes the connection
 '
 
@@ -110,8 +112,13 @@ case "$ID" in
 	rep deploy/systemd/bitscan-runner.service 'InaccessiblePaths=-/run/systemd/journal/socket -/run/systemd/journal/stdout -/run/systemd/journal/syslog -/run/systemd/journal/dev-log
 ' ''
 	;;
-390) rep deploy/systemd/bitscan-runner.service 'NoExecPaths=/
+390) rep deploy/systemd/bitscan-runner.service 'NoExecPaths=/ /tmp /var/tmp
 ' '' ;;
+394) rep deploy/systemd/bitscan-runner.service 'ReadOnlyPaths=/dev/shm
+' '' ;;
+395) rep deploy/systemd/bitscan-runner.service 'NoExecPaths=/ /tmp /var/tmp
+' 'NoExecPaths=/
+' ;;
 391) rep $A/runner/serve.go '		_, _ = conn.Read(b[:])
 		cancel()' '		_, _ = conn.Read(b[:])' ;;
 *)
