@@ -24,20 +24,20 @@ SPEC = Path("docs/spec/Technical_Specification.md")
 # file name -> (opening fence line, closing fence line), 1-based, from work/tasks.md
 AGENT: dict[str, tuple[int, int]] = {
     "bitscan-runner.socket": (289, 302),
-    "bitscan-runner.service": (308, 363),
-    "bitscan-agent.service": (369, 408),
-    "bitscan-capread.socket": (437, 449),
-    "bitscan-capread.service": (451, 482),
+    "bitscan-runner.service": (308, 365),
+    "bitscan-agent.service": (371, 410),
+    "bitscan-capread.socket": (439, 451),
+    "bitscan-capread.service": (453, 484),
 }
 MANAGER: dict[str, tuple[int, int]] = {
-    "bitscan-manager.service": (1352, 1401),
-    "bitscan-manager-migrate.service": (1405, 1435),
-    "bitscan-manager-maintain.service": (1439, 1467),
-    "bitscan-manager-maintain.timer": (1469, 1480),
+    "bitscan-manager.service": (1354, 1403),
+    "bitscan-manager-migrate.service": (1407, 1437),
+    "bitscan-manager-maintain.service": (1441, 1469),
+    "bitscan-manager-maintain.timer": (1471, 1482),
 }
-# D-Bus policy (TS §3.7): ```xml fence at L412, closing fence at L431
+# D-Bus policy (TS §3.7): ```xml fence at L414, closing fence at L433
 DBUS: dict[str, tuple[int, int]] = {
-    "bitscan-runner.conf": (412, 431),
+    "bitscan-runner.conf": (414, 433),
 }
 
 # Recorded deviations from the verbatim TS blocks: file name -> (the spec line

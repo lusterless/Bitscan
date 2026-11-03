@@ -324,8 +324,10 @@ Delegate=yes
 # Whole filesystem read-only; the only writable place is a private /tmp
 ProtectSystem=strict
 PrivateTmp=yes
-# Only system binaries can be executed; /tmp and user paths cannot
-NoExecPaths=/
+# /dev/shm is shared with the host and ProtectSystem= leaves it writable: make it read-only
+ReadOnlyPaths=/dev/shm
+# Only system binaries can be executed; /tmp and user paths cannot (NoExecPaths=/ does not reach the private /tmp and /var/tmp, so they are listed)
+NoExecPaths=/ /tmp /var/tmp
 ExecPaths=/usr /bin /sbin /lib -/lib64
 ProtectHome=read-only
 UMask=0077
@@ -362,7 +364,7 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-`ProtectControlGroups=` is deliberately not set on the runner: it would make the cgroup tree read-only and stop the runner killing plugin cgroups. `NoExecPaths=`, `ExecPaths=` and `PrivateIPC=` need systemd 248 or later, which every supported release has. The runner is not given `PrivateNetwork=`, because network checks (`ss`, `ip`) must see the host's network; plugins can therefore also reach abstract Unix sockets, which is accepted.
+`ProtectControlGroups=` is deliberately not set on the runner: it would make the cgroup tree read-only and stop the runner killing plugin cgroups. `NoExecPaths=`, `ExecPaths=` and `PrivateIPC=` need systemd 248 or later, which every supported release has. `NoExecPaths=/` alone does not reach the mounts `PrivateTmp=` adds, and `ProtectSystem=strict` leaves `/dev` writable, so the unit lists `/tmp` and `/var/tmp` for `NoExecPaths=` and makes the host-shared `/dev/shm` read-only (sandbox suite CHK-M10-201 and -203, user decision 2026-11-03). The runner is not given `PrivateNetwork=`, because network checks (`ss`, `ip`) must see the host's network; plugins can therefore also reach abstract Unix sockets, which is accepted.
 
 **Agent unit (`bitscan-agent.service`)**
 
