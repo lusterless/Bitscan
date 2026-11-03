@@ -2,7 +2,7 @@
 
 Lead (main), session of 2026-11-02. Tree: main `33a45ad` (M10 merged as PR #18), run from a clean `git archive` copy. Decisions: `work/decisions.md` rows "User decisions before the M10 merge" and "User decision: G38 and G41" (2026-11-01), and "M10 VM session set-up" (2026-11-02).
 
-This file is updated after every check, so a stopped session can resume without repeating finished work. No token or `install.env` content is written here; every log excerpt is masked for `bs[uaek]_`.
+This file is updated after every check, so a stopped session can resume without repeating finished work. **Status 2026-11-03:** every held M10 VM row has run; see "Resume here" and "Still open". No token or `install.env` content is written here; every log excerpt is masked for `bs[uaek]_`.
 
 ## Resume here
 
@@ -12,7 +12,7 @@ This file is updated after every check, so a stopped session can resume without 
 | G41 | **PASS** (attempt 1, 23/23 rows, rc 0, finished about 18:08 local) | Don't re-run |
 | G41 plant (reverse-order `list_sha256`) | **PASS (red as required)**, finished about 18:26 local | Don't re-run. Details in the G41 section |
 | Portproxy and firewall move | **DONE** (user, 18:15 local) | portproxy `192.168.224.1:8443 → 127.0.0.1:18443`, old 172.26.240.1 entry gone, IP Helper running; firewall rule "Bitscan manager 8443 (VMs)" LocalAddress 192.168.224.1, RemoteAddress 192.168.224.0/20 (user's output) |
-| Manager for the VMs | **UP** since 18:48 local (user chose "serve from the tree") | A real `bitscan-manager serve` from the 33a45ad copy (`/root/m10vm/mgr/tree`, web UI built in), set up as G41 does: PostgreSQL 16 by Testcontainers, HTTPS with a private CA, the test sink and vault. It listens on WSL `127.0.0.1:18443`; the leaf covers `bitscan-mgr.test`. Start: `bash /root/m10vm/scripts/mgr-serve.sh` (log `/root/m10vm/mgr/serve.out`; work dir `/root/m10vm/mgr/serve/`, 0700; CA `manager-ca.pem`, also copied to `C:\Users\kaiquan.koh\Documents\m10vm\`). Admin and TOTP secrets are only in `serve/secrets/` (0600). It lives in this session's background shell, so after a session stop, start it again: a new database, so earlier enrolments are gone. Checked from Windows by the VMs' path (`bitscan-mgr.test` → 192.168.224.1:8443 → portproxy → 18443): `/healthz` and `/readyz` both 200 `{"status":"ok"}` (curl `--ssl-no-revoke`: schannel can't check revocation for the private CA; the chain and name are still verified). The manager-install walk route was blocked: `e2e/m6/manager_walk.py` is stale (see "Manager release files") |
+| Manager for the VMs | **Not needed any more** (was UP from 18:48 local on 2026-11-02 for G79 and the walk; stop it in WSL if still running) (user chose "serve from the tree") | A real `bitscan-manager serve` from the 33a45ad copy (`/root/m10vm/mgr/tree`, web UI built in), set up as G41 does: PostgreSQL 16 by Testcontainers, HTTPS with a private CA, the test sink and vault. It listens on WSL `127.0.0.1:18443`; the leaf covers `bitscan-mgr.test`. Start: `bash /root/m10vm/scripts/mgr-serve.sh` (log `/root/m10vm/mgr/serve.out`; work dir `/root/m10vm/mgr/serve/`, 0700; CA `manager-ca.pem`, also copied to `C:\Users\kaiquan.koh\Documents\m10vm\`). Admin and TOTP secrets are only in `serve/secrets/` (0600). It lives in this session's background shell, so after a session stop, start it again: a new database, so earlier enrolments are gone. Checked from Windows by the VMs' path (`bitscan-mgr.test` → 192.168.224.1:8443 → portproxy → 18443): `/healthz` and `/readyz` both 200 `{"status":"ok"}` (curl `--ssl-no-revoke`: schannel can't check revocation for the private CA; the chain and name are still verified). The manager-install walk route was blocked: `e2e/m6/manager_walk.py` is stale (see "Manager release files") |
 | TASK-231 runbook walk (u2404, u2204) | **PASS on both.** u2404: §1, §2, §3a, §4, §9, §10, §11. u2204: the same plus §6 (0.1.0-1 → 0.2.0~pre1-1 in place). Both VMs `Off` at 11:44 UTC; their `clean` checkpoints are untouched | u2404 runs from `clean` (192.168.236.23). After a session stop: if the manager restarted (new DB), restore `clean` and redo the walk from §1; `scripts/mgrcli.sh` and `scripts/agent-show.sh` in `/root/m10vm/` drive the admin API |
 | G79 (CHK-M10-290 to -292) | **PASS** on u2404 (-290, -291, -292 all PASS, 11:11–11:28Z). The runner was unmasked afterwards, and a follow-up scan of policy 1 passed again (job `276b8a73-…`, PASS, 11:28:12Z) | Section "G79" below. Policies in `/root/m10vm/g79/` (canary in `canary.txt`, 0600); `scripts/scan.sh POLICY_ID [canary]` starts a scan and reads the stored rows read-only (`scripts/mgr_db.py`, as `bitscan_app`) |
 | G76 (CHK-M10-200 to -223), G78 host (CHK-M10-280 to -289) | **PASS (2026-11-03, after the unit and sample fixes).** QEMU stand-in VMs Ubuntu 22.04 and 24.04: 34 PASS, 0 FAIL, 2 NOT RUN each (214 runs on the v1 VM: PASS; 219b needs a manager: walk §10 PASS). The user ruled the stand-in VMs count for G76 (decisions 2026-11-03 (4)) | Re-run with `run_vm.sh` on any change to units, runner or samples (sandbox.yml does it on the hosted runners) |
@@ -259,16 +259,17 @@ Plants, run 6 (8b0e514): 26/26 jobs green: 24 red for their own sub-check, inclu
 
 **G76, the G78 host part, the VM plants and TASK-230 are done**, with the lead's second look at TASK-230 (PD-43) still to do.
 
-## NOT RUN so far
+## Still open (updated 2026-11-03)
 
-| Row | Reason | Next step |
+Every row that was NOT RUN here on 2026-11-02 morning has since run (sections above). What remains:
+
+| Item | State | Next step |
 | --- | --- | --- |
-| TASK-231 runbook walk (CHK-M10-315f, REQ-258 (1)) | not started; needs the manager route | after the portproxy move and the manager host; ask before each VM action |
-| G79, CHK-M10-290 to -292 | not started; `e2e/m10/first_run.sh` doesn't exist | reuse `e2e/m6/e2e_vms.py`/`mgr_api.py` patterns; ask before each VM action |
-| G76, CHK-M10-200 to -223 | harness not written; the attempt was stopped by a safety classifier (below) | foreground, with the user watching, or written by a human |
-| G78 host part, CHK-M10-280 to -289 | as G76 | as G76 |
-| VM halves of CHK-M10-320, -325, -327, -329, -330, -331, -333 to -340, -343, -371, -373, -374, -386, -388 to -391; G79 half of -344; -382 canary sweep | harness not written; user decision pending | see "Open decisions" |
-| G77 / TASK-230 | `sandbox.yml` doesn't exist; it needs the harness | after the harness |
+| Manager-stored half of CHK-M10-344 (a secret on the 64 KiB boundary through the agent into the stored stdout) | not run; the runner half CHK-M10-344v PASS on every host (the agent forwards the runner reply as is) | one scan on a VM against the WSL manager, or the user rules the runner half enough |
+| Reviews of the 2026-11-03 changes (runner unit and TS §3.7 text, cramfs samples, sandbox harness and `sandbox.yml`) | not reviewed | reviewer: TS §8.2 second approval for the runner unit; lead's second look at TASK-230 (PD-43); addendum to `work/reviews/M10-closing.md` ("no unit change" no longer holds) |
+| `units.yml`, `package.yml`, `agent.yml` on these commits | not run (they run on a PR or on `main`) | open the PR from `m10-vm-checks` to `main` |
+| `e2e/m6/manager_walk.py` stale against the manager install runbook | harness finding, not product | tester follow-up |
+| WSL leftovers from 2026-11-02 | `/var/lib/bitscan` (made for G79) and the background `bitscan-manager serve` | remove the folder and stop the manager in the next WSL session |
 
 ## Incidents
 
@@ -278,6 +279,9 @@ Plants, run 6 (8b0e514): 26/26 jobs green: 24 red for their own sub-check, inclu
 4. **Build attempt 1:** rc 126; `build-deb.sh` isn't executable in git, so it's now run with `bash`. **Attempt 2:** `x509: certificate signed by unknown authority` from proxy.golang.org inside the container (Zscaler TLS inspection). Fixed by the user's instruction ("fix the container trust issues") with the read-only CA-bundle mount above. Attempt 3 succeeded.
 
 ## Open decisions (user)
+
+None open. Decided 2026-11-03 (`work/decisions.md`): `/dev/shm` and `/tmp` exec fixed in the runner unit; cramfs sample rewritten; stand-in VMs count for G76; plants 333 and 382 expected not red.
+
 
 - ~~VM-planted rows~~: decided 2026-11-02. A person on the user's team writes the plants and their row checks, and the lead runs them on the VMs (`work/decisions.md`). The 2026-11-01 rule stands.
 - ~~The portproxy move~~: done by the user, 2026-11-02 18:15 local (see "Resume here").
