@@ -1662,3 +1662,7 @@ Full record: [work/reports/M10-vm-test.md](../../work/reports/M10-vm-test.md) "S
 | VM plants (REQ-262) | hosted 24.04; plant 340 on the cgroup v1 VM | 22/25 red for their own sub-check; 333, 382, 340 not red on a host (reasons in the record; each has its G72 unit red) |
 
 FAIL rows are real host behaviour against TS §3.7, not harness: `/dev/shm` writable and shared with the host (201); a file written to the private `/tmp` or `/var/tmp` executes (203); the cramfs sample answers `absent` under `ProtectKernelModules=yes` on a kernel that ships the module (222, #143). They wait for the owner's decision; no unit, sample or gate was changed.
+
+### 2026-11-03 re-run after the fixes (user decisions 2026-11-03)
+
+Unit: `ReadOnlyPaths=/dev/shm`, `NoExecPaths=/ /tmp /var/tmp` (86f33a6, TS §3.7 updated with it); cramfs sample rewritten (1072e5e). G76 on the stand-in VMs (counted, user 2026-11-03): **34 PASS, 0 FAIL, 2 NOT RUN** on Ubuntu 22.04 and 24.04. G77 (sandbox.yml run 6, 8b0e514): both suites green; plants 26/26 jobs green (24 red for their own sub-check incl. new CHK-M10-394, -395; 333 and 382 expected not red). G78 host part: PASS. TASK-230: green; lead's second look (PD-43) pending.

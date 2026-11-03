@@ -15,9 +15,9 @@ This file is updated after every check, so a stopped session can resume without 
 | Manager for the VMs | **UP** since 18:48 local (user chose "serve from the tree") | A real `bitscan-manager serve` from the 33a45ad copy (`/root/m10vm/mgr/tree`, web UI built in), set up as G41 does: PostgreSQL 16 by Testcontainers, HTTPS with a private CA, the test sink and vault. It listens on WSL `127.0.0.1:18443`; the leaf covers `bitscan-mgr.test`. Start: `bash /root/m10vm/scripts/mgr-serve.sh` (log `/root/m10vm/mgr/serve.out`; work dir `/root/m10vm/mgr/serve/`, 0700; CA `manager-ca.pem`, also copied to `C:\Users\kaiquan.koh\Documents\m10vm\`). Admin and TOTP secrets are only in `serve/secrets/` (0600). It lives in this session's background shell, so after a session stop, start it again: a new database, so earlier enrolments are gone. Checked from Windows by the VMs' path (`bitscan-mgr.test` → 192.168.224.1:8443 → portproxy → 18443): `/healthz` and `/readyz` both 200 `{"status":"ok"}` (curl `--ssl-no-revoke`: schannel can't check revocation for the private CA; the chain and name are still verified). The manager-install walk route was blocked: `e2e/m6/manager_walk.py` is stale (see "Manager release files") |
 | TASK-231 runbook walk (u2404, u2204) | **PASS on both.** u2404: §1, §2, §3a, §4, §9, §10, §11. u2204: the same plus §6 (0.1.0-1 → 0.2.0~pre1-1 in place). Both VMs `Off` at 11:44 UTC; their `clean` checkpoints are untouched | u2404 runs from `clean` (192.168.236.23). After a session stop: if the manager restarted (new DB), restore `clean` and redo the walk from §1; `scripts/mgrcli.sh` and `scripts/agent-show.sh` in `/root/m10vm/` drive the admin API |
 | G79 (CHK-M10-290 to -292) | **PASS** on u2404 (-290, -291, -292 all PASS, 11:11–11:28Z). The runner was unmasked afterwards, and a follow-up scan of policy 1 passed again (job `276b8a73-…`, PASS, 11:28:12Z) | Section "G79" below. Policies in `/root/m10vm/g79/` (canary in `canary.txt`, 0600); `scripts/scan.sh POLICY_ID [canary]` starts a scan and reads the stored rows read-only (`scripts/mgr_db.py`, as `bitscan_app`) |
-| G76 (CHK-M10-200 to -223), G78 host (CHK-M10-280 to -289) | **Harness written and run (cloud session, 2026-11-02 evening; see "Sandbox suite" below).** Not yet on `bitscan-u2204`/`bitscan-u2404`: run on fresh QEMU VMs of the official Ubuntu 22.04 and 24.04 cloud images (stand-in) and on the GitHub hosted runners (G77). Every G78 host row PASS on every host. Sandbox: **3 rows FAIL for real** (201 `/dev/shm`, 203 exec in private `/tmp`, 222 cramfs on Azure kernels), needing an owner decision | On the Hyper-V VMs: restore `clean`, copy the `.deb` and `agent/test/sandbox/`, `sudo bash run_vm.sh <deb> <out> --with-nft --with-auditd --samples bits/samples`; then restore `clean` |
-| VM-planted CHK-M10 rows | **Written (`agent/test/sandbox/plants.sh`) and run**: 22 of 25 red for their own sub-check on a hosted runner; 333, 382 (hosted) and 340 (cgroup v1 VM) not red, each explained below | Throwaway `git archive` copy, `plants.sh apply ID COPY`, build, `run_vm.sh … --rows ROW@part --expect-red ROW@part` |
-| TASK-230 (`sandbox.yml`, G77) | **Implemented and run** on both hosted runners (runs 1–5 on `ccr-e5f4e02d-dulvt3`); red only for the three real findings | Needs the owner's answer on the findings to go green; lead's second look (PD-43) |
+| G76 (CHK-M10-200 to -223), G78 host (CHK-M10-280 to -289) | **PASS (2026-11-03, after the unit and sample fixes).** QEMU stand-in VMs Ubuntu 22.04 and 24.04: 34 PASS, 0 FAIL, 2 NOT RUN each (214 runs on the v1 VM: PASS; 219b needs a manager: walk §10 PASS). The user ruled the stand-in VMs count for G76 (decisions 2026-11-03 (4)) | Re-run with `run_vm.sh` on any change to units, runner or samples (sandbox.yml does it on the hosted runners) |
+| VM-planted CHK-M10 rows | **Done (2026-11-03).** Hosted run 6: 24 red for their own sub-check (incl. new 394, 395), 333 and 382 expected not red and green (user, 2026-11-03 (5)); 340 not red on the v1 VM (second cgroup check holds) | `plants.sh apply ID COPY`; sandbox.yml plant matrix (`[sandbox-plants]` or dispatch) |
+| TASK-230 (`sandbox.yml`, G77) | **Green** (run 6, 8b0e514: 29/29 jobs) | Lead's second look (PD-43) still due |
 
 ## Environment
 
@@ -236,6 +236,28 @@ Not red, each recorded with its reason:
 | 340 statfs check removed | CHK-M10-214 (cgroup v1 VM) | the runner still refuses at its second check, "not on the unified cgroup v2 hierarchy" (`/proc/self/cgroup`); defence in depth holds | G72 (injected statfs) |
 
 The plants were applied only in throwaway copies; the tree was never planted.
+
+### 2026-11-03: fixes and re-run (user decisions 2026-11-03)
+
+| Finding | Decision | Change | Commit |
+| --- | --- | --- | --- |
+| CHK-M10-201 `/dev/shm` | fix in the unit | `ReadOnlyPaths=/dev/shm` in `bitscan-runner.service` and the TS §3.7 block | 86f33a6 |
+| CHK-M10-203 exec from the private `/tmp` | fix in the unit | `NoExecPaths=/ /tmp /var/tmp` (unit and TS §3.7); `check_units_verbatim.py` ranges after L308 +2 | 86f33a6 |
+| CHK-M10-222 cramfs | rewrite the sample | both samples fall back to the kernel packages' file lists, `unknown` (FAIL) when blind; `prepare()` gives 0 findings for both; BIT102 sample rows 33/33 | 1072e5e |
+| Plants 333, 382 | keep, expected not red | sandbox.yml `expect: not-red` | 8b0e514 |
+| G76 on stand-in VMs | counts | — | — |
+
+Both drop-in variants were first tried live on the 24.04 and 22.04 VMs (each line alone fixes only its row; together both rows pass, 211 and 212 stay green). The sample fallback was checked inside the sandbox and as root on the 22.04 VM with a module the kernel ships (`cpuid`): both `loaded=no install=no blacklist=no` (before: `absent` in the sandbox).
+
+| Host (fixed `.deb` sha256 `3b95a10f…b776`) | PASS | FAIL | NOT RUN |
+| --- | --- | --- | --- |
+| QEMU Ubuntu 24.04 (kernel 6.8, systemd 255) | 34 | 0 | 2 (214 v2 host, 219b) |
+| QEMU Ubuntu 22.04 (kernel 5.15, systemd 249) | 34 | 0 | 2 (214 v2 host, 219b) |
+| Hosted ubuntu-22.04 and ubuntu-24.04 with `auditd`, run 6 | job green | 0 | 214, 219b |
+
+Plants, run 6 (8b0e514): 26/26 jobs green: 24 red for their own sub-check, including **394** (no `ReadOnlyPaths=/dev/shm` → CHK-M10-201 `/dev/shm` red) and **395** (`NoExecPaths=/` only → CHK-M10-203 `/tmp copy` red); 333 and 382 green as expected. Reports: `work/reports/m10-sandbox/g-n24.md`, `g-j22.md`.
+
+**G76, the G78 host part, the VM plants and TASK-230 are done**, with the lead's second look at TASK-230 (PD-43) still to do.
 
 ## NOT RUN so far
 
