@@ -16,8 +16,10 @@ Delegate=yes
 # Whole filesystem read-only; the only writable place is a private /tmp
 ProtectSystem=strict
 PrivateTmp=yes
-# Only system binaries can be executed; /tmp and user paths cannot
-NoExecPaths=/
+# /dev/shm is shared with the host and ProtectSystem= leaves it writable: make it read-only
+ReadOnlyPaths=/dev/shm
+# Only system binaries can be executed; /tmp and user paths cannot (NoExecPaths=/ does not reach the private /tmp and /var/tmp, so they are listed)
+NoExecPaths=/ /tmp /var/tmp
 ExecPaths=/usr /bin /sbin /lib -/lib64
 ProtectHome=read-only
 UMask=0077

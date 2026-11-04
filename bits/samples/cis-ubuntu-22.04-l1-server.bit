@@ -9,14 +9,20 @@
   <PluginsGroups>
     <Plugin>
       <PluginName>1.1.1.1 - Ensure mounting of cramfs filesystems is disabled</PluginName>
-      <PluginDescription>Checks that the cramfs module is not loaded and, if the kernel ships it, that a modprobe.d file sets "install cramfs /bin/false" (or /bin/true) and "blacklist cramfs". Prints "absent" when the kernel has no cramfs module, otherwise the three observed states.</PluginDescription>
+      <PluginDescription>Checks that the cramfs module is not loaded and, if the kernel ships it, that a modprobe.d file sets "install cramfs /bin/false" (or /bin/true) and "blacklist cramfs". Prints "absent" when the kernel has no cramfs module, otherwise the three observed states. The module is looked for under /lib/modules and, where that is hidden (the runner sandbox sets ProtectKernelModules=yes), in the installed kernel packages' file lists; "unknown" (FAIL) when neither can be read.</PluginDescription>
       <PluginId>4ad2762c-4a2e-4cc9-b2d9-aaa07e2dd004</PluginId>
       <Execute timeout="60"><![CDATA[
         m=cramfs
         if grep -q "^$m " /proc/modules; then ld=yes; else ld=no; fi
         k=$(uname -r)
         f=$(find "/lib/modules/$k" -name "$m.ko*" -print 2>/dev/null | head -n 1)
-        if [ "$ld" = no ] && [ -z "$f" ]; then echo absent; exit 0; fi
+        if [ -z "$f" ]; then
+          f=$(grep -h "/$m\.ko" /var/lib/dpkg/info/linux-modules*-"$k".list 2>/dev/null | head -n 1)
+        fi
+        if [ "$ld" = no ] && [ -z "$f" ]; then
+          if [ ! -d "/lib/modules/$k/kernel" ] && ! ls /var/lib/dpkg/info/linux-modules*-"$k".list >/dev/null 2>&1; then echo unknown; exit 0; fi
+          echo absent; exit 0
+        fi
         ins=no
         bl=no
         for c in /etc/modprobe.d/*.conf /run/modprobe.d/*.conf /usr/local/lib/modprobe.d/*.conf /lib/modprobe.d/*.conf; do

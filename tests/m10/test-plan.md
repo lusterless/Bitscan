@@ -4,7 +4,9 @@ Owner: `tester-m10` (Go unit, agent, race, fuzz, property and Linux suites, non-
 
 `ag/` means `agent/`. Sizes per #57: 1 MiB = 1,048,576; 64 KB = 65,536; 16 KB = 16,384; 1.5 MB = 1,572,864; 32 MiB = 33,554,432; 4 MiB = 4,194,304.
 
-## VM and sandbox rows: NOT RUN (decisions 2026-10-30, "M10 VM sandbox work stopped by the safety check")
+## VM and sandbox rows: RUN 2026-11-02/03 (originally NOT RUN, decisions 2026-10-30)
+
+**Update 2026-11-03:** the harness below was built and every row was run: `agent/test/sandbox/` (`run_vm.sh`, `sandbox.py`, `plants.sh`), `.github/workflows/sandbox.yml` (TASK-230) and, for G79, the lead's scripts on the Hyper-V VMs. Results: `work/reports/M10-vm-test.md` and `tests/m10/report.md` ("M10 sandbox suite"). G76 ran on stand-in QEMU VMs (Ubuntu 22.04 and 24.04 cloud images), which the user ruled count (decisions 2026-11-03 (4)). The text below is the 2026-10-30 plan, kept as written.
 
 The safety classifier stopped the VM sandbox work before any boot, build or file write. Under the user's up-front rule (2) and the lead's ruling, **the sandbox harness (`ag/test/sandbox/`, `e2e/m10/first_run.sh`) is not built by anyone in this session**, and every row that needs it is recorded **NOT RUN, reason "safety-classifier refusal (VM sandbox)"**, with its lower-level cover named. This covers G76, G77 (TASK-230 only runs that harness), the host half of G78, G79, the 23 VM-planted mutation rows, and every CHK-M10-200 to -299 row. The rows are still defined below, from the acceptance criteria, so a fresh session or the user can run them. Owner: **open** (the lead decides). M10 does not merge while they are NOT RUN until the user decides whether they are a gate exception.
 
@@ -16,7 +18,7 @@ The safety classifier stopped the VM sandbox work before any boot, build or file
   - **W**: WSL Ubuntu 24.04 (`wsl -d Ubuntu-24.04 -u root`, `MSYS_NO_PATHCONV=1`), Go `/opt/go1.27.2/bin/go` (= `agent/go.mod` `go 1.27.2`). Each run is in its own copy `/root/bstest-m10-<label>`: `agent/`, `docs/spec/`, `bits/samples/`, `manager/tests/contract/fixtures/` copied from the worktree. `-race` on every unit run, and every run under `timeout`.
   - **WD**: W under a delegated cgroup: `systemd-run --wait --pipe --collect -p Delegate=yes [-p User=…] <go test binary> -test.run …`. Checked 2026-10-30 in WSL: `stat -fc %T /sys/fs/cgroup` = `cgroup2fs`, systemd 255 is PID 1, and a `systemd-run -p Delegate=yes` unit sees its own `cgroup.kill`. The delegated-cgroup rows therefore run in WSL, not only in CI.
   - **CI**: GitHub Actions only.
-  - **VM**: NOT RUN (see above).
+  - **VM**: run 2026-11-02/03 (see above): Hyper-V `bitscan-u2204`/`bitscan-u2404` for G41, G79 and the runbook walk; stand-in QEMU VMs and the hosted runners for G76/G77.
 - Python rows (the RE2 cross-check) run on W only: `/root/venv-m10` with `pip install --require-hashes -r manager/requirements-dev.txt`, `CI=true`, nothing skipped.
 - **Exec counter**: a test double that counts calls. The serve loop is tested with a fake `Executor` that counts `Run`; the real executor with a counting `Spawn` func. "Exec counter 0" means the double saw no call, and on Linux rows also that no child process of the test binary appeared (a `/proc` scan for children before and after).
 - **Canary**: `M10CANARY-<random hex>`, placed in an `execute`, a redaction pattern, a plugin's stdout and stderr, and a token. "Leaves no trace" means absent from every captured `slog` record (message and attributes), stderr of a built binary, error strings, and every file under the state or spool directory.
@@ -80,10 +82,10 @@ The safety classifier stopped the VM sandbox work before any boot, build or file
 | G73 agent suites | CHK-M10-025 to -034, -051 to -079, -182 to -187 | L, W, CI |
 | G74 capread | CHK-M10-137 to -146, -176 to -181 | W, CI |
 | G75 protocol and import boundary | CHK-M10-001 to -010, -196 to -199 | L, W, CI |
-| G76 sandbox on VMs | CHK-M10-200 to -259 | VM: **NOT RUN** (safety-classifier refusal) |
-| G77 sandbox on hosted runners | CHK-M10-200 to -259 | CI: **NOT RUN** (waits on the same harness) |
-| G78 runner security | unit part CHK-M10-260 to -269; host part CHK-M10-280 to -289 | unit: L, W; host: **NOT RUN** |
-| G79 first compliance run | CHK-M10-290 to -299 | **NOT RUN** |
+| G76 sandbox on VMs | CHK-M10-200 to -259 | VM (stand-in): **PASS** 2026-11-03, 34 PASS, 0 FAIL, 2 NOT RUN (214 runs on the cgroup v1 VM: PASS; 219b: walk §10 PASS) |
+| G77 sandbox on hosted runners | CHK-M10-200 to -259 | CI: **PASS** (sandbox.yml run 6, 8b0e514) |
+| G78 runner security | unit part CHK-M10-260 to -269; host part CHK-M10-280 to -289 | unit: L, W; host: **PASS** (all four v2 hosts) |
+| G79 first compliance run | CHK-M10-290 to -299 | **PASS** on `bitscan-u2404` (CHK-M10-290 to -292, 2026-11-02); the manager half of -344 not run (runner half CHK-M10-344v PASS) |
 
 ## TP-M10-01 Harness (tester-m10's part)
 
@@ -93,7 +95,7 @@ The safety classifier stopped the VM sandbox work before any boot, build or file
 | CHK-M10-H02 | CODE | Fake executor and counting `Spawn` for the runner tests (the exec counter) | L, W |
 | CHK-M10-H03 | CODE | Redaction corpus `ag/internal/redact/testdata/` (fixtures with expected outputs) and the shared corpus `manager/tests/contract/fixtures/redaction/corpus.json` (inputs, plus the expected match byte spans per default pattern) | L, W |
 | CHK-M10-H04 | CODE | TS extraction helper (Go): reads `docs/spec/Technical_Specification.md`, takes the `text` fence after "**Default redaction patterns**", returns the five lines; fails if it doesn't find exactly 5 | L, W |
-| — | — | The driver, probe, VM runner, planted listeners and `e2e/m10/first_run.sh` are **not built** (safety-classifier refusal; not re-delegated) | — |
+| — | — | Built 2026-11-02: driver, probes and planted listeners in `agent/test/sandbox/sandbox.py`, the host runner `run_vm.sh`, plants `plants.sh`. `e2e/m10/first_run.sh` was not built; G79 ran from the lead's VM scripts instead | VM, CI |
 
 ## TP-M10-02 Protocol (TASK-209; REQ-234) — `ag/internal/runner/proto/proto_test.go`
 
@@ -326,9 +328,9 @@ PD-45 rewrite (filled at TASK-223 TEST, listed in `report.md`): CHK-M4-220 (the 
 | CHK-M10-198 | CODE | REQ-254 (2) static: no agent, runner or capread non-test code calls `systemctl`, `busctl`, a D-Bus library, or writes under `/etc/systemd` or `/run/systemd` (string and import scan) | L, W |
 | CHK-M10-199 | CODE | REQ-251 context and errors: every exported runner and agent job entry point takes a `context.Context`; `fmt.Errorf` calls that wrap an error use `%w` (go vet + an AST scan; recorded list of exceptions) | L, W |
 
-## TP-M10-20 Sandbox suite (REQ-259, REQ-262 and the host rows) — NOT RUN (safety-classifier refusal (VM sandbox))
+## TP-M10-20 Sandbox suite (REQ-259, REQ-262 and the host rows) — RUN 2026-11-02/03, PASS after the 2026-11-03 unit and sample fixes
 
-Each row is defined from its criterion so it can be run later. Owner: open. Cover is named per row.
+Each row was defined from its criterion; `agent/test/sandbox/sandbox.py` implements them. First run: CHK-M10-201 (`/dev/shm`), -203 (exec from the private `/tmp`) and -222 (cramfs sample) FAIL on real hosts; fixed by user decision 2026-11-03, then PASS. The cover column below is the original fallback.
 
 | Check | What (on `bitscan-u2204`, `bitscan-u2404`, and the hosted runners) | Lower-level cover |
 | --- | --- | --- |
@@ -364,19 +366,34 @@ Each row is defined from its criterion so it can be run later. Owner: open. Cove
 | CHK-M10-260 | CODE | Unit part, expired, foreign, replayed jobs refused by the runner checks and through the serve loop (CHK-M10-035, -167), nothing executed, one log line without payload | L, W |
 | CHK-M10-261 | CODE | Wrong peer (CHK-M10-118); non-job requests (CHK-M10-165, -166); capread names (CHK-M10-138) | W |
 | CHK-M10-270 | CODE | Agent half (G36): the M4 security rows (expired, foreign, replayed by the agent; certificate failing verification or its pin) re-run unchanged; plus CHK-M10-356 and -358 (no job stored, no resend) in `ag/internal/agent/security_test.go` | W |
-| CHK-M10-280 to -289 | APP | Host part through the driver (REQ-236 (5), REQ-261 (1) on a sandbox host) | **NOT RUN** (safety-classifier refusal (VM sandbox)); cover CHK-M10-260, -261 |
+| CHK-M10-280 to -289 | APP | Host part through the driver (REQ-236 (5), REQ-261 (1) on a sandbox host), defined below | VM, CI (`agent/test/sandbox/sandbox.py`; 2026-11-02, see `tests/m10/report.md` "M10 sandbox suite") |
 
-## TP-M10-22 First compliance run (REQ-263; G79) — NOT RUN
+Host part, defined 2026-11-02 from REQ-236 (5) and REQ-261 (1). Each request is sent straight to `/run/bitscan/runner.sock` by the suite's driver as uid `bitscan` (unless stated) on a throwaway sandbox host with the installed `.deb`. "Nothing executed" means the job's plugin, which would connect to a root-owned 0666 marker socket and send a row tag, never did. "One log line" means exactly one runner journal line holds the job id, it has the refusal word, and it holds no `execute` text.
 
-CHK-M10-290 (scan reaches `completed`, SR §1.1 plugin PASS), CHK-M10-291 (the `bsa_` canary stored `[REDACTED]`), CHK-M10-292 (masked runner → every result ERROR `runner_unavailable`, job `completed`, no retry): **NOT RUN** (safety-classifier refusal (VM sandbox)). Cover (REQ-263 (4)): CHK-M10-073, -074, -155 (fake manager and fake runner; real executor redaction).
+| Check | Request | Expected |
+| --- | --- | --- |
+| CHK-M10-280 | Expired: `pickup_by` 60 s ago | one `refused` `pickup_passed`; nothing executed; one log line |
+| CHK-M10-281 | Foreign: a random `agent_id` | one `refused` `foreign_agent`; nothing executed; one log line |
+| CHK-M10-282 | Replayed: a job runs, then the same `job_id` is sent again with a different plugin | first accepted and executed; second one `refused` `replayed`, its plugin never executed; one `replayed` line |
+| CHK-M10-283 | Wrong peer: root, and a user in group `bitscan` | connection closed without a frame; nothing executed; `sdsock: peer refused` lines name the uids |
+| CHK-M10-284 | A bare JSON string | one `refused` `malformed`; nothing executed |
+| CHK-M10-285 | A `plugins` list without a job | one `refused` `malformed`; nothing executed |
+| CHK-M10-286 | Two whole request frames in one write | at most the first accepted (the extra bytes cancel it, serve.go); the second never decoded, executed or logged |
+| CHK-M10-287 | An inventory job (no `plugins` or patterns) | one `refused` `not_compliance`; nothing executed |
+| CHK-M10-288 | An unknown key `"command"` beside `job` | one `refused` `malformed`; nothing executed |
+| CHK-M10-289 | capread, with the helper enabled: as `bitscan-runner`, `nft_ruleset x`, `NFT_RULESET`, `../nft`, `/usr/sbin/nft`, an empty line, 33 bytes, `id`, `shutdown`, `nft_ruleset;id`, `audit_rules -D`; root and `bitscan` as peers; the client with a path | each name `error unknown_request`; `nft_ruleset` answered `ok` (control); root closed without a reply, `bitscan` EACCES; the client exits 2; the helper has no child left |
+
+## TP-M10-22 First compliance run (REQ-263; G79) — PASS 2026-11-02 on `bitscan-u2404`
+
+CHK-M10-290 (scan reaches `completed`, SR §1.1 plugin PASS), CHK-M10-291 (the `bsa_` canary stored `[REDACTED]`), CHK-M10-292 (masked runner → every result ERROR `runner_unavailable`, job `completed`, no retry): **PASS** 2026-11-02 (`work/reports/M10-vm-test.md` "G79"; originally NOT RUN, safety-classifier refusal). Cover (REQ-263 (4)): CHK-M10-073, -074, -155 (fake manager and fake runner; real executor redaction).
 
 ## TP-M10-23 CI and docs (TASK-229, TASK-230, TASK-231; REQ-257, REQ-258)
 
 | Check | Type | What | Where |
 | --- | --- | --- | --- |
 | CHK-M10-313 | CODE | TASK-229: `agent.yml` replaces the M0 stub step with: the runner and `bitscan-capread --serve` exit 1 outside systemd, the capread client with no argument exits 2; `go test ./...` on `ubuntu-22.04` and `ubuntu-24.04`; actions pinned by SHA as in M0; actionlint clean; `grep -n arm64` and `grep -n debian:12` find nothing new (REQ-257 (2)). The new step goes red with the M0 stub runner put back (run the step's commands locally on the stub build in W; the live PR run is recorded from CI) | W, CI |
-| CHK-M10-314 | CODE | TASK-230 sandbox CI: **NOT RUN** (it runs only the refused harness; lead's ruling) | — |
-| CHK-M10-315 | CODE | TASK-231: `dpkg-parsechangelog -S Version` = `0.2.0~pre1-1`; the runbook additions exist (unified cgroup v2 prerequisite and how `runner_unavailable` shows; enabling and disabling capread on the host; `findmnt --task 1`; the spool and `spool_bytes`); README says hosts run compliance jobs and the results views come with M11; no token, password, internal id or process note (grep for `bs[aeku]_`, `TASK-`, `REQ-`, `CHK-`, `tester`, `impl-`); `check_md_links.py` and `check_runbook_text.py` pass. The VM runbook walk (REQ-258 (1)) is NOT RUN (safety-classifier refusal (VM sandbox)); cover: each command checked for syntax and against the unit and file table | W |
+| CHK-M10-314 | CODE | TASK-230 sandbox CI: **PASS** (`sandbox.yml` runs 1–6; run 6 29/29 jobs, 8b0e514). Lead's second look (PD-43) pending | CI |
+| CHK-M10-315 | CODE | TASK-231: `dpkg-parsechangelog -S Version` = `0.2.0~pre1-1`; the runbook additions exist (unified cgroup v2 prerequisite and how `runner_unavailable` shows; enabling and disabling capread on the host; `findmnt --task 1`; the spool and `spool_bytes`); README says hosts run compliance jobs and the results views come with M11; no token, password, internal id or process note (grep for `bs[aeku]_`, `TASK-`, `REQ-`, `CHK-`, `tester`, `impl-`); `check_md_links.py` and `check_runbook_text.py` pass. The VM runbook walk (REQ-258 (1)) **PASS** 2026-11-02 on `bitscan-u2404` and `bitscan-u2204`, with the §6 upgrade (`work/reports/M10-vm-test.md`; originally NOT RUN, safety-classifier refusal); fallback cover: each command checked for syntax and against the unit and file table | W |
 
 ## TP-M10-24 Gate rows
 
@@ -409,35 +426,35 @@ CHK-M10-290 (scan reaches `completed`, SR §1.1 plugin PASS), CHK-M10-291 (the `
 
 ## Mutation table (CHK-M10-320 to -393): where each plant must go red
 
-Each plant is made in a throwaway copy and run against the named check. **VM** rows (also planted as a throwaway `.deb`) are NOT RUN on hosts (safety-classifier refusal (VM sandbox)), but their unit-level plant still runs where a unit check exists. Rows with no unit-level check are NOT RUN in full.
+Each plant is made in a throwaway copy and run against the named check. **VM** rows (also planted as a throwaway `.deb`) are run on hosts since 2026-11-02 (hosted ubuntu-24.04, `sandbox.yml` plant job; -340 on the cgroup v1 VM; previously NOT RUN, safety-classifier refusal), but their unit-level plant still runs where a unit check exists. Rows with no unit-level check are NOT RUN in full.
 
 | CHK | Red in (unit level) | VM part |
 | --- | --- | --- |
-| -320 peer check removed | CHK-M10-118 | NOT RUN |
+| -320 peer check removed | CHK-M10-118 | red (CHK-M10-283) |
 | -321 gid compared | CHK-M10-118 | — |
 | -322 second frame run | CHK-M10-166 | — |
 | -323 unknown key accepted | CHK-M10-003, -165 | — |
 | -324 inventory job accepted | CHK-M10-003, -035, -165 | — |
-| -325 runner `agent_id` check removed | CHK-M10-035, -167 | NOT RUN |
+| -325 runner `agent_id` check removed | CHK-M10-035, -167 | red (CHK-M10-281) |
 | -326 > 25 h accepted | CHK-M10-035 | — |
-| -327 seen set removed | CHK-M10-035, -038, -167 | NOT RUN |
+| -327 seen set removed | CHK-M10-035, -038, -167 | red (CHK-M10-282) |
 | -328 `pickup_by` = now accepted | CHK-M10-035 | — |
-| -329 `PR_SET_DUMPABLE` not set | CHK-M10-111, -189 | NOT RUN |
-| -330 fd 3 not CLOEXEC | CHK-M10-120 | NOT RUN |
-| -331 runner environment inherited | CHK-M10-127 | NOT RUN |
+| -329 `PR_SET_DUMPABLE` not set | CHK-M10-111, -189 | red (CHK-M10-205) |
+| -330 fd 3 not CLOEXEC | CHK-M10-120 | red (CHK-M10-206) |
+| -331 runner environment inherited | CHK-M10-127 | red (CHK-M10-211) |
 | -332 `TMPDIR` added / `PATH` changed | CHK-M10-127 | — |
-| -333 stdin inherited | CHK-M10-127 | NOT RUN |
-| -334 niceness not applied | CHK-M10-128 | NOT RUN |
-| -335 I/O class not applied | CHK-M10-128 | NOT RUN |
-| -336 plugin in `supervisor` | CHK-M10-129, -102 | NOT RUN |
-| -337 no `cgroup.kill` at exit | CHK-M10-147 | NOT RUN |
-| -338 sweep removed | CHK-M10-103, -147 | NOT RUN |
-| -339 sweep skips nested | CHK-M10-103, -147 | NOT RUN |
-| -340 statfs check removed | CHK-M10-110 | NOT RUN |
+| -333 stdin inherited | CHK-M10-127 | not red: stdin is already /dev/null under systemd (expected, user 2026-11-03) |
+| -334 niceness not applied | CHK-M10-128 | red (CHK-M10-211) |
+| -335 I/O class not applied | CHK-M10-128 | red (CHK-M10-211) |
+| -336 plugin in `supervisor` | CHK-M10-129, -102 | red (CHK-M10-210) |
+| -337 no `cgroup.kill` at exit | CHK-M10-147 | red (CHK-M10-212 (1b)) |
+| -338 sweep removed | CHK-M10-103, -147 | red (CHK-M10-212) |
+| -339 sweep skips nested | CHK-M10-103, -147 | red (CHK-M10-212) |
+| -340 statfs check removed | CHK-M10-110 | not red: the runner still refuses at the `/proc/self/cgroup` check (cgroup v1 VM) |
 | -341 temp dir kept | CHK-M10-131, -156 | — |
 | -342 private `/tmp` not emptied | CHK-M10-150 | — |
-| -343 timeout not enforced | CHK-M10-148 | NOT RUN |
-| -344 truncate before redact | CHK-M10-020, -080 | (G79 NOT RUN) |
+| -343 timeout not enforced | CHK-M10-148 | red (CHK-M10-212 (7)) |
+| -344 truncate before redact | CHK-M10-020, -080 | red at the runner reply (CHK-M10-344v); manager-stored half not run |
 | -345 cut-off skipped without pattern 2 | CHK-M10-018, -019 | — |
 | -346 read limit or drain removed | CHK-M10-044, -045 | — |
 | -347 `truncated` not set on overflow | CHK-M10-023 | — |
@@ -464,10 +481,10 @@ Each plant is made in a throwaway copy and run against the named check. **VM** r
 | -368 start notice missing or late | CHK-M10-065 | — |
 | -369 two jobs at once | CHK-M10-078 | — |
 | -370 inventory waits | CHK-M10-078 | — |
-| -371 third capread name | CHK-M10-138 | NOT RUN |
+| -371 third capread name | CHK-M10-138 | red (CHK-M10-289) |
 | -372 request text as argument | CHK-M10-138 | — |
-| -373 capread environment passed | CHK-M10-137 | NOT RUN |
-| -374 capread peer check removed | CHK-M10-139 | NOT RUN |
+| -373 capread environment passed | CHK-M10-137 | red (CHK-M10-217 env probe) |
+| -374 capread peer check removed | CHK-M10-139 | red (CHK-M10-289) |
 | -375 capread timeout 60 s | CHK-M10-140 | — |
 | -376 capread cap removed / cut sent | CHK-M10-140 | — |
 | -377 capread parallel | CHK-M10-141 | — |
@@ -475,18 +492,20 @@ Each plant is made in a throwaway copy and run against the named check. **VM** r
 | -379 `exec.Command` in `compliance.go` | CHK-M10-301 | — |
 | -380 agent imports runner/redact | CHK-M10-196 | — |
 | -381 runner imports `net/http` | CHK-M10-196 | — |
-| -382 runner logs stdout canary | CHK-M10-155, -171 | (canary sweep NOT RUN) |
+| -382 runner logs stdout canary | CHK-M10-155, -171 | not red: the runner never writes debug lines (expected, user 2026-11-03) |
 | -383 agent logs result stdout | CHK-M10-077 | — |
 | -384 heartbeat triggers runner | CHK-M10-079 | — |
 | -385 euid 0 accepted | CHK-M10-110 | — |
-| -386 capability check removed | CHK-M10-110 | NOT RUN |
+| -386 capability check removed | CHK-M10-110 | red (CHK-M10-215) |
 | -387 unit character changed | CHK-M10-305 | — |
-| -388 D-Bus policy allows `StartUnit` | CHK-M10-305 | NOT RUN |
-| -389 no `InaccessiblePaths=` | CHK-M10-305 | NOT RUN |
-| -390 no `NoExecPaths=` | CHK-M10-305 | NOT RUN |
-| -391 runner keeps running after close | CHK-M10-151, -169 | NOT RUN |
+| -388 D-Bus policy allows `StartUnit` | CHK-M10-305 | red (CHK-M10-207) |
+| -389 no `InaccessiblePaths=` | CHK-M10-305 | red (CHK-M10-204) |
+| -390 no `NoExecPaths=` | CHK-M10-305 | red (CHK-M10-203 `/home`) |
+| -391 runner keeps running after close | CHK-M10-151, -169 | red (CHK-M10-212 (10)) |
 | -392 foreign result spooled | CHK-M10-074, -052 | — |
 | -393 `agent_id` read once | CHK-M10-041 | — |
+| -394 unit without `ReadOnlyPaths=/dev/shm` (2026-11-03) | CHK-M10-305 | red (CHK-M10-201) |
+| -395 unit with `NoExecPaths=/` only (2026-11-03) | CHK-M10-305 | red (CHK-M10-203 `/tmp`) |
 
 ## Questions (answered by `main`, decisions row "tester-m10's M10 plan questions", 2026-10-30)
 

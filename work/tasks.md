@@ -2483,6 +2483,8 @@ Each row is planted in a throwaway copy and must turn the named gate red. S = se
 | CHK-M10-391 | The runner keeps running plugins after the agent closes the connection | G72, G76 | TASK-224, 225 | S, VM |
 | CHK-M10-392 | A result for a plugin not in the job is spooled by the agent | G73 | TASK-218, 223 | S |
 | CHK-M10-393 | The runner reads the `agent_id` file once at start instead of per job | G72 | TASK-213 | |
+| CHK-M10-394 | Runner unit without `ReadOnlyPaths=/dev/shm` (2026-11-03 fix) | G17, G76/G77 | units (no task) | S, VM |
+| CHK-M10-395 | Runner unit with `NoExecPaths=/` only (2026-11-03 fix undone) | G17, G76/G77 | units (no task) | S, VM |
 
 ### Open items for M10
 
