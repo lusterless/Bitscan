@@ -234,3 +234,5 @@ Reviewer: reviewer, 2026-11-04. Full review: `work/reviews/PR20.md` (diff `9f2a9
 - finding 2 (should-fix): a crashed row counts as "red" for plants without an `@part`.
 
 Both are test-harness changes. Neither touches the unit, the samples or product code, so the unit approval above stands through those fixes, unless the fix round touches `deploy/systemd/` or `docs/spec/`.
+
+**Round 2 (2026-11-04, 3f533da):** both findings are fixed and `PR20.md` round 2 is APPROVED. The recommendation holds, on condition that the `[sandbox-plants]` run on 3f533da shows the same plants red as run 6.
