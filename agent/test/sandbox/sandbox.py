@@ -38,7 +38,6 @@ import threading
 import time
 import traceback
 import uuid
-import xml.etree.ElementTree as ET  # noqa: S405 - repo-owned sample files only
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -986,9 +985,15 @@ def r222(ctx: Ctx) -> tuple[str, str]:
     sdir = getattr(ctx, "samples", None)
     if not sdir or not os.path.isdir(sdir):
         return ("NOT RUN", "no samples directory given (--samples)")
+    try:
+        # Parse XML only with defusedxml (security invariants): no DTD, no
+        # external entities, even for repo-owned samples.
+        from defusedxml import ElementTree as DET
+    except ImportError:
+        return ("NOT RUN", "defusedxml is not installed on this host (run_vm.sh --samples installs python3-defusedxml)")
     plugins: list[tuple[str, str, int]] = []
     for f in sorted(Path(sdir).glob("*.bit")):
-        root = ET.parse(f).getroot()  # noqa: S314 - repo-owned samples
+        root = DET.parse(str(f), forbid_dtd=True).getroot()
         for p in root.iter():
             if p.tag.split("}")[-1] != "Plugin":
                 continue
@@ -1258,9 +1263,14 @@ def cleanup(ctx: Ctx) -> None:
 def cgroup_v1_mode(ctx: Ctx, out: Path, expect_red: str | None, label: str) -> int:
     """VM row CHK-M10-214 on a host booted with cgroup v1 (u2204)."""
     res = run_job(ctx, [plugin(mark_cmd("M214"))], timeout=8)
-    time.sleep(1)
-    j = journal(ctx, RUNNER_UNIT)
-    ref = [l for l in j.splitlines() if "start-up refused" in l]
+    # The refusal is logged when systemd has started the runner, which can
+    # lag the client's timeout on a slow (emulated) host: wait up to 30 s.
+    ref: list[str] = []
+    for _ in range(30):
+        time.sleep(1)
+        ref = [l for l in journal(ctx, RUNNER_UNIT).splitlines() if "start-up refused" in l]
+        if ref:
+            break
     st, ev = verdict([("no accepted frame (%s %s)" % (res["kinds"], res["status"]), "accepted" not in res["kinds"]),
                       ("nothing executed", "M214" not in "".join(ctx.marks)),
                       ("journal start-up refused (%d)" % len(ref), bool(ref))], " | ".join(ref[:2])[:300])
@@ -1295,7 +1305,9 @@ def write_report(out: Path, rows: list[dict], expect_red: str | None, label: str
         # row already red on a clean build cannot hide a missed plant.
         rid, _, part = expect_red.partition("@")
         hit = [r for r in rows if r["id"] == rid]
-        red = bool(hit) and hit[0]["status"] == "FAIL"
+        # A row that crashed ("suite error") never counts as red: the plant
+        # must make the row's own check fail (REQ-262, PR #20 review).
+        red = bool(hit) and hit[0]["status"] == "FAIL" and not hit[0]["evidence"].startswith("suite error")
         if red and part:
             red = any(part in c and c.endswith("FAILED") for c in hit[0]["evidence"].split(" | ")[0].split("; "))
         print("EXPECT-RED %s: %s" % (expect_red, "RED (plant caught)" if red else "NOT RED (plant missed)"))

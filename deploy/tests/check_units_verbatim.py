@@ -21,7 +21,9 @@ from pathlib import Path
 
 SPEC = Path("docs/spec/Technical_Specification.md")
 
-# file name -> (opening fence line, closing fence line), 1-based, from work/tasks.md
+# file name -> (opening fence line, closing fence line), 1-based, in the current TS
+# (work/tasks.md TASK-007/008/092 give the pre-2026-11-03 ranges; TS L308 onwards
+# moved down 2 lines with the runner unit change, decisions 2026-11-03)
 AGENT: dict[str, tuple[int, int]] = {
     "bitscan-runner.socket": (289, 302),
     "bitscan-runner.service": (308, 365),

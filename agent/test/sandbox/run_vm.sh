@@ -19,11 +19,13 @@ HERE=$(cd "$(dirname "$0")" && pwd -P)
 ARGS=()
 NFT=0
 AUDITD=0
+SAMPLES=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--with-nft) NFT=1 ;;
 	--with-auditd) AUDITD=1 ;;
 	--samples | --rows | --expect-red | --label)
+		[ "$1" = --samples ] && SAMPLES=1
 		ARGS+=("$1" "$2")
 		shift
 		;;
@@ -40,8 +42,10 @@ done
 }
 mkdir -p "$OUT"
 export DEBIAN_FRONTEND=noninteractive
-if [ "$NFT" = 1 ] || [ "$AUDITD" = 1 ]; then
+if [ "$NFT" = 1 ] || [ "$AUDITD" = 1 ] || { [ "$SAMPLES" = 1 ] && ! python3 -I -c 'import defusedxml' 2>/dev/null; }; then
 	pk=()
+	# CHK-M10-222 parses the .bit samples, with defusedxml only (security invariants)
+	[ "$SAMPLES" = 1 ] && pk+=(python3-defusedxml)
 	[ "$NFT" = 1 ] && pk+=(nftables)
 	[ "$AUDITD" = 1 ] && pk+=(auditd)
 	apt-get install -y --no-install-recommends "${pk[@]}" >"$OUT/apt.log" 2>&1 || {

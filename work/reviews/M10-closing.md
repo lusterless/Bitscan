@@ -196,3 +196,41 @@ Merge on a green PR CI, in particular:
 - `agent.yml`'s refusal step and its delegated step on both hosted images. The delegated step is the first 22.04 run of the 37 delegated rows.
 
 Stage explicit paths only, and never `agent/bitscan-runner.exe`. If a hosted delegated row fails on 22.04, for example the `fchmodat2` item above, that is a finding for a fresh review, not a CI-file fix.
+
+## Addendum 2026-11-04: PR #20 (VM checks and the runner unit change)
+
+Reviewer: reviewer, 2026-11-04. Full review: `work/reviews/PR20.md` (diff `9f2a99e..8260b4e`, verdict CHANGES_REQUESTED).
+
+**What no longer holds as written above:**
+- Check 1 ("no unit, D-Bus … change") and check 3 ("Unit hardening is unchanged") described the tree M10 merged in PR #18. That tree is still true. But the follow-up PR #20 changes `deploy/systemd/bitscan-runner.service`:
+  - it adds `ReadOnlyPaths=/dev/shm`;
+  - `NoExecPaths=/` becomes `NoExecPaths=/ /tmp /var/tmp`;
+  - TS §3.7 is edited to match (user decision 2026-11-03 (1), (2)).
+- The runner now runs under 39 `[Service]` directives, not 37.
+- There is still no D-Bus, manager product, contract or web change.
+
+**Why the change does not undo this recommendation:**
+- It tightens the unit: it closes two gaps the sandbox suite found on real hosts (CHK-M10-201, -203).
+- The unit is still verbatim with TS §3.7 (`check_units_verbatim.py all`: 0 problems).
+- Every security-critical directive in `.claude/rules/deploy/packaging-and-units.md` survives.
+- Plants 394 and 395 guard the new lines.
+- I give the TS §8.2 second approval for the unit change itself in `PR20.md`.
+
+**The named exception is cleared with evidence:**
+
+| Item | Result | Note |
+| --- | --- | --- |
+| G76 | PASS on stand-in QEMU VMs, which the user ruled count | 2 NOT RUN rows, with reasons and cover |
+| G77 / TASK-230 | green | |
+| G78 host part | PASS | |
+| G79 | PASS | |
+| TASK-231 runbook walk | PASS | |
+| G41 | PASS | |
+| VM plants | red | except 333 and 382 (expected not red, user 2026-11-03) and 340 (second cgroup check holds), each recorded with its reason |
+| Manager half of CHK-M10-344 | still open | the user's call |
+
+**Does the recommendation still hold?** Yes for M10 as merged in PR #18, and yes for the unit and sample changes in PR #20. PR #20 itself should merge only after the following two findings in `PR20.md` are fixed (or the first gets a recorded user exception):
+- finding 1 (blocking): the harness parses `.bit` XML with `xml.etree` instead of `defusedxml`;
+- finding 2 (should-fix): a crashed row counts as "red" for plants without an `@part`.
+
+Both are test-harness changes. Neither touches the unit, the samples or product code, so the unit approval above stands through those fixes, unless the fix round touches `deploy/systemd/` or `docs/spec/`.

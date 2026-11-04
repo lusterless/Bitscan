@@ -194,7 +194,7 @@ The `.deb` under test is the M10 build, byte-identical to this morning's (sha256
 | --- | --- |
 | `agent/test/sandbox/run_vm.sh` | Host wrapper: installs the `.deb` (install.env, dummy inputs), stops the agent, writes a test `agent_id`, optional `--with-nft`/`--with-auditd`, runs the suite |
 | `agent/test/sandbox/sandbox.py` | Driver and rows: CHK-M10-200 to -223 (G76/G77), -280 to -289 (G78 host part, defined in `tests/m10/test-plan.md` today), -344v (runner half of the -344 boundary). PASS/FAIL/NOT RUN per row, never silent; `--expect-red ROW@part` for plants |
-| `agent/test/sandbox/plants.sh` | The 25 VM plants as exact one-anchor replacements in a throwaway `git archive` copy (refuses a git work tree) |
+| `agent/test/sandbox/plants.sh` | The 27 VM plants (25 on 2026-11-02, plus 394 and 395 on 2026-11-03) as exact one-anchor replacements in a throwaway `git archive` copy (refuses a git work tree) |
 | `.github/workflows/sandbox.yml` | TASK-230: build, suite on both runners (24.04 with `auditd`), report in the job summary and as an artifact; the plant matrix runs on `workflow_dispatch` or a push whose message holds `[sandbox-plants]`. Path filters per REQ-257 (pushes also run, a superset) |
 
 Harness defects found and fixed on the way (none product): `datetime.UTC` is 3.11+; the shell's own fds (a `$(…)` pipe at fd 3, dash's saved stdout at fd 10) were counted, so the fd probe now `exec`s Python; `pgrep -f` matched the probe shell; nft counters move between two reads; the 64 KiB token needed a non-word byte before it for `\b`; an inventory job must not carry `plugins`; a plugin read the runner's cgroup mid-hop (#136 (a)); Python 3.10 can't parse nanoseconds; cgroup v1 mode ignored `--expect-red`.
@@ -256,6 +256,13 @@ Both drop-in variants were first tried live on the 24.04 and 22.04 VMs (each lin
 | Hosted ubuntu-22.04 and ubuntu-24.04 with `auditd`, run 6 | job green | 0 | 214, 219b |
 
 Plants, run 6 (8b0e514): 26/26 jobs green: 24 red for their own sub-check, including **394** (no `ReadOnlyPaths=/dev/shm` → CHK-M10-201 `/dev/shm` red) and **395** (`NoExecPaths=/` only → CHK-M10-203 `/tmp copy` red); 333 and 382 green as expected. Reports: `work/reports/m10-sandbox/g-n24.md`, `g-j22.md`.
+
+### 2026-11-04: PR #20 review fixes (`work/reviews/PR20.md`, CHANGES_REQUESTED → fixed)
+
+- Blocking 1: `sandbox.py` parsed the `.bit` samples with `xml.etree` (two `noqa`); it now uses `defusedxml` (`forbid_dtd=True`), and `run_vm.sh --samples` installs `python3-defusedxml` when missing. CHK-M10-222 is NOT RUN with that reason if it can't.
+- Should-fix 2: a row that crashed ("suite error") no longer counts as a plant caught (REQ-262); plants rerun on the hosted runners (`[sandbox-plants]`).
+- Nits: plant count 27; the `check_units_verbatim.py` range comment; and CHK-M10-214 re-run on the fixed `.deb`. On the first try its row FAILED on timing only: the refusal line came about 8 s after the job on the emulated v1 VM, after the row's one 1 s read. The row now waits up to 30 s for the line. Re-run: **PASS** ("/sys/fs/cgroup is not cgroup2", nothing executed; `work/reports/m10-sandbox/i-j22v1.md`).
+- QEMU Ubuntu 24.04 with the fixes: 34 PASS, 0 FAIL, 2 NOT RUN (`h-n24.md`).
 
 **G76, the G78 host part, the VM plants and TASK-230 are done**, with the lead's second look at TASK-230 (PD-43) still to do.
 
