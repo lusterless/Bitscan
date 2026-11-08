@@ -6,6 +6,11 @@ answers 501 ``about:blank`` **after** its auth dependency ran. This file
 checks that order. The 501 rows are W1-only; TASK-243 TEST and TASK-244 TEST
 replace them with the filled answers. The refusal rows stay.
 
+TASK-243 TEST (tester-m11c, 2026-11-08) replaced the re-evaluate 501 rows: on
+this file's unknown SID an admin TOTP session now reaches the filled handler
+and gets 404 not_found. The filled answers are in test_reevaluate_api_pg.py
+(CHK-M11-200 to -209).
+
 Expected values: TS §6 (route groups: bsa_ / bse_ never on user routes),
 §6.2 L1083-L1093 (roles, TOTP session, restricted admin), L1125, §5.3 L1053
 (sink gate after 15 minutes), §6.3 L1133 (problem details); M2 problem types
@@ -133,11 +138,13 @@ def test_reevaluate_refusals_come_before_the_handler(
     assert (reeval_rows(env), reeval_entries(env)) == before
 
 
-def test_reevaluate_admin_session_reaches_the_501(
+def test_reevaluate_admin_session_reaches_the_handler(
     env: ApiEnv, who: dict[str, m.Caller]
 ) -> None:
+    """TASK-243 filled the handler: an admin TOTP session passes the auth
+    dependency and the unknown SID is 404 not_found (was 501 in W1)."""
     before = (reeval_rows(env), reeval_entries(env))
-    problem(call(env, "POST", REEVAL, who["admin:session"]), 501, "about:blank")
+    problem(call(env, "POST", REEVAL, who["admin:session"]), 404, "not_found")
     assert (reeval_rows(env), reeval_entries(env)) == before
 
 
@@ -149,12 +156,12 @@ def test_reevaluate_sink_gate_at_15_minutes(
     queue drains. The reads have no sink gate."""
     admin = who["admin:session"]
     m.sink_down(env, 14 * 60 + 59)
-    problem(call(env, "POST", REEVAL, admin), 501, "about:blank")
+    problem(call(env, "POST", REEVAL, admin), 404, "not_found")
     env.clock.advance(seconds=1)
     problem(call(env, "POST", REEVAL, admin), 503, "audit_sink_unavailable")
     problem(call(env, "GET", READS[0], who["viewer:session"]), 501, "about:blank")
     m.sink_up(env)
-    problem(call(env, "POST", REEVAL, admin), 501, "about:blank")
+    problem(call(env, "POST", REEVAL, admin), 404, "not_found")
 
 
 # ------------------------------------------------------------ CHK-M11-234 (APP)
