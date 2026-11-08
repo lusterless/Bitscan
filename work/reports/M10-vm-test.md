@@ -266,15 +266,15 @@ Plants, run 6 (8b0e514): 26/26 jobs green: 24 red for their own sub-check, inclu
 
 **G76, the G78 host part, the VM plants and TASK-230 are done**, with the lead's second look at TASK-230 (PD-43) still to do.
 
-## Still open (updated 2026-11-03)
+## Still open (updated 2026-11-07: M10 closed)
 
 Every row that was NOT RUN here on 2026-11-02 morning has since run (sections above). What remains:
 
 | Item | State | Next step |
 | --- | --- | --- |
-| Manager-stored half of CHK-M10-344 (a secret on the 64 KiB boundary through the agent into the stored stdout) | not run; the runner half CHK-M10-344v PASS on every host (the agent forwards the runner reply as is) | one scan on a VM against the WSL manager, or the user rules the runner half enough |
-| Reviews of the 2026-11-03 changes (runner unit and TS §3.7 text, cramfs samples, sandbox harness and `sandbox.yml`) | not reviewed | reviewer: TS §8.2 second approval for the runner unit; lead's second look at TASK-230 (PD-43); addendum to `work/reviews/M10-closing.md` ("no unit change" no longer holds) |
-| `units.yml`, `package.yml`, `agent.yml` on these commits | not run (they run on a PR or on `main`) | open the PR from `m10-vm-checks` to `main` |
+| Manager-stored half of CHK-M10-344 | **Closed by user decision 2026-11-07:** the runner half (CHK-M10-344v) is enough; the agent forwards the runner reply unchanged and the manager stores it as received | none |
+| Reviews of the 2026-11-03 changes | **Done:** `work/reviews/PR20.md` round 2 APPROVED (TS §8.2 second approval of the runner unit; lead's second look at TASK-230); closing-review addendum written | none |
+| `units.yml`, `package.yml`, `agent.yml` on these commits | **Done:** all green on PR #20 (head 7d7cd8b); PR #20 merged into `main` 2026-11-04 (c0126e1) | none |
 | `e2e/m6/manager_walk.py` stale against the manager install runbook | harness finding, not product | tester follow-up |
 | WSL leftovers from 2026-11-02 | `/var/lib/bitscan` (made for G79) and the background `bitscan-manager serve` | remove the folder and stop the manager in the next WSL session |
 

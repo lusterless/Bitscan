@@ -85,7 +85,7 @@ The safety classifier stopped the VM sandbox work before any boot, build or file
 | G76 sandbox on VMs | CHK-M10-200 to -259 | VM (stand-in): **PASS** 2026-11-03, 34 PASS, 0 FAIL, 2 NOT RUN (214 runs on the cgroup v1 VM: PASS; 219b: walk §10 PASS) |
 | G77 sandbox on hosted runners | CHK-M10-200 to -259 | CI: **PASS** (sandbox.yml run 6, 8b0e514) |
 | G78 runner security | unit part CHK-M10-260 to -269; host part CHK-M10-280 to -289 | unit: L, W; host: **PASS** (all four v2 hosts) |
-| G79 first compliance run | CHK-M10-290 to -299 | **PASS** on `bitscan-u2404` (CHK-M10-290 to -292, 2026-11-02); the manager half of -344 not run (runner half CHK-M10-344v PASS) |
+| G79 first compliance run | CHK-M10-290 to -299 | **PASS** on `bitscan-u2404` (CHK-M10-290 to -292, 2026-11-02); the manager half of -344 closed by user decision 2026-11-07 (runner half CHK-M10-344v PASS is enough) |
 
 ## TP-M10-01 Harness (tester-m10's part)
 
@@ -454,7 +454,7 @@ Each plant is made in a throwaway copy and run against the named check. **VM** r
 | -341 temp dir kept | CHK-M10-131, -156 | — |
 | -342 private `/tmp` not emptied | CHK-M10-150 | — |
 | -343 timeout not enforced | CHK-M10-148 | red (CHK-M10-212 (7)) |
-| -344 truncate before redact | CHK-M10-020, -080 | red at the runner reply (CHK-M10-344v); manager-stored half not run |
+| -344 truncate before redact | CHK-M10-020, -080 | red at the runner reply (CHK-M10-344v); manager-stored half closed by user decision 2026-11-07 |
 | -345 cut-off skipped without pattern 2 | CHK-M10-018, -019 | — |
 | -346 read limit or drain removed | CHK-M10-044, -045 | — |
 | -347 `truncated` not set on overflow | CHK-M10-023 | — |
