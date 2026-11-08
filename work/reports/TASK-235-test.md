@@ -14,6 +14,7 @@ Plan rows: [test plan](../../tests/m11/test-plan.md), "TP-M11-04". The tests bin
 | --- | --- | --- |
 | 1 | `pytest -n 3 tests/test_result_reads_pg.py tests/test_results_property_pg.py` | 21/22 passed, 1 failed, 0 errors, 0 skipped. The failure was a test bug: `test_select_only_as_bitscan_app` expected 6 statements; the calls it makes are 7. |
 | 2 | `pytest -n 0 tests/test_result_reads_pg.py::test_select_only_as_bitscan_app`, after the fix | 1/1 passed, 0 failed, 0 errors, 0 skipped |
+| 3 | both files again, `-n 3`, on the final tree after the plants | 22/22 passed, 0 failed, 0 errors, 0 skipped |
 | Lint | `ruff check`, `ruff format --check`, `mypy --strict` on both files | clean |
 
 No product bug found.
