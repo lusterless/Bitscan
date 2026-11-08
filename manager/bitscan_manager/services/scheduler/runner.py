@@ -2,8 +2,8 @@
 §8.7 L1343; REQ-080, REQ-225; #67, #128 (e); plan work/plans/TASK-061.md,
 "Scheduler wiring", and work/plans/TASK-203.md §5).
 
-APScheduler 3 (BackgroundScheduler) runs three jobs, each at most one at a
-time, on three worker threads:
+APScheduler 3 (BackgroundScheduler) runs four jobs, each at most one at a
+time, on four worker threads:
 - inventory: at start-up, then every system_schedule interval for
   'inventory' (#67). Each sweep re-reads that interval and restarts the timer
   when it changed, so a PATCH /settings takes effect within one sweep.
@@ -12,21 +12,27 @@ time, on three worker threads:
   the fleet threshold alerts.
 - scan_schedules: every 30 s, running each due scan schedule once
   (run_due_schedules; not a runtime setting, no system_schedule row).
+- retention: 10 minutes after start-up, then every system_schedule interval
+  for 'retention' (read at start-up only; 86,400 s if unreadable), running
+  run_retention() on the bitscan_retention pool only (TS §5.3 L1051; REQ-277;
+  #150 (h)). serve always passes that pool and the shipper's cursor; a runner
+  built without them (tests) schedules the other three jobs only.
 A run that raises is logged by job name and exception type only, and the
 next run still happens. Every transaction a job opens wakes the audit shipper
-on commit. On stop, a flag makes every further transaction a job asks for
-fail at once (SchedulerStopping), so a run gives up at its next sweep step,
-fleet check, interval read, inventory run or schedule row instead of waiting
-on a refusing database each time; stop() then waits for the run, so nothing
-touches the pool after it closed. Retention is not scheduled until M11.
-Nothing here opens a connection other than the manager's database.
+on commit (retention wakes it after each checkpoint). On stop, a flag makes
+every further transaction a job asks for, on either pool, fail at once
+(SchedulerStopping), so a run gives up at its next sweep step, fleet check,
+interval read, inventory run, schedule row or retention chunk instead of
+waiting on a refusing database each time; stop() then waits for the run, so
+nothing touches a pool after it closed. Nothing here opens a connection other
+than the manager's database, through those two pools.
 """
 
 import logging
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import UTC
+from datetime import UTC, timedelta
 from typing import Any, Final
 
 from apscheduler.executors.pool import (  # type: ignore[import-untyped]
@@ -39,6 +45,7 @@ from apscheduler.schedulers.background import (  # type: ignore[import-untyped]
 from bitscan_manager.repositories.jobs import JobRepo
 from bitscan_manager.repositories.settings import SettingsRepo
 from bitscan_manager.runtime import Clock, Database, Tx
+from bitscan_manager.services.retention import task as retention_task
 from bitscan_manager.services.scheduler.fleet_alerts import FleetAlerts, pg_fleet_stores
 from bitscan_manager.services.scheduler.inventory import run_inventory
 from bitscan_manager.services.scheduler.scan_schedules import (
@@ -52,9 +59,11 @@ log = logging.getLogger("bitscan_manager.scheduler")
 INVENTORY: Final = "inventory"
 SWEEP: Final = "offline_sweep"
 SCAN_SCHEDULES: Final = "scan_schedules"
-# The seeded intervals (TS §5.2 L832), used only if system_schedule cannot be
+RETENTION: Final = "retention"
+# The seeded intervals (TS §5.2 L835), used only if system_schedule cannot be
 # read at start-up; the sweep then re-reads the inventory interval.
-DEFAULT_INTERVAL_S: Final = {INVENTORY: 21_600, SWEEP: 60}
+DEFAULT_INTERVAL_S: Final = {INVENTORY: 21_600, SWEEP: 60, RETENTION: 86_400}
+RETENTION_DELAY: Final = timedelta(minutes=10)  # the first run (#150 (h))
 
 
 class SchedulerStopping(Exception):
@@ -85,13 +94,24 @@ class SchedulerRunner:
         clock: Clock,
         wake: Callable[[], None],
         scheduler: Any | None = None,  # tests may pass their own
+        *,
+        retention_db: Database | None = None,  # the bitscan_retention pool
+        shipped_through: Callable[[], int | None] | None = None,  # the shipper's
     ) -> None:
+        if (retention_db is None) != (shipped_through is None):
+            raise ValueError("retention_db and shipped_through go together")
         self._stopping = threading.Event()
         self._db: Database = _StoppableDatabase(db, self._stopping)
+        self._retention_db: Database | None = (
+            None
+            if retention_db is None
+            else _StoppableDatabase(retention_db, self._stopping)
+        )
+        self._shipped_through = shipped_through
         self._clock, self._wake = clock, wake
         self._fleet = FleetAlerts(clock)  # built once per process
         self._scheduler = scheduler or BackgroundScheduler(
-            executors={"default": ThreadPoolExecutor(3)}, timezone=UTC
+            executors={"default": ThreadPoolExecutor(4)}, timezone=UTC
         )
         self._inventory_s = DEFAULT_INTERVAL_S[INVENTORY]
 
@@ -140,10 +160,26 @@ class SchedulerRunner:
 
         self._guarded(SCAN_SCHEDULES, run)
 
+    def run_retention(self) -> None:
+        def run() -> None:
+            if self._retention_db is None or self._shipped_through is None:
+                return  # not configured (tests); serve always configures it
+            retention_task.run_retention(
+                self._retention_db,
+                self._clock.now(),
+                shipped_through=self._shipped_through,
+                wake=self._wake,
+            )
+
+        self._guarded(RETENTION, run)
+
     def start(self) -> None:
-        intervals = dict(DEFAULT_INTERVAL_S)
+        kinds = [INVENTORY, SWEEP]
+        if self._retention_db is not None:
+            kinds.append(RETENTION)
+        intervals = {kind: DEFAULT_INTERVAL_S[kind] for kind in kinds}
         try:
-            intervals = {kind: self._interval(kind) for kind in intervals}
+            intervals = {kind: self._interval(kind) for kind in kinds}
         except Exception as exc:  # the database may still be starting
             log.error(
                 "scheduler intervals not read, using the seeded values",
@@ -152,12 +188,14 @@ class SchedulerRunner:
         self._inventory_s = intervals[INVENTORY]
         first = self._clock.now()  # #67: one inventory run at start-up
         intervals[SCAN_SCHEDULES] = TICK_S
-        jobs = (
-            (INVENTORY, self.run_inventory),
-            (SWEEP, self.run_sweep),
-            (SCAN_SCHEDULES, self.run_scan_schedules),
-        )
-        for job_id, func in jobs:
+        jobs = [
+            (INVENTORY, self.run_inventory, first),
+            (SWEEP, self.run_sweep, first),
+            (SCAN_SCHEDULES, self.run_scan_schedules, first),
+        ]
+        if self._retention_db is not None:
+            jobs.append((RETENTION, self.run_retention, first + RETENTION_DELAY))
+        for job_id, func, next_run in jobs:
             self._scheduler.add_job(
                 func,
                 "interval",
@@ -166,7 +204,7 @@ class SchedulerRunner:
                 max_instances=1,
                 coalesce=True,
                 misfire_grace_time=intervals[job_id],
-                next_run_time=first,
+                next_run_time=next_run,
             )
         self._scheduler.start()
 

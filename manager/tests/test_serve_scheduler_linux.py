@@ -439,10 +439,17 @@ def test_sigterm_waits_for_the_running_sweep_and_nothing_runs_after_close(
     assert t.proc.wait(30) == 0, t.output()[-2000:]
     events = t.events()
     closed = [at for at, text in events if text == "pool closed"]
-    assert len(closed) == 1
+    # M11 (REQ-277; PD-51): serve now closes two pools, the retention pool
+    # straight after the scheduler stopped, then the app pool last. Old → new:
+    # CHK-M3-233 / CHK-M9-219's one "pool closed" → CHK-M11-196/-198's two,
+    # both after "scheduler stopping" and after the running sweep ended,
+    # nothing after the last one (test_serve_retention_linux.py names them).
+    assert len(closed) == 2
+    stops = [at for at, text in events if text == "scheduler stopping"]
+    assert len(stops) == 1 and stops[0] < closed[0]
     end = t.runs("sweep")[run]
     assert len(end) == 2 and signalled < end[1] < closed[0]
-    assert not [text for at, text in events if at > closed[0]]
+    assert not [text for at, text in events if at > closed[-1]]
     starts_after = [
         text for at, text in events if text.startswith("start") and at > signalled
     ]

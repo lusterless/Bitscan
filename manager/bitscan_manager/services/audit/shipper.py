@@ -115,6 +115,14 @@ class Shipper:
     def wake(self) -> None:
         self._wake.set()
 
+    def shipped_through(self) -> int | None:
+        """The id of the last audit entry already written to the disk queue
+        (the saved cursor); None while none has been. Read-only: retention
+        never deletes an entry above it (#150 (d))."""
+        with self._lock:
+            cursor = self._state.cursor
+        return cursor if cursor > 0 else None
+
     def _save(self, new: QueueState) -> None:
         # Memory first, so the gate holds even when the disk refuses the write;
         # a restart then re-reads from the older saved cursor (the queue skips

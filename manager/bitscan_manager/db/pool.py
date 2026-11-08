@@ -1,4 +1,5 @@
-"""The bitscan_app connection pool (TS §5.3 L1049; TASK-025 plan).
+"""The bitscan_app connection pool (TS §5.3 L1049; TASK-025 plan), also used,
+under its own name and DSN, for the bitscan_retention pool (TASK-245).
 
 Transactions are READ COMMITTED and never autocommit, as the audit chain
 needs (PgAuditRepo). On-commit hooks run only after COMMIT. No part of a DSN
@@ -182,6 +183,7 @@ class AppDatabase:
         min_size: int = 1,
         max_size: int = 10,
         connect_timeout_s: float = 5.0,
+        name: str = "bitscan_app",  # the pool's name only; the DSN picks the role
     ) -> None:
         secret = dsn.get_secret_value()
         self._dsn = dsn
@@ -204,7 +206,7 @@ class AppDatabase:
             open=False,
             configure=_configure,
             timeout=connect_timeout_s,
-            name="bitscan_app",
+            name=name,
         )
 
     def open(self) -> None:
