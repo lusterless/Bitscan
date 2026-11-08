@@ -29,6 +29,9 @@ Phase report for M11 (results and end-to-end). The lead folds in each section un
 | TASK-245 | TASK-245 TEST: PASS | `work/reports/TASK-245-test.md` |
 | TASK-255 | TASK-255 TEST: PASS | `work/reports/TASK-255-test.md` |
 | TP-M11-17 | TP-M11-17 (harness carries): PASS | `work/reports/TP-M11-17-test.md`; rows in `work/reports/M11-e2e-test.md` |
+| TP-M11-18 | TP-M11-18 (nightly harness): PASS | `work/reports/TP-M11-18-test.md`; rows in `work/reports/M11-e2e-test.md` |
+| TP-M11-19 | TP-M11-19 (N / N−1): PASS | `work/reports/TP-M11-19-test.md`; rows in `work/reports/M11-e2e-test.md` |
+| TASK-254 | TASK-254 TEST (TP-M11-20): PASS on every row run; CHK-M11-373, -374 NOT RUN (awaiting the user) | `work/reports/TASK-254-test.md` |
 
 ## TASK-236 (retention rules, pure)
 
@@ -264,6 +267,15 @@ Tester: tester-m11, 2026-11-08. r1 follows the decision of 2026-11-08 ("Correcti
 | CHK-M11-234 (r1 c) | plant `P232r1-agent-id-uuid-type` | RED | 12 failed (log `/root/m11t/logs/plants-232r1.jsonl`) |
 
 ## End-to-end and N / N−1 (tester-m11e)
+
+Counted runs (tester-m11e, 2026-11-09):
+- Hosted e2e run **42488215323** on `5671c82` (an `[e2e]` push): build success; nightly **19/19 PASS**; compat-a **10/10 PASS** (8 expected rows plus the extra -295 and -300; CHK-M11-306 is ERROR `runner_unavailable`, exit_code null, score null, errors 1); compat-b **8/8 PASS**; every gate green; 0 token-shaped strings in the artifacts.
+- Upgrade walk (CHK-M11-307) in WSL on `5671c82` with the CI `.deb`: **16/16 PASS** (196/196 installed files match the wheel's hashes; the 0.1.0 agent heartbeats and sends inventory after the manager upgrade without re-enrolment; after the agent upgrade, scan:after PASS).
+- Plants CHK-M11-370 (the runner never sends its result), -371 (a results route keeps only the first host) and -372 (a manager refusing `0.1.*` heartbeats): each red at exactly its row.
+- Check (c), a push without `[e2e]`: run 42485349317, every job skipped: PASS.
+- NOT RUN: CHK-M11-373 and -374 (the hosted plant branches; awaiting the user's OK to push throwaway branches; local equivalents red); actionlint (not installed).
+- Known gaps: no Hyper-V form of `guests.sh`, so the user's standing local-VM fallback cannot run; `test_serve_linux.py::env_for` creates no `BITSCAN_BITS_DIR` (REQ-291 is met through the walk).
+
 
 The rows are kept by tester-m11e in `work/reports/M11-e2e-test.md` (CHK-M11-290 to -309, plants -370 to -374). TP-M11-17 verdict: `work/reports/TP-M11-17-test.md`.
 
