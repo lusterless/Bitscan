@@ -571,6 +571,7 @@ def main() -> int:
             for h, (name, *_r) in GUESTS.items():
                 guest(name, "down")
             run(["docker", "rm", "-f", CT])
+            shutil.rmtree(WORK / "walk" / "secrets", ignore_errors=True)  # the walk's test passwords, host gone
         shutil.rmtree(WORK / "secrets", ignore_errors=True)
     return report(a.expect_red)
 

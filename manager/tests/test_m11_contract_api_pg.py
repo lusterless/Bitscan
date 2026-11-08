@@ -11,6 +11,12 @@ this file's unknown SID an admin TOTP session now reaches the filled handler
 and gets 404 not_found. The filled answers are in test_reevaluate_api_pg.py
 (CHK-M11-200 to -209).
 
+TASK-244 TEST (tester-m11d, 2026-11-08) replaced the five read 501 rows: on
+this file's unknown SID and AID the filled handlers answer after their auth
+dependency, GET /scans 200 and the four id routes 404 not_found. The filled
+answers are in test_scan_views_api_pg.py and test_results_api_pg.py
+(CHK-M11-213 to -228).
+
 Expected values: TS §6 (route groups: bsa_ / bse_ never on user routes),
 §6.2 L1083-L1093 (roles, TOTP session, restricted admin), L1125, §5.3 L1053
 (sink gate after 15 minutes), §6.3 L1133 (problem details); M2 problem types
@@ -93,14 +99,24 @@ def call(env: ApiEnv, method: str, path: str, caller: m.Caller) -> Any:
 # ------------------------------------------------------------ CHK-M11-233
 
 
+def filled(r: Any, path: str) -> None:
+    """TASK-244: GET /scans is 200 (an empty page here); the four id routes
+    are 404 not_found for this file's unknown SID and AID."""
+    if path == READS[0]:
+        assert r.status_code == 200, (r.status_code, r.text)
+        assert r.json() == {"items": [], "next_cursor": None}
+    else:
+        problem(r, 404, "not_found")
+
+
 @pytest.mark.parametrize("path", READS)
 @pytest.mark.parametrize("kind", ["viewer:session", "viewer:api", "admin:api"])
-def test_reads_answer_501_after_auth_for_any_role(
+def test_reads_answer_after_auth_for_any_role(
     env: ApiEnv, who: dict[str, m.Caller], path: str, kind: str
 ) -> None:
-    """PD-48 (W1 only): a viewer (session or API token) passes the viewer
-    dependency, then the unfilled handler answers 501 about:blank."""
-    problem(call(env, "GET", path, who[kind]), 501, "about:blank")
+    """A viewer (session or API token) and an admin API token pass the viewer
+    dependency and reach the filled handler (was 501 in W1)."""
+    filled(call(env, "GET", path, who[kind]), path)
 
 
 @pytest.mark.parametrize("path", READS)
@@ -159,7 +175,7 @@ def test_reevaluate_sink_gate_at_15_minutes(
     problem(call(env, "POST", REEVAL, admin), 404, "not_found")
     env.clock.advance(seconds=1)
     problem(call(env, "POST", REEVAL, admin), 503, "audit_sink_unavailable")
-    problem(call(env, "GET", READS[0], who["viewer:session"]), 501, "about:blank")
+    filled(call(env, "GET", READS[0], who["viewer:session"]), READS[0])
     m.sink_up(env)
     problem(call(env, "POST", REEVAL, admin), 404, "not_found")
 
@@ -197,8 +213,8 @@ def test_upper_case_scan_id_passes_the_pattern(
 ) -> None:
     problem(
         call(env, "GET", f"/api/v1/scans/{SID.upper()}", who["viewer:session"]),
-        501,
-        "about:blank",
+        404,
+        "not_found",
     )
 
 
@@ -239,7 +255,7 @@ def test_limit_500_and_an_offset_date_pass_validation(
     r = env.client.get(
         "/api/v1/scans", params=q, headers=who["viewer:session"].headers()
     )
-    problem(r, 501, "about:blank")
+    filled(r, READS[0])
 
 
 # ------------------------------------------------------------ TASK-232 r1
@@ -284,4 +300,4 @@ def test_query_agent_id_hyphenated_any_case_is_accepted(
     r = env.client.get(
         path, params={"agent_id": value}, headers=who["viewer:session"].headers()
     )
-    problem(r, 501, "about:blank")
+    filled(r, path)

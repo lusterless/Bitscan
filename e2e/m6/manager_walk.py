@@ -748,8 +748,9 @@ def main() -> int:
         secret_sweep(a.log)
         for d in ("ws-lab", "ws-org"):  # the workstation's keys go once §5 is done
             shutil.rmtree(a.work / d, ignore_errors=True)
-        if not a.keep:
+        if not a.keep:  # without the host the test passwords serve nothing (kept hosts need them for the host checks)
             run(["docker", "rm", "-f", CT])
+            shutil.rmtree(a.work / "secrets", ignore_errors=True)
     failed = [r for r in ROWS if r["status"] == "FAIL"]
     nr = [r for r in ROWS if r["status"] == "NOT RUN"]
     print(f"walk rows: {len(ROWS) - len(failed) - len(nr)}/{len(ROWS)} passed, {len(failed)} failed, {len(nr)} not run", flush=True)
