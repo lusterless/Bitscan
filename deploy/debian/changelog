@@ -1,3 +1,19 @@
+bitscan-agent (0.2.0~pre2-1) unstable; urgency=medium
+
+  * Pre-release: results and end to end. Not a supported release.
+  * Built for the manager's scan results views and the nightly end-to-end
+    run. Enrolment, heartbeat, inventory and the job protocol are as in
+    0.2.0~pre1-1.
+  * bitscan-runner.service makes /dev/shm read-only and lists /tmp and
+    /var/tmp in NoExecPaths=, so a check can neither leave files in the
+    host's shared memory nor run a file it wrote to its private /tmp.
+  * bitscan-runner is ready for the next job as soon as the previous one
+    and its cleanup have ended, and takes no job after a failed cleanup.
+  * Upgrades 0.1.0-1 and 0.2.0~pre1-1 in place and keeps their
+    configuration, agent token and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Sun, 08 Nov 2026 00:00:00 +0000
+
 bitscan-agent (0.2.0~pre1-1) unstable; urgency=medium
 
   * Pre-release: compliance runner. Not a supported release.

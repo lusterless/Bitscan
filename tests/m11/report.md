@@ -27,6 +27,8 @@ Phase report for M11 (results and end-to-end). The lead folds in each section un
 | TASK-258 | TASK-258 TEST (r0 and r1): PASS | `work/reports/TASK-258-test.md` |
 | TASK-244 | TASK-244 TEST: PASS | `work/reports/TASK-244-test.md` |
 | TASK-245 | TASK-245 TEST: PASS | `work/reports/TASK-245-test.md` |
+| TASK-253 | TASK-253 TEST: PASS | `work/reports/TASK-253-test.md` |
+| TASK-259 | TASK-259 TEST: PASS | `work/reports/TASK-259-test.md` |
 | TASK-255 | TASK-255 TEST: PASS | `work/reports/TASK-255-test.md` |
 | TP-M11-17 | TP-M11-17 (harness carries): PASS | `work/reports/TP-M11-17-test.md`; rows in `work/reports/M11-e2e-test.md` |
 | TP-M11-18 | TP-M11-18 (nightly harness): PASS | `work/reports/TP-M11-18-test.md`; rows in `work/reports/M11-e2e-test.md` |
@@ -1008,3 +1010,29 @@ Verdict r1: **PASS**.
 - The CSV route ignores a `cursor` parameter, as FastAPI ignores undeclared query parameters. The spec doesn't ask for it to be refused, so it isn't tested.
 - **White-box reads:** the scope strings `scans:::::` and `scan_results:<id>::`, and `encode_cursor`, used only to sign the forged-form cursors.
 - **#155 (CSV memory bound) is pending the user.** The cap rows test #146 as approved.
+
+## TASK-253 (manager-operations runbook and changelog)
+
+## TASK-253 TEST: PASS
+
+Tester: tester-m11d, 2026-11-09. Docs (`deploy/runbooks/manager-operations.md` §1, §6, §7; `deploy/debian/changelog` `0.2.0~pre2-1`). REQ-289, REQ-290. Walked together with TASK-252 and TASK-259; full evidence in `work/reports/TASK-252-test.md`.
+
+| Check | Result | Evidence (details in TASK-252-test.md) |
+| --- | --- | --- |
+| CHK-M11-384 | PASS | `dpkg-parsechangelog -S Version` → `0.2.0~pre2-1`. `check_debian_meta.py` OK 82/82, with CHK-M10-318 and -319 green. `dpkg --compare-versions`: `0.1.0-1` < `0.2.0~pre1-1` < `0.2.0~pre2-1` < `0.2.0-1` |
+| CHK-M11-383 | PASS | Against a real WSL `serve`: §1's agent-version SQL runs. §6's journal grep on the serve log gives the seven `retention step done` lines in order, `skipped` null, shaped as the example line; the first run comes 10 min after start (602 s by the log); the checkpoint SQL runs (none on a young database). §7 checked statically against `release.yml` and `e2e.yml`; its `gh` and `git` commands were not run (the release owner's) |
+| CHK-M11-382 | PASS | `check_runbook_text.py`: `OK 24 sh blocks, 0 findings`; no secret, token, DSN or process note |
+
+The M6 harness indexes into §1 were not re-run here; impl-deploy checked them against the `ops_walk.sh` regex (blocks 0–2 unchanged), and the new block is fourth. They belong to the M11 gate's full run.
+
+## TASK-259 (agent-install.md pre-release version)
+
+## TASK-259 TEST: PASS
+
+Tester: tester-m11d, 2026-11-09. Docs (`deploy/runbooks/agent-install.md` L7, L178). Walked with TASK-252 and TASK-253; evidence in `work/reports/TASK-252-test.md`.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| L7 and L178 agree with the changelog | PASS | L7 names `0.2.0~pre2-1`, the changelog's top entry (`dpkg-parsechangelog` → `0.2.0~pre2-1`). L178: `dpkg --compare-versions 0.1.0-1 lt 0.2.0~pre2-1` and `0.2.0~pre1-1 lt 0.2.0~pre2-1` are both true, so both hosts upgrade in place as written. The real package upgrade is G38 at the M11 gate |
+| CHK-M11-382 (this file) | PASS | `check_runbook_text.py`: the same two known findings as before (L79, L123, the `bse_REPLACE…` placeholders), nothing new |
+| No other `pre1` mention | PASS | grep: only L178's `0.1.0~pre1-1 sorts below 0.1.0-1` (unchanged) and the upgrade sentence |
