@@ -71,9 +71,17 @@ root:root 777 /usr/bin/bitscan-manager'
 got=$(x 'stat -c "%U:%G %a %n" /etc/bitscan /etc/bitscan/manager.env /etc/bitscan/secrets /etc/bitscan/secrets/* /var/lib/bitscan /var/lib/bitscan/bits /var/lib/bitscan/bits/uploaded /var/lib/bitscan/audit-queue /opt/bitscan-manager /usr/bin/bitscan-manager')
 [ "$got" = "$want" ]
 res CHK-M6-047 $? "owners and modes of /etc/bitscan, secrets, /var/lib/bitscan, the venv and the link" "$(diff <(echo "$want") <(echo "$got") | grep '^[<>]' || echo same)"
+# manager-install.md §5: the three required settings, plus only the optional BITSCAN_LISTEN and
+# BITSCAN_BITS_DIR the runbook names (M11: test managers set BITSCAN_BITS_DIR, REQ-291); any other
+# key, a key given twice or a missing required one is a FAIL
 out=$(x 'grep -vE "^\s*(#|$)" /etc/bitscan/manager.env | sed "s/=.*//" | sort | tr "\n" " "; echo; grep -ciE "password|token|dsn|_FILE|secret" /etc/bitscan/manager.env')
-[ "$(head -1 <<<"$out")" = "BITSCAN_AUDIT_SINK BITSCAN_TOTP_KEY_REF BITSCAN_VAULT_ADDR " ] && [ "$(tail -1 <<<"$out")" = 0 ]
-res CHK-M6-047 $? "manager.env holds only the three settings, no secret or *_FILE" "$out"
+keys=$(head -1 <<<"$out" | tr ' ' '\n' | grep -v '^$')
+req=$(grep -cxE 'BITSCAN_(AUDIT_SINK|TOTP_KEY_REF|VAULT_ADDR)' <<<"$keys")
+extra=$(grep -vxE 'BITSCAN_(AUDIT_SINK|TOTP_KEY_REF|VAULT_ADDR|LISTEN|BITS_DIR)' <<<"$keys" | tr '\n' ' ')
+dups=$(uniq -d <<<"$keys" | tr '\n' ' ')
+[ "$req" = 3 ] && [ -z "$extra" ] && [ -z "$dups" ] && [ "$(tail -1 <<<"$out")" = 0 ]
+res CHK-M6-047 $? "manager.env holds the three required settings and only the optional BITSCAN_LISTEN, BITSCAN_BITS_DIR; no secret or *_FILE" \
+	"keys: $(tr '\n' ' ' <<<"$keys"); other keys: [${extra}]; twice: [${dups}]; secret-like lines: $(tail -1 <<<"$out")"
 
 # CHK-M6-055 REQ-140 (5): writable persistent mounts in the service's namespace
 # (the last mount of each target wins; API, runtime and private tmp mounts left out)
