@@ -24,6 +24,7 @@ Phase report for M11 (results and end-to-end). The lead folds in each section un
 | TASK-256 | TASK-256 TEST (W3/W4 web batch): PASS | `work/reports/TASK-256-test.md` |
 | TASK-251 | TASK-251 TEST (W3/W4 web batch): PASS | `work/reports/TASK-251-test.md` |
 | TASK-257 | TASK-257 TEST: PASS | `work/reports/TASK-257-test.md` |
+| TASK-258 | TASK-258 TEST (r0 and r1): PASS | `work/reports/TASK-258-test.md` |
 | TASK-255 | TASK-255 TEST: PASS | `work/reports/TASK-255-test.md` |
 | TP-M11-17 | TP-M11-17 (harness carries): PASS | `work/reports/TP-M11-17-test.md`; rows in `work/reports/M11-e2e-test.md` |
 
@@ -812,3 +813,26 @@ The lead's points:
 | TASK-257 run 2 | `npx vitest run` (testTimeout 20000) | PASS | 741/741; slowest 3089 ms |
 | TASK-257 gates | lint, typecheck, prettier on `vite.config.ts` | PASS | all exit 0 |
 | TASK-257 plant (5000) | 3 full runs in a throwaway copy | PASS (the setting shown to matter) | the M5 paging tests reached 4939 and 4784 ms of 5000; observed timing out in the earlier W3 run |
+
+## TASK-258 (unrecognised stored target fails closed)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| TASK-258 (CHK-M11-274 extended) | `npx vitest run src/components/TargetPicker.test.tsx` | PASS | 48/48 |
+| TASK-258 (CHK-M11-269 extended) | `npx vitest run src/screens/Schedules.test.tsx` | PASS | 20/20 |
+| TASK-258 affected | RunScan, App | PASS | 17/17, 44/44 |
+| CHK-M11-439 | plant | PASS (red as required) | 12 failed / 68 |
+| CHK-M11-440 | plant | PASS (red as required) | 2 failed / 68 |
+
+### r1 re-run (2026-11-08): punctuation only
+
+The r1 change (reviewer nit): a full stop now follows `<strong>Unknown target</strong>`, outside the `<strong>` (`TargetPicker.tsx` L179). The `<strong>` text is still exactly "Unknown target". No behaviour changes and no test was edited.
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| TASK-258 r1 | `npx vitest run src/components/TargetPicker.test.tsx src/screens/Schedules.test.tsx` | PASS | 68/68 (48 + 20), 0 failed, 0 skipped |
+| TASK-258 r1 gates | lint, typecheck, format:check | PASS | all exit 0 |
+
+Verdict r1: **PASS**.

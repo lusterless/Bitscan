@@ -484,3 +484,60 @@ describe("CHK-M11-272 plain text on the schedules screen", () => {
     expect(noInjectedMarkup(view.container)).toEqual({ scripts: 0, imgs: 0 });
   });
 });
+
+// ------------------------------------------------------------ TASK-258
+
+describe("TASK-258 editing a schedule whose stored target is unrecognised", () => {
+  function unknownTarget(): Server {
+    return server([schedule(3, { target: { foo: 1 } })], (call) =>
+      call.method === "PATCH"
+        ? json(200, schedule(3))
+        : json(599, { type: "unexpected" }),
+    );
+  }
+
+  async function edit() {
+    await mount();
+    expect(rowOf("Nightly 3").textContent).toContain("Unknown target");
+    fireEvent.click(
+      within(rowOf("Nightly 3")).getByRole("button", { name: "Edit" }),
+    );
+    await settle();
+    return theForm("Edit schedule");
+  }
+
+  it("another change sends no target key (never {all: true})", async () => {
+    unknownTarget();
+    const f = await edit();
+    expect(f.getByText("Unknown target")).toBeTruthy();
+    type(f, /^Cron/, "15 1 * * *");
+    fireEvent.click(f.getByRole("button", { name: "Save" }));
+    await settle();
+    const patch = JSON.parse(at(writes(), 0).body) as Record<string, unknown>;
+    expect(patch).toEqual({ cron: "15 1 * * *" });
+    expect("target" in patch).toBe(false);
+  });
+
+  it("no change: Nothing has changed., nothing sent", async () => {
+    unknownTarget();
+    const f = await edit();
+    fireEvent.click(f.getByRole("button", { name: "Save" }));
+    await settle();
+    expect(f.getByRole("alert").textContent).toBe("Nothing has changed.");
+    expect(writes()).toHaveLength(0);
+  });
+
+  it("choosing a form sends that target", async () => {
+    unknownTarget();
+    const f = await edit();
+    fireEvent.click(
+      f.getByRole("radio", { name: "Hosts with any of these tags" }),
+    );
+    type(f, /^Tags/, "db");
+    fireEvent.click(f.getByRole("button", { name: "Save" }));
+    await settle();
+    expect(JSON.parse(at(writes(), 0).body)).toEqual({
+      target: { tags: ["db"] },
+    });
+  });
+});

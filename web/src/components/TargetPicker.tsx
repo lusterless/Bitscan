@@ -15,9 +15,12 @@ export type Target =
   | { readonly tags: string[] }
   | { readonly agents: string[] };
 
-/** What the picker edits; `tags` is the text as typed. */
+/**
+ * What the picker edits; `tags` is the text as typed. "unknown" is a stored
+ * target that is none of the three forms: it is shown, never sent (TASK-258).
+ */
 export interface TargetValue {
-  readonly kind: "all" | "tags" | "agents";
+  readonly kind: "all" | "tags" | "agents" | "unknown";
   readonly tags: string;
   readonly agents: readonly string[];
 }
@@ -58,6 +61,7 @@ function splitTags(text: string): string[] {
 
 /** The #122 (b) body, or a fixed text saying what to fix. */
 export function toTarget(value: TargetValue): Target | string {
+  if (value.kind === "unknown") return "Choose a target.";
   if (value.kind === "all") return { all: true };
   if (value.kind === "tags") {
     const tags = splitTags(value.tags);
@@ -78,14 +82,18 @@ function strings(value: unknown): string[] | null {
   return items.every((v) => typeof v === "string") ? (items as string[]) : null;
 }
 
-/** A stored target (as requested) back into the picker. */
+/**
+ * A stored target (as requested) back into the picker. A target that is none
+ * of the three forms is "unknown", never All hosts, so an edit cannot widen it.
+ */
 export function fromTarget(target: StoredTarget): TargetValue {
   const tags = strings(target.tags);
   const agents = strings(target.agents);
   if (tags !== null)
     return { ...ALL_HOSTS, kind: "tags", tags: tags.join(", ") };
   if (agents !== null) return { ...ALL_HOSTS, kind: "agents", agents };
-  return ALL_HOSTS;
+  if (target.all === true) return ALL_HOSTS;
+  return { ...ALL_HOSTS, kind: "unknown" };
 }
 
 /** A stored target as text; the API's values stay text nodes. */
@@ -166,6 +174,12 @@ export function TargetPicker({
   return (
     <fieldset className="filter-group">
       <legend>Target</legend>
+      {value.kind === "unknown" && (
+        <p className="muted">
+          <strong>Unknown target</strong>. It is kept unless you choose one of
+          these forms.
+        </p>
+      )}
       {kinds.map(([kind, label]) => (
         <label key={kind} className="check">
           <input

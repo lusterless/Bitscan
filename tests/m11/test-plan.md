@@ -336,6 +336,8 @@ Web plants (throwaway copy; the unmodified copy green first; "red" = the named w
 | CHK-M11-436 (tester extra, S) a reload after a refused re-evaluate or cancel | `ScanDetail.tsx` | CHK-M11-267 "no other request" rows | W3 |
 | CHK-M11-437 (tester extra) the CSV export drops the current filters | `ScanResults.tsx` | CHK-M11-268 export row | W3 |
 | CHK-M11-438 (tester extra) the host-id filter sent untrimmed and in its typed case | `Scans.tsx` | CHK-M11-265 filter row | W3 |
+| CHK-M11-439 (main's plant, TASK-258) `fromTarget` returns All hosts for an unrecognised stored target | `TargetPicker.tsx` | the TASK-258 "edit sends no target" row (CHK-M11-269, -274 extended) | W3 follow-up |
+| CHK-M11-440 (tester extra, TASK-258) the edit form passes an unknown target to `toTarget` | `ScheduleForm.tsx` | the TASK-258 edit rows | W3 follow-up |
 | CHK-M11-376 (tester extra, S) the output column shown with an empty cell for viewer items (keys absent) | `ScanResults.tsx` | CHK-M11-268 no-output row | W3 |
 | CHK-M11-377 (tester extra) score formatter `floor(s*100*10)` | `format.ts` | CHK-M11-261 29/100 row | W2 |
 | CHK-M11-378 (tester extra) CSV download without `parseAs: "blob"` (text parse) | `download.ts` | CHK-M11-263 byte-for-byte row | W2 |

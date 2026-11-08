@@ -56,13 +56,18 @@ export function ScheduleForm({
   async function save(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setProblem(null);
-    const body = toTarget(target);
+    // TASK-258: an edit of an unrecognised stored target leaves it as it is
+    // (no `target` key); a new schedule needs one of the three forms.
+    const keep = schedule !== null && target.kind === "unknown";
+    const body = keep ? null : toTarget(target);
     if (typeof body === "string") {
       setNote(body);
       return;
     }
     let send: () => Promise<{ error?: unknown; response: Response }>;
     if (schedule === null) {
+      // `keep` is false here, so `body` is a Target.
+      if (body === null) return;
       if (policyId === "") {
         setNote("Choose a profile.");
         return;
@@ -79,7 +84,7 @@ export function ScheduleForm({
     } else {
       const change: Change = {};
       if (name !== schedule.name) change.name = name;
-      if (!same(body, schedule.target)) change.target = body;
+      if (body !== null && !same(body, schedule.target)) change.target = body;
       if (cron !== schedule.cron) change.cron = cron;
       if (timezone !== schedule.timezone) change.timezone = timezone;
       if (enabled !== schedule.enabled) change.enabled = enabled;

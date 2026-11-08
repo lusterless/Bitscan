@@ -327,3 +327,47 @@ describe("CHK-M11-273 the picker", () => {
 function escape(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+// ------------------------------------------------------------ TASK-258
+// TASK-258 TEST: an unrecognised stored target is "unknown", never All hosts
+// (reviewer-m11 nit 1 on TASK-256/249, fails open). Expected values: #122 (b)
+// (exactly the three forms; all is the value true only); the lead's ruling
+// 2026-11-08 (an edit cannot widen a target it does not recognise).
+
+describe("TASK-258 fromTarget never widens an unrecognised target", () => {
+  const unknown: Record<string, unknown>[] = [
+    {},
+    { all: "true" },
+    { all: false },
+    { all: 1 },
+    { tags: "db" },
+    { agents: [1, 2] },
+    { agents: uuid(1) },
+    { foo: 1 },
+    { resolved_agents: [uuid(1)] },
+  ];
+  for (const t of unknown) {
+    it(JSON.stringify(t) + " is unknown and cannot be sent", () => {
+      const v = fromTarget(t);
+      expect(v.kind).toBe("unknown");
+      expect(toTarget(v)).toBe("Choose a target.");
+    });
+  }
+
+  it("{all: true} still reads as All hosts", () => {
+    expect(fromTarget({ all: true }).kind).toBe("all");
+    expect(toTarget(fromTarget({ all: true }))).toEqual({ all: true });
+  });
+
+  it("the picker shows Unknown target with no form chosen; choosing one replaces it", () => {
+    render(<Harness start={fromTarget({ foo: 1 })} />);
+    expect(screen.getByText("Unknown target").tagName).toBe("STRONG");
+    expect(
+      screen.getAllByRole("radio").map((r) => (r as HTMLInputElement).checked),
+    ).toEqual([false, false, false]);
+    expect(body()).toBe("Choose a target.");
+    fireEvent.click(screen.getByRole("radio", { name: "All hosts" }));
+    expect(body()).toEqual({ all: true });
+    expect(screen.queryByText("Unknown target")).toBeNull();
+  });
+});
