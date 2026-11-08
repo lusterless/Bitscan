@@ -7,6 +7,7 @@ Phase report for M11 (results and end-to-end). The lead folds in each section un
 | TASK-232 | TASK-232 TEST (r0 and r1): PASS | `work/reports/TASK-232-test.md` |
 | TASK-233 | TASK-233 TEST: PASS | `work/reports/TASK-233-test.md` |
 | TASK-234 | TASK-234 TEST: PASS | `work/reports/TASK-234-test.md` |
+| TASK-239 | TASK-239 TEST (W2 web batch): PASS | `work/reports/TASK-239-test.md` |
 | TASK-236 | TASK-236 TEST: PASS | `work/reports/TASK-236-test.md` |
 | TP-M11-17 | TP-M11-17 (harness carries): PASS | `work/reports/TP-M11-17-test.md`; rows in `work/reports/M11-e2e-test.md` |
 
@@ -246,3 +247,22 @@ Tester: tester-m11, 2026-11-08. r1 follows the decision of 2026-11-08 ("Correcti
 ## End-to-end and N / N−1 (tester-m11e)
 
 The rows are kept by tester-m11e in `work/reports/M11-e2e-test.md` (CHK-M11-290 to -309, plants -370 to -374). TP-M11-17 verdict: `work/reports/TP-M11-17-test.md`.
+
+## TASK-239 (web client, Score, ResultBadge, CSV download)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| CHK-M11-260 | G16 regen-to-temp + `cmp`; `npm run typecheck`; `npm run lint`; `npm run format:check` (from `web/`, L) | PASS | identical sha256 `e7ffd8c4…c30a`; tsc, eslint (0 warnings) and prettier exit 0; six M11 paths present |
+| CHK-M11-261 | `npx vitest run src/components/Score.test.tsx` | PASS | 26/26 (part of 51/51) |
+| CHK-M11-262 | `npx vitest run src/components/ResultBadge.test.tsx` | PASS | 10/10 (part of 51/51) |
+| CHK-M11-263 | `npx vitest run src/app/download.test.ts` | PASS | 7 M11 tests + 5 M5 kept (15/15 with -264) |
+| CHK-M11-264 | `npx vitest run src/app/download.test.ts` | PASS | 3/3 refusal tests (400 cap detail, 404, 401 ends session) |
+| TASK-239 affected | `npx vitest run` on the 11 importer test files | PASS | 197/197 |
+| CHK-M11-363 | plant in throwaway copy | PASS (red as required) | 3 failed / 26 |
+| CHK-M11-364 | plant in throwaway copy | PASS (red as required) | 6 failed / 26 |
+| CHK-M11-365 (W2 half) | plant in throwaway copy, two variants | PASS (red as required) | 4 failed / 10; variant "only when differs" 2 failed / 10 |
+| CHK-M11-377 | plant in throwaway copy | PASS (red as required) | 7 failed / 26 |
+| CHK-M11-378 | plant in throwaway copy | PASS (red as required) | 1 failed / 15, not a Blob |
+| G16 plant | hand edit to `schema.d.ts` in the copy | PASS (red as required) | `cmp` exit 1 |

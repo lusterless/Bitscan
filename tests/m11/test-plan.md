@@ -293,12 +293,15 @@ Lead-approved naming (TASK-232 IMPL, 2026-11-08): the results models are `ScanRe
 
 ## TP-M11-07 and TP-M11-14: web (web tester; REQ-273, REQ-279 to -284) — `wb/**/*.test.ts(x)`
 
+Owner of this section: **tester-m11w** (from 2026-11-08; the rows were drafted by tester-m11 from the criteria and are kept, refined here by tester-m11w without reading the M11 web code). Web runs: `npm run lint`, `npm run typecheck`, `npx vitest run <files>` from `web/` on L (worktree `node_modules` installed with `npm ci --offline` from the identical lock). Plants for the web security rows are made in a throwaway copy of `web/` under `$TEMP/m11w-mut-<chk>` (with its own `node_modules` junction), never in the worktree.
+
 | Check | Type | What | Where |
 | --- | --- | --- | --- |
 | CHK-M11-260 | CODE | `schema.d.ts` regenerated from the TASK-232 document with no diff (G16); `npm run typecheck` passes | L, CI |
-| CHK-M11-261 | CODE | `Score`: 0.75 with 5 errors → "75.0 %" and "5 errors"; null → "n/a"; 0.9996 → "99.9 %" (rounded down); 1.0 → "100.0 %"; 1 error → "1 error"; 0 errors → "0 errors" (REQ-280 (1), #149) | L |
-| CHK-M11-262 | CODE | `ResultBadge`: PASS, FAIL, ERROR, Not run for null; original shown beside when it differs (re-evaluated) (REQ-281 (1)) | L |
-| CHK-M11-263 | CODE | CSV download through the generated client with `parseAs: "blob"`, saved under the server-given name | L |
+| CHK-M11-261 | CODE | `Score`: 0.75 with 5 errors → "75.0 %" and "5 errors"; null → "n/a" (never "0.0 %"); 0.9996 → "99.9 %" (rounded down); 1.0 → "100.0 %"; 1 error → "1 error"; 0 errors → "0 errors"; the error count is shown beside "n/a" too (REQ-280 (1), #149). Boundaries of "rounded down": 2/3 → "66.6 %" (not 66.7), 0.0004 → "0.0 %", 0 → "0.0 %"; exact one-decimal scores are not under-rounded by float error: 29/100 → "29.0 %", 57/100 → "57.0 %", 58/100 → "58.0 %", 23/40 → "57.5 %" (a `floor(s*100*10)` formatter shows 28.9, 56.9, 57.9, 57.4) | L |
+| CHK-M11-262 | CODE | `ResultBadge`: PASS, FAIL, ERROR each named; null → "Not run" (not FAIL, not empty); a re-evaluated result shows the current verdict and the original beside it (web-ui rule: "both … when a result has been re-evaluated"), a never re-evaluated one shows one verdict (REQ-281 (1)) | L |
+| CHK-M11-263 | CODE | Generic CSV download: one GET through the generated client with the bearer and exactly the given query, `parseAs: "blob"` (body saved byte for byte, CRLF and non-ASCII kept), saved under the given name, object URL revoked after the click; the M5 packages export still behaves as CHK-M5-274 to -276 | L |
+| CHK-M11-264 | CODE | Generic CSV download refusals: a 400 returns the problem detail and saves nothing; a 401 ends the session | L |
 | CHK-M11-265 | CODE | Scans screen: filters build the expected query, paging forward and back, a viewer sees no Run scan (REQ-279 (1)) | L |
 | CHK-M11-266 | CODE | Run scan: operator submission sends `{policy_id, target}` with one `Idempotency-Key`; a double click sends one request; a retried submission keeps its key, the next gets a new one; 409 and 422 show their detail (REQ-279 (1), (2); #154) | L |
 | CHK-M11-267 | CODE | Scan detail: summary and per-host table with `Score`; viewer no buttons, operator Cancel only, admin both; confirm before each; re-evaluate 200 shows `rows_added` and reloads; 403 `totp_session_required` and 503 show the prompt and send no other request; never an API-token fallback (REQ-280 (2), (3)) | L |
@@ -308,18 +311,52 @@ Lead-approved naming (TASK-232 IMPL, 2026-11-08): the results models are `ScanRe
 | CHK-M11-271 | CODE | Router: every new hash parses and formats; malformed ids fall back to the host list; viewer offered neither schedules nor run scan; the profile page links to Run scan with the profile chosen | L |
 | CHK-M11-272 | CODE | REQ-284 (2): a `<script>` hostname, plugin name, eval detail and stdout render as text in every new screen; no `dangerouslySetInnerHTML`, `innerHTML`, `fetch(`; session in memory only (no `localStorage` / `sessionStorage`) | L |
 
+Web plants (throwaway copy; the unmodified copy green first; "red" = the named web test fails for the planted reason, or the lint exits non-zero on the planted line):
+
+| Plant | Planted in | Must turn red | Batch |
+| --- | --- | --- | --- |
+| CHK-M11-360 `dangerouslySetInnerHTML` for stdout | `ScanResults.tsx` | G12 (lint) and the CHK-M11-268 `onerror` row | W3 |
+| CHK-M11-361 a `fetch(` call | `ScanDetail.tsx` | G12 (lint) | W3 |
+| CHK-M11-362 re-evaluate falls back to an API token / token saved in `sessionStorage` | `ScanDetail.tsx` | G12 (storage ban) and the CHK-M11-267 403 row | W3 |
+| CHK-M11-363 null score shown as "0.0 %" | `Score.tsx` | CHK-M11-261 null row | W2 |
+| CHK-M11-364 round to nearest (0.9996 → "100.0 %") | `Score.tsx` / `format.ts` | CHK-M11-261 0.9996 row | W2 |
+| CHK-M11-365 `original_result` hidden | `ScanResults.tsx` (and `ResultBadge.tsx` in W2) | CHK-M11-268 / CHK-M11-262 both-verdicts row | W2, W3 |
+| CHK-M11-366 a viewer offered Run scan or Schedules | `routes.tsx` / `Scans.tsx` | CHK-M11-265 viewer row, CHK-M11-271 | W3, W4 |
+| CHK-M11-375 (tester extra, S) a `<script>` hostname rendered as HTML (`innerHTML`) | `ScanDetail.tsx`, `Scans.tsx` / `HostScans.tsx` | CHK-M11-272 for that screen | W3 |
+| CHK-M11-376 (tester extra, S) the output column shown with an empty cell for viewer items (keys absent) | `ScanResults.tsx` | CHK-M11-268 no-output row | W3 |
+| CHK-M11-377 (tester extra) score formatter `floor(s*100*10)` | `format.ts` | CHK-M11-261 29/100 row | W2 |
+| CHK-M11-378 (tester extra) CSV download without `parseAs: "blob"` (text parse) | `download.ts` | CHK-M11-263 byte-for-byte row | W2 |
+
 ## TP-M11-17 to -20: end to end and N / N−1 (tester-m11e) — `e2e/m6/manager_walk.py`, `e2e/m11/`
 
-Ids agreed with tester-m11e 2026-11-08; that tester writes the rows of this section.
+Ids agreed with tester-m11e 2026-11-08; that tester writes the rows of this section. Results: `work/reports/M11-e2e-test.md` (linked from [report.md](report.md)). W = WSL2 with Docker and QEMU/KVM guests of the official cloud images (development runs; no Hyper-V VM). CI = the hosted `ubuntu-24.04` runner through `e2e.yml` (TASK-254); the user's standing approval for the local Hyper-V VMs (decisions 2026-11-08 (4)) covers only that workflow's fallback, never a development run.
 
 | Check | Type | What | Where |
 | --- | --- | --- | --- |
-| CHK-M11-290 | APP | `manager_walk.py` green against the current `deploy/runbooks/manager-install.md` (REQ-291 (1)) | W |
-| CHK-M11-291 | APP | `BITSCAN_BITS_DIR` and `uploaded/` created with the runbook's owners and modes before `serve` | W |
-| CHK-M11-292 | APP | The start check stops with a clear message when the folder is missing (REQ-291 (2)) | W |
-| CHK-M11-293 | APP | Walk secret sweep | W |
-| CHK-M11-294 to -303 | APP | Nightly chain per host: pre-check (`/dev/kvm`), enrol, approve (admin TOTP session), heartbeat, inventory, import (SR §1.1 verbatim), scan, results (`completed`, score 1.0, errors 0, PASS exit 0, CSV parsed), viewer without stdout, token and password sweep (REQ-285) | CI; W with the standing VM approval |
-| CHK-M11-304 to -309 | APP | Agent 0.1.0 with manager N (`runner_unavailable` on every plugin, score null, errors = plugins); the upgrade walk 0.1.0 → N; agent N with manager 0.1.0 (no compliance job) (REQ-287, REQ-288) | CI |
+| CHK-M11-290 | APP | `manager_walk.py` green against the current `deploy/runbooks/manager-install.md`: every fenced block found by section and anchor (none by position), each walked or NOT RUN with its reason, a new or changed block stops the walk (REQ-291 (1)) | W |
+| CHK-M11-291 | APP | `BITSCAN_BITS_DIR` set in `manager.env`; the folder and `uploaded/` exist with the runbook's owners and modes (`root:bitscan-manager 750`, `bitscan-manager:bitscan-manager 750`) before the manager starts; the catalog starts without the M10 G79 `FileNotFoundError` | W |
+| CHK-M11-292 | APP | The start check stops the walk with a clear message when the folder or `uploaded/` is missing (REQ-291 (2)). Plant: a runbook copy without §4's `uploaded/` line turns -291 and -292 red and nothing starts | W |
+| CHK-M11-293 | APP | Walk secret sweep: no password, token, DSN or key line in the rows, the walk log or the host journal | W |
+| CHK-M11-294 | APP | Nightly pre-check: `/dev/kvm` usable, QEMU, the cloud images and the `.deb` checked against their published SHA-256, memory, the manager port free; a failed pre-check makes every later row NOT RUN, never a silent skip (#152 (a)) | CI; W |
+| CHK-M11-295 | APP | The manager host installed by `manager-install.md` (the CHK-M11-290 walk, 0 FAIL), port published for the guests | CI; W |
+| CHK-M11-296 | APP | Per host (22.04, 24.04): the `.deb` installs with `install.env` (24.04 also the SPKI pin) and the enrolment is held, kind new, this host's name and version | CI; W |
+| CHK-M11-297 | APP | Per host: approve through the API with the admin TOTP session (200) | CI; W |
+| CHK-M11-298 | APP | Per host: online after approval, with the package version | CI; W |
+| CHK-M11-299 | APP | Per host: first inventory, `os_info` of the host and a snapshot holding every `dpkg-query -W` package | CI; W |
+| CHK-M11-300 | APP | Import of the SR §1.1 canonical example, extracted verbatim from the spec, by upload: `success`, the policy name, one plugin `3f6c2a9e-…` | CI; W |
+| CHK-M11-301 | APP | A scan of both hosts queued (202), and per host the compliance job `completed` | CI; W |
+| CHK-M11-302 | APP | Per host: scan `completed`, `score` 1.0, `errors` 0, the plugin PASS with exit 0 and its stdout (admin); `results.csv` parsed (one PASS row per host, `Content-Disposition`); a viewer's JSON and CSV hold no `stdout` or `stderr` | CI; W |
+| CHK-M11-303 | APP | Token and password sweep over the report, the harness and walk logs, the manager host's and both guests' journals (REQ-285 (3)) | CI; W |
+| CHK-M11-304 | APP | N / N−1 pre-check: the v0.1.0 `.deb` and manager wheel checked against the release's published SHA-256 (#153 (a)) | CI; W |
+| CHK-M11-305 | APP | Manager N with agent 0.1.0: enrol, approve, heartbeat, inventory (REQ-287) | CI; W |
+| CHK-M11-306 | APP | Manager N with agent 0.1.0: a scan stores every plugin as ERROR `runner_unavailable`, `score` null, `errors` = plugins, shown so in the results (#74, #28; REQ-287) | CI; W |
+| CHK-M11-307 | APP | Upgrade walk once at the gate (#153 (d)): manager 0.1.0 with agent 0.1.0 → migrate and manager N → heartbeat and inventory go on → agent upgraded to N → a scan completes | CI; W |
+| CHK-M11-308 | APP | Agent N with manager 0.1.0: enrol, approve, heartbeat, inventory (REQ-288) | CI; W |
+| CHK-M11-309 | APP | Agent N with manager 0.1.0: no compliance job is ever sent; token sweep over the N / N−1 runs | CI; W |
+| CHK-M11-370 | APP (plant) | An agent `.deb` whose runner returns no results (throwaway copy: `emit(res)` dropped in `agent/internal/runner/job.go`) → CHK-M11-302 FAIL | W; CI |
+| CHK-M11-371 | APP (plant) | A manager tree whose results route leaves out a host → CHK-M11-302 FAIL (after TASK-244) | W; CI |
+| CHK-M11-372 | APP (plant) | A manager tree that refuses the 0.1.0 heartbeat body → CHK-M11-305 FAIL | W; CI |
+| CHK-M11-373, -374 | APP (plant) | `e2e.yml`: a FAIL row, and a removed expected row (`nightly.py --check-report`), each turn the job red (TASK-254 TEST; tester-m11e if assigned) | CI |
 
 ## TP-M11-16 and TP-M11-21: docs walks and replaced checks (TASK-252, 253, 245; REQ-289, -290, PD-51)
 

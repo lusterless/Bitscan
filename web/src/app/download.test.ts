@@ -17,8 +17,14 @@ import {
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CSV_FILE_NAME, downloadCsv, saveBlob } from "./download";
-import { clearSession, setSession } from "./session";
+import {
+  CSV_FILE_NAME,
+  downloadCsv,
+  downloadResultsCsv,
+  resultsCsvFileName,
+  saveBlob,
+} from "./download";
+import { clearSession, currentSession, setSession } from "./session";
 
 const CSV = "/api/v1/packages/search.csv";
 const CR = String.fromCharCode(13);
@@ -184,6 +190,162 @@ describe("CHK-M5-276 a refusal", () => {
     const result = await downloadCsv({});
     expect(result?.status).toBe(401);
     const { currentSession } = await import("./session");
+    expect(currentSession()).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------- M11
+// TASK-239 TEST (TP-M11-07): CHK-M11-263, CHK-M11-264, plant CHK-M11-378.
+// Expected values: REQ-281 (3) (export calls /api/v1/scans/{id}/results.csv
+// with the current filters and saves the blob as scan-<id>-results.csv);
+// #146 (d) (Content-Disposition filename "scan-<scan_id>-results.csv", the
+// 100,000-row cap refused as 400 before any CSV byte); TS §6.3 L1144 (the
+// server escapes; the UI saves the bytes unchanged); TS §6.2 L1076 (bearer).
+
+const SCAN = "0f8fad5b-d9cb-469f-a165-70867728950e";
+const AGENT = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+const RESULTS_CSV = "/api/v1/scans/" + SCAN + "/results.csv";
+const RESULTS_BODY =
+  "hostname,agent_id,plugin_uuid,plugin_name,result" +
+  CR +
+  LF +
+  '"<script>x</script>",' +
+  AGENT +
+  ",u,\"'=cmd|' /C calc'!A0\",FAIL" +
+  CR +
+  LF +
+  "hôte-日本," +
+  AGENT +
+  ",u,ok,PASS" +
+  CR +
+  LF;
+
+function csvAnswer(headers: Record<string, string> = {}): Response {
+  return new Response(new TextEncoder().encode(RESULTS_BODY), {
+    status: 200,
+    headers: { "Content-Type": "text/csv; charset=utf-8", ...headers },
+  });
+}
+
+describe("CHK-M11-263 the results export request", () => {
+  it("one GET through the client with the bearer and exactly the filters", async () => {
+    stubSaving();
+    answer(() => csvAnswer());
+    await expect(
+      downloadResultsCsv(SCAN, { status: "FAIL", agent_id: AGENT }),
+    ).resolves.toBeNull();
+    expect(calls).toHaveLength(1);
+    const call = calls[0] as Call;
+    expect(call.method).toBe("GET");
+    expect(call.path).toBe(RESULTS_CSV);
+    expect(call.authorization).toBe("Bearer " + bsu("V"));
+    expect(queryOf(call)).toEqual({ status: "FAIL", agent_id: AGENT });
+  });
+
+  it("no filters sends no query at all (no limit, no cursor)", async () => {
+    stubSaving();
+    answer(() => csvAnswer());
+    await downloadResultsCsv(SCAN, {});
+    const call = calls[0] as Call;
+    expect(call.path).toBe(RESULTS_CSV);
+    expect(call.url).toBe(RESULTS_CSV);
+  });
+
+  it("NOT_RUN is sent as given", async () => {
+    stubSaving();
+    answer(() => csvAnswer());
+    await downloadResultsCsv(SCAN, { status: "NOT_RUN" });
+    expect(queryOf(calls[0] as Call)).toEqual({ status: "NOT_RUN" });
+  });
+});
+
+describe("CHK-M11-263 the saved results file (plant CHK-M11-378)", () => {
+  it("is a Blob of the body byte for byte, named scan-<id>-results.csv, URL revoked after the click", async () => {
+    const saved = stubSaving();
+    answer(() => csvAnswer());
+    await downloadResultsCsv(SCAN, { status: "FAIL" });
+    expect(saved.blobs).toHaveLength(1);
+    const blob = saved.blobs[0] as Blob;
+    expect(blob).toBeInstanceOf(Blob);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    expect(Array.from(bytes)).toEqual(
+      Array.from(new TextEncoder().encode(RESULTS_BODY)),
+    );
+    expect(saved.clicked).toEqual([
+      {
+        href: saved.created[0],
+        download: "scan-" + SCAN + "-results.csv",
+        attached: true,
+      },
+    ]);
+    expect(document.querySelectorAll("a[download]")).toHaveLength(0);
+    expect(saved.revoked).toEqual([]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(saved.revoked).toEqual([saved.created[0]]);
+  });
+
+  it("the name is the canonical lower-case id (#146 (d)) whatever case the screen holds", async () => {
+    expect(resultsCsvFileName(SCAN.toUpperCase())).toBe(
+      "scan-" + SCAN + "-results.csv",
+    );
+    const saved = stubSaving();
+    answer(() => csvAnswer());
+    await downloadResultsCsv(SCAN.toUpperCase(), {});
+    expect(saved.clicked[0]?.download).toBe("scan-" + SCAN + "-results.csv");
+  });
+
+  it("a hostile Content-Disposition never becomes the file name", async () => {
+    const saved = stubSaving();
+    answer(() =>
+      csvAnswer({
+        "Content-Disposition": 'attachment; filename="../../evil.exe"',
+      }),
+    );
+    await downloadResultsCsv(SCAN, {});
+    expect(saved.clicked.map((c) => c.download)).toEqual([
+      "scan-" + SCAN + "-results.csv",
+    ]);
+  });
+
+  it("the M5 packages export keeps its own name", async () => {
+    const saved = stubSaving();
+    answer(() => csvAnswer());
+    await downloadCsv({});
+    expect(saved.clicked[0]?.download).toBe(CSV_FILE_NAME);
+    expect((calls[0] as Call).path).toBe(CSV);
+  });
+});
+
+describe("CHK-M11-264 a refused results export", () => {
+  it("the 100,000-row 400 returns its detail and saves nothing", async () => {
+    const saved = stubSaving();
+    const detail = "Invalid request: more than 100000 rows; narrow the filters";
+    answer(() => problem(400, "invalid_request", detail));
+    await expect(downloadResultsCsv(SCAN, {})).resolves.toEqual({
+      status: 400,
+      type: "invalid_request",
+      detail,
+      retryAfterS: null,
+    });
+    expect(saved.blobs).toHaveLength(0);
+    expect(saved.clicked).toHaveLength(0);
+    expect(callsTo(RESULTS_CSV)).toHaveLength(1);
+  });
+
+  it("a 404 returns not_found and saves nothing", async () => {
+    const saved = stubSaving();
+    answer(() => problem(404, "not_found", "Not found."));
+    const result = await downloadResultsCsv(SCAN, {});
+    expect(result?.status).toBe(404);
+    expect(result?.type).toBe("not_found");
+    expect(saved.blobs).toHaveLength(0);
+  });
+
+  it("a 401 ends the session", async () => {
+    stubSaving();
+    answer(() => problem(401, "unauthorized"));
+    const result = await downloadResultsCsv(SCAN, {});
+    expect(result?.status).toBe(401);
     expect(currentSession()).toBeNull();
   });
 });

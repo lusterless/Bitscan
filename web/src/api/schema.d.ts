@@ -178,6 +178,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/agents/{id}/scans": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Agent Scans
+     * @description Scans whose resolved target holds the agent, newest first (REQ-266); a
+     *     malformed id is 404, as on the other /agents/{id} routes.
+     */
+    get: operations["agent_scans_api_v1_agents__id__scans_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/agents/{id}/tags": {
     parameters: {
       query?: never;
@@ -624,7 +645,12 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /**
+     * List Scans
+     * @description Newest first; `created_after` inclusive, `created_before` exclusive;
+     *     `agent_id` matches the scan's resolved target (REQ-264).
+     */
+    get: operations["list_scans_api_v1_scans_get"];
     put?: never;
     /**
      * Create Scan
@@ -632,6 +658,26 @@ export interface paths {
      *     `Idempotency-Key`, a repeat with the same body returns the first 202.
      */
     post: operations["create_scan_api_v1_scans_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/scans/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Scan
+     * @description Scan state and per-host summary, in one read-only snapshot (REQ-265).
+     */
+    get: operations["get_scan_api_v1_scans__id__get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -653,6 +699,68 @@ export interface paths {
      *     only (TS §4.4 L581); a repeat answers `cancelled_jobs: 0`.
      */
     post: operations["cancel_api_v1_scans__id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/scans/{id}/reevaluate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reevaluate
+     * @description Re-evaluate the scan's results against its policy's current version,
+     *     in the request (#147 (a)); adds rows only (TS §4.5 L603).
+     */
+    post: operations["reevaluate_api_v1_scans__id__reevaluate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/scans/{id}/results": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Results
+     * @description One item per planned plugin of each host, by agent_id then payload
+     *     position (REQ-267); output only for operator and admin (REQ-268).
+     */
+    get: operations["list_results_api_v1_scans__id__results_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/scans/{id}/results.csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Results Csv
+     * @description The whole REQ-267 set for the filters, at most 100,000 rows (REQ-269).
+     */
+    get: operations["results_csv_api_v1_scans__id__results_csv_get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1167,6 +1275,60 @@ export interface components {
       /** Package Count */
       package_count: number;
     };
+    /** HostJob */
+    HostJob: {
+      /** Dispatched At */
+      dispatched_at: string | null;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Job Id
+       * Format: uuid
+       */
+      job_id: string;
+      /** Retry Of */
+      retry_of: string | null;
+      /** Started At */
+      started_at: string | null;
+      /**
+       * State
+       * @enum {string}
+       */
+      state:
+        | "queued"
+        | "dispatched"
+        | "running"
+        | "completed"
+        | "partial"
+        | "failed"
+        | "cancelled"
+        | "expired";
+    };
+    /**
+     * HostSummary
+     * @description #145 (b), #120: effective counts; `score` in [0, 1], null = "n/a".
+     */
+    HostSummary: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Errors */
+      errors: number;
+      /** Failed */
+      failed: number;
+      /** Hostname */
+      hostname: string;
+      /** Jobs */
+      jobs: components["schemas"]["HostJob"][];
+      /** Not Run */
+      not_run: number;
+      /** Passed */
+      passed: number;
+      /** Score */
+      score: number | null;
+    };
     /**
      * ImportFinding
      * @description One `bit_import.errors` item (SR §3.5), warnings included (#110).
@@ -1512,6 +1674,27 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** Page[ScanItem] */
+    Page_ScanItem_: {
+      /** Items */
+      items: components["schemas"]["ScanItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[ScanResultItemWithOutput] */
+    Page_ScanResultItemWithOutput_: {
+      /** Items */
+      items: components["schemas"]["ScanResultItemWithOutput"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[ScanResultItem] */
+    Page_ScanResultItem_: {
+      /** Items */
+      items: components["schemas"]["ScanResultItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** Page[ScheduleItem] */
     Page_ScheduleItem_: {
       /** Items */
@@ -1751,6 +1934,27 @@ export interface components {
       task_id: string;
     };
     /**
+     * ReevalItem
+     * @description #147 (c): M8's ReevalResult.
+     */
+    ReevalItem: {
+      /** Not In Version */
+      not_in_version: number;
+      /** Policy Id */
+      policy_id: number;
+      /** Policy Version */
+      policy_version: number;
+      /** Rows Added */
+      rows_added: number;
+      /**
+       * Scan Id
+       * Format: uuid
+       */
+      scan_id: string;
+      /** Scan Policy Version */
+      scan_policy_version: number;
+    };
+    /**
      * RequestItem
      * @description Never the new token or its hash (REQ-063 (5)).
      */
@@ -1876,6 +2080,101 @@ export interface components {
       state:
         "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
     };
+    /** ScanDetailItem */
+    ScanDetailItem: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Finished At */
+      finished_at: string | null;
+      /** Hosts */
+      hosts: components["schemas"]["HostSummary"][];
+      /** Policy Id */
+      policy_id: number;
+      /** Policy Name */
+      policy_name: string;
+      /** Policy Version */
+      policy_version: number;
+      /** Requested By */
+      requested_by: number | null;
+      /** Resolved Count */
+      resolved_count: number;
+      /**
+       * Scan Id
+       * Format: uuid
+       */
+      scan_id: string;
+      /** Schedule Id */
+      schedule_id: number | null;
+      /**
+       * State
+       * @enum {string}
+       */
+      state:
+        "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+      /** Target */
+      target: {
+        [key: string]: unknown;
+      };
+      /**
+       * Target Kind
+       * @enum {string}
+       */
+      target_kind: "agents" | "tags" | "all";
+      /**
+       * Trigger
+       * @enum {string}
+       */
+      trigger: "manual" | "scheduled";
+    };
+    /**
+     * ScanItem
+     * @description #145 (a). `state` is read from `scan.state`, never re-derived.
+     */
+    ScanItem: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Finished At */
+      finished_at: string | null;
+      /** Policy Id */
+      policy_id: number;
+      /** Policy Name */
+      policy_name: string;
+      /** Policy Version */
+      policy_version: number;
+      /** Requested By */
+      requested_by: number | null;
+      /** Resolved Count */
+      resolved_count: number;
+      /**
+       * Scan Id
+       * Format: uuid
+       */
+      scan_id: string;
+      /** Schedule Id */
+      schedule_id: number | null;
+      /**
+       * State
+       * @enum {string}
+       */
+      state:
+        "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+      /**
+       * Target Kind
+       * @enum {string}
+       */
+      target_kind: "agents" | "tags" | "all";
+      /**
+       * Trigger
+       * @enum {string}
+       */
+      trigger: "manual" | "scheduled";
+    };
     /**
      * ScanQueuedItem
      * @description TS §6.4 202 body.
@@ -1908,6 +2207,124 @@ export interface components {
       target: {
         [key: string]: unknown;
       };
+    };
+    /**
+     * ScanResultItem
+     * @description #144 (a), the viewer model: no stdout or stderr field. `result` is the
+     *     effective verdict (null = Not run, TS §4.4 L585), `original_result` the
+     *     stored one (TS §4.5 L603).
+     */
+    ScanResultItem: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Eval Detail */
+      eval_detail: string | null;
+      /** Execute */
+      execute: string;
+      /** Exit Code */
+      exit_code: number | null;
+      /** Expected */
+      expected: string;
+      /** Finished At */
+      finished_at: string | null;
+      /** Hostname */
+      hostname: string;
+      /** Job Id */
+      job_id: string | null;
+      /** Operator */
+      operator: string;
+      /** Original Eval Detail */
+      original_eval_detail: string | null;
+      /** Original Result */
+      original_result: ("PASS" | "FAIL" | "ERROR") | null;
+      /** Plugin Name */
+      plugin_name: string;
+      /**
+       * Plugin Uuid
+       * Format: uuid
+       */
+      plugin_uuid: string;
+      /** Received At */
+      received_at: string | null;
+      /** Reeval Policy Version */
+      reeval_policy_version: number | null;
+      /** Reevaluated At */
+      reevaluated_at: string | null;
+      /** Reevaluated By */
+      reevaluated_by: number | null;
+      /** Result */
+      result: ("PASS" | "FAIL" | "ERROR") | null;
+      /** Retry */
+      retry: boolean;
+      /** Started At */
+      started_at: string | null;
+      /** Timed Out */
+      timed_out: boolean | null;
+      /** Truncated */
+      truncated: boolean | null;
+    };
+    /**
+     * ScanResultItemWithOutput
+     * @description Operator and admin only (#144 (b)); NULL is possible in the DDL.
+     */
+    ScanResultItemWithOutput: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /** Eval Detail */
+      eval_detail: string | null;
+      /** Execute */
+      execute: string;
+      /** Exit Code */
+      exit_code: number | null;
+      /** Expected */
+      expected: string;
+      /** Finished At */
+      finished_at: string | null;
+      /** Hostname */
+      hostname: string;
+      /** Job Id */
+      job_id: string | null;
+      /** Operator */
+      operator: string;
+      /** Original Eval Detail */
+      original_eval_detail: string | null;
+      /** Original Result */
+      original_result: ("PASS" | "FAIL" | "ERROR") | null;
+      /** Plugin Name */
+      plugin_name: string;
+      /**
+       * Plugin Uuid
+       * Format: uuid
+       */
+      plugin_uuid: string;
+      /** Received At */
+      received_at: string | null;
+      /** Reeval Policy Version */
+      reeval_policy_version: number | null;
+      /** Reevaluated At */
+      reevaluated_at: string | null;
+      /** Reevaluated By */
+      reevaluated_by: number | null;
+      /** Result */
+      result: ("PASS" | "FAIL" | "ERROR") | null;
+      /** Retry */
+      retry: boolean;
+      /** Started At */
+      started_at: string | null;
+      /** Stderr */
+      stderr: string | null;
+      /** Stdout */
+      stdout: string | null;
+      /** Timed Out */
+      timed_out: boolean | null;
+      /** Truncated */
+      truncated: boolean | null;
     };
     /** ScheduleItem */
     ScheduleItem: {
@@ -2843,6 +3260,85 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  agent_scans_api_v1_agents__id__scans_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_ScanItem_"];
+        };
       };
       /** @description Bad Request */
       400: {
@@ -5195,6 +5691,88 @@ export interface operations {
       };
     };
   };
+  list_scans_api_v1_scans_get: {
+    parameters: {
+      query?: {
+        policy_id?: number | null;
+        agent_id?: string | null;
+        state?:
+          | (
+              | "queued"
+              | "running"
+              | "completed"
+              | "partial"
+              | "failed"
+              | "cancelled"
+            )
+          | null;
+        created_after?: string | null;
+        created_before?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_ScanItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   create_scan_api_v1_scans_post: {
     parameters: {
       query?: never;
@@ -5303,6 +5881,82 @@ export interface operations {
       };
     };
   };
+  get_scan_api_v1_scans__id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ScanDetailItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   cancel_api_v1_scans__id__cancel_post: {
     parameters: {
       query?: never;
@@ -5321,6 +5975,253 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ScanCancelledItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  reevaluate_api_v1_scans__id__reevaluate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReevalItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_results_api_v1_scans__id__results_get: {
+    parameters: {
+      query?: {
+        status?: ("PASS" | "FAIL" | "ERROR" | "NOT_RUN") | null;
+        agent_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["Page_ScanResultItem_"]
+            | components["schemas"]["Page_ScanResultItemWithOutput_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  results_csv_api_v1_scans__id__results_csv_get: {
+    parameters: {
+      query?: {
+        status?: ("PASS" | "FAIL" | "ERROR" | "NOT_RUN") | null;
+        agent_id?: string | null;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/csv": string;
         };
       };
       /** @description Bad Request */
