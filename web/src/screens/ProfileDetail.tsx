@@ -91,7 +91,9 @@ function statusActions(policy: Detail): [string, Change, string][] {
 
 /**
  * REQ-181, REQ-182 (2). Mount it with `key={policyId}`. Status actions and
- * delete are offered to admins only; the server decides (TS §6.2). Delete
+ * delete are offered to admins only; Run scan with this profile chosen to
+ * operators and admins while it is enabled (REQ-279, #154 (c)); the server
+ * decides (TS §6.2). Delete
  * needs a TOTP-verified session: a refusal shows the sign-in-again prompt.
  */
 export function ProfileDetail({
@@ -207,37 +209,49 @@ export function ProfileDetail({
           </div>
           <p className="page-subtitle">{policy.policy_description}</p>
         </div>
-        {role === "admin" && !deleted && (
+        {role !== "viewer" && !deleted && (
           <div className="page-actions">
-            {statusActions(policy).map(([label, body, done]) => (
-              <button
-                key={label}
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                onClick={() => {
-                  patch(body, done);
-                }}
+            {policy.policy_status === "enabled" && (
+              <a
+                className="btn btn-sm btn-primary"
+                href={formatHash({ name: "run-scan", policyId })}
               >
-                {label}
-              </button>
-            ))}
-            <Confirm
-              tone="danger"
-              label="Delete"
-              message={
-                "Delete profile " +
-                policy.policy_name +
-                "? It leaves selection, its queued jobs are cancelled, its schedules are disabled and its plugins are retired."
-              }
-              disabled={busy}
-              onConfirm={() => {
-                void act(
-                  () => api.DELETE("/api/v1/policies/{id}", path),
-                  "Profile deleted.",
-                );
-              }}
-            />
+                Run scan
+              </a>
+            )}
+            {role === "admin" && (
+              <>
+                {statusActions(policy).map(([label, body, done]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy}
+                    onClick={() => {
+                      patch(body, done);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <Confirm
+                  tone="danger"
+                  label="Delete"
+                  message={
+                    "Delete profile " +
+                    policy.policy_name +
+                    "? It leaves selection, its queued jobs are cancelled, its schedules are disabled and its plugins are retired."
+                  }
+                  disabled={busy}
+                  onConfirm={() => {
+                    void act(
+                      () => api.DELETE("/api/v1/policies/{id}", path),
+                      "Profile deleted.",
+                    );
+                  }}
+                />
+              </>
+            )}
           </div>
         )}
       </div>

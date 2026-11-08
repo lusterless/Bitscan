@@ -219,3 +219,94 @@ describe("CHK-M7-390 the M7 hashes", () => {
     expect(isPolicyId(value)).toBe(want);
   });
 });
+
+// ------------------------------------------------------------ CHK-M11-271
+// TASK-251 TEST (TP-M11-14): the M11 hashes. Expected values: the TASK-251
+// acceptance test (parse and format every new hash; malformed ids fall back
+// to the host list); scan ids are hyphenated UUIDs lower-cased as host ids
+// are (PD-28 (d)); a profile id for Run scan follows the M7 profile id rule.
+
+const SCAN_ID = "1b4e28ba-2fa1-41d2-883f-0016d3cca427";
+
+describe("CHK-M11-271 the M11 hashes", () => {
+  it.each([
+    ["#/scans", { name: "scans" }],
+    ["#/scans/" + SCAN_ID, { name: "scan", scanId: SCAN_ID }],
+    [
+      "#/scans/" + SCAN_ID + "/results",
+      { name: "scan-results", scanId: SCAN_ID },
+    ],
+    ["#/scans/run", { name: "run-scan", policyId: null }],
+    ["#/scans/run/7", { name: "run-scan", policyId: "7" }],
+    ["#/scans/run/" + MAX_ID, { name: "run-scan", policyId: MAX_ID }],
+    ["#/schedules", { name: "schedules" }],
+  ] as const)("%j parses and formats back", (hash, route) => {
+    expect(parseHash(hash)).toEqual(route);
+    expect(formatHash(parseHash(hash))).toBe(hash);
+  });
+
+  it("an upper-case scan id is lower-cased (detail and results)", () => {
+    const upper = SCAN_ID.toUpperCase();
+    expect(parseHash("#/scans/" + upper)).toEqual({
+      name: "scan",
+      scanId: SCAN_ID,
+    });
+    expect(parseHash("#/scans/" + upper + "/results")).toEqual({
+      name: "scan-results",
+      scanId: SCAN_ID,
+    });
+  });
+
+  it("formatHash gives each route's hash", () => {
+    const routes: [Route, string][] = [
+      [{ name: "scans" }, "#/scans"],
+      [{ name: "scan", scanId: SCAN_ID }, "#/scans/" + SCAN_ID],
+      [
+        { name: "scan-results", scanId: SCAN_ID },
+        "#/scans/" + SCAN_ID + "/results",
+      ],
+      [{ name: "run-scan", policyId: null }, "#/scans/run"],
+      [{ name: "run-scan", policyId: "12" }, "#/scans/run/12"],
+      [{ name: "schedules" }, "#/schedules"],
+    ];
+    for (const [route, hash] of routes) {
+      expect(formatHash(route)).toBe(hash);
+      expect(parseHash(hash)).toEqual(route);
+    }
+  });
+
+  it.each([
+    "#/scans/",
+    "#/scans/x",
+    "#/scans/" + SCAN_ID.replace(/-/g, ""),
+    "#/scans/" + SCAN_ID.slice(0, -1),
+    "#/scans/" + SCAN_ID + "0",
+    "#/scans/" + SCAN_ID.replace("1b4e", "gb4e"),
+    "#/scans/" + SCAN_ID + "/",
+    "#/scans/" + SCAN_ID + "/other",
+    "#/scans/" + SCAN_ID + "/results/",
+    "#/scans/" + SCAN_ID + "/results/x",
+    "#/scans/" + SCAN_ID + "/results/results",
+    "#/scans/" + SCAN_ID + "/Results",
+    "#/scans/" + SCAN_ID + "/results.csv",
+    "#/scans/" + SCAN_ID + "?x=1",
+    "#/scans/%31b4e28ba-2fa1-41d2-883f-0016d3cca427",
+    "#/scans/../hosts",
+    "#/scans/run/",
+    "#/scans/run/x",
+    "#/scans/run/-1",
+    "#/scans/run/1.0",
+    "#/scans/run/" + MAX_ID + "9",
+    "#/scans/run/7/x",
+    "#/scans/run/７",
+    "#/scans/run/" + SCAN_ID,
+    "#/Scans",
+    "#/scan/" + SCAN_ID,
+    "#/schedules/",
+    "#/schedules/1",
+    "#/Schedules",
+    "#/run-scan",
+  ])("%j falls back to the host list", (hash) => {
+    expect(parseHash(hash)).toEqual({ name: "hosts" });
+  });
+});

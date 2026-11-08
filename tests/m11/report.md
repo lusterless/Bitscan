@@ -16,6 +16,13 @@ Phase report for M11 (results and end-to-end). The lead folds in each section un
 | TASK-241 | TASK-241 TEST: PASS | `work/reports/TASK-241-test.md` |
 | TASK-242 | TASK-242 TEST: PASS | `work/reports/TASK-242-test.md` |
 | TASK-243 | TASK-243 TEST: PASS | `work/reports/TASK-243-test.md` |
+| TASK-246 | TASK-246 TEST (W3/W4 web batch): PASS | `work/reports/TASK-246-test.md` |
+| TASK-247 | TASK-247 TEST (W3/W4 web batch): PASS | `work/reports/TASK-247-test.md` |
+| TASK-248 | TASK-248 TEST (W3/W4 web batch): PASS | `work/reports/TASK-248-test.md` |
+| TASK-249 | TASK-249 TEST (W3/W4 web batch): PASS | `work/reports/TASK-249-test.md` |
+| TASK-250 | TASK-250 TEST (W3/W4 web batch): PASS | `work/reports/TASK-250-test.md` |
+| TASK-256 | TASK-256 TEST (W3/W4 web batch): PASS | `work/reports/TASK-256-test.md` |
+| TASK-251 | TASK-251 TEST (W3/W4 web batch): PASS | `work/reports/TASK-251-test.md` |
 | TASK-255 | TASK-255 TEST: PASS | `work/reports/TASK-255-test.md` |
 | TP-M11-17 | TP-M11-17 (harness carries): PASS | `work/reports/TP-M11-17-test.md`; rows in `work/reports/M11-e2e-test.md` |
 
@@ -709,3 +716,87 @@ The lead's points:
 
 - The CSV time format is `YYYY-MM-DDTHH:MM:SS.ffffffZ`. The test asserts only RFC 3339 UTC with `Z` and value equality, as #146 (b) requires, not the digit count.
 - CHK-M11-428 covers `results_page`. `results_csv` has its own snapshot call, which `test_each_call_is_one_read_only_snapshot` also checks.
+
+## TASK-246 (Scans and Run scan; W3 batch evidence)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| CHK-M11-265 | `npx vitest run src/screens/Scans.test.tsx` | PASS | 15/15 |
+| CHK-M11-266 | `npx vitest run src/screens/RunScan.test.tsx` | PASS | 17/17 |
+| CHK-M11-272 (Scans, Run scan) | the same files | PASS | plain-text rows green; no `script`/`img` nodes |
+| CHK-M11-366 (screen half) | plant in a throwaway copy | PASS (red as required) | 1 failed / 15 |
+| CHK-M11-432, -433, -438 | plants in a throwaway copy | PASS (red as required) | 1 failed / 17; 1 failed / 17; 1 failed / 15 |
+| W3+W4 batch full run | `npx vitest run` | PASS | 741/741, 0 skipped |
+| W3+W4 G12–G14, G16 | lint, typecheck, format:check, regen `cmp` | PASS | all exit 0; no diff |
+| Flake observation | full run under load | NOT RUN as a gate (observation) | 2 M5 paging tests hit the 5 s default timeout once; 2.0–3.2 s alone; sent to main |
+
+## TASK-247 (scan detail)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| CHK-M11-267 | `npx vitest run src/screens/ScanDetail.test.tsx` | PASS | 19/19 |
+| CHK-M11-272 (scan detail) | the same | PASS | plain-text row green |
+| CHK-M11-361 | plant | PASS (red as required) | eslint exit 1 on the `fetch` line |
+| CHK-M11-362 | plants (a) and (b) | PASS (red as required) | (a) 1 failed / 19; (b) eslint exit 1 (storage ban) |
+| CHK-M11-375 (detail) | plant | PASS (red as required) | eslint exit 1; 1 failed / 19 |
+| CHK-M11-434, -436 | plants | PASS (red as required) | 1 failed / 19; 4 failed / 19 |
+
+## TASK-248 (results screen)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| CHK-M11-268 | `npx vitest run src/screens/ScanResults.test.tsx` | PASS | 14/14 |
+| CHK-M11-272 (results) | the same | PASS | plain-text rows green |
+| CHK-M11-360 | plant | PASS (red as required) | eslint exit 1; 1 failed / 14 |
+| CHK-M11-365 (screen half) | plant | PASS (red as required) | 2 failed / 14 |
+| CHK-M11-375 (results), -376, -437 | plants | PASS (red as required) | eslint exit 1 + 1 failed; 1 failed; 1 failed (each / 14) |
+
+## TASK-249 (schedules)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| CHK-M11-269 (screen half) | `npx vitest run src/screens/Schedules.test.tsx` | PASS | 17/17 |
+| CHK-M11-272 (schedules) | the same | PASS | plain-text row green |
+| CHK-M11-435 | plant | PASS (red as required) | 4 failed / 17 |
+
+## TASK-250 (host scan history)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| CHK-M11-270 | `npx vitest run src/screens/HostScans.test.tsx src/screens/HostDetail.test.tsx` | PASS | 8/8 and 9/9 (existing HostDetail unchanged) |
+| CHK-M11-272 (host scans) | the same | PASS | plain-text row green |
+
+## TASK-256 (ScanTable and TargetPicker)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| CHK-M11-273 | `npx vitest run src/components/TargetPicker.test.tsx` | PASS | 37/37 (with -274) |
+| CHK-M11-274 | the same | PASS | round-trip and describe rows green |
+| CHK-M11-275 | `npx vitest run src/components/ScanTable.test.tsx` | PASS | 5/5 |
+| CHK-M11-375 (table, picker) | plants | PASS (red as required) | eslint exit 1 each; 3 and 2 tests red |
+| CHK-M11-379 | plants (a), (b) | PASS (red as required) | 1 failed / 37; 4 failed / 54 |
+
+## TASK-251 (routing and navigation)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| CHK-M11-271 | `npx vitest run src/app/router.test.ts src/app/App.test.tsx src/screens/ProfileDetail.test.tsx` | PASS | 148/148, 44/44, 25/25 |
+| CHK-M11-269 (viewer half), REQ-282 (3) | the App gating row | PASS | 0 requests per hash; no `scan-schedules` |
+| CHK-M11-272 (session) | App `afterEach` leak check | PASS | no leak |
+| CHK-M5-280 → CHK-M5-280 (M11) | PD-51 replacement | PASS | old → new above |
+| CHK-M11-366 (shell, profile) | plants (b), (c), (d) | PASS (red as required) | 1, 2 and 1 failed |
+| CHK-M11-430, -431 | plants | PASS (red as required) | 15 and 8 failed / 148 |

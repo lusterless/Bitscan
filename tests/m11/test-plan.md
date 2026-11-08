@@ -310,6 +310,9 @@ Owner of this section: **tester-m11w** (from 2026-11-08; the rows were drafted b
 | CHK-M11-270 | CODE | Host scans: rows, links to the scan detail, empty state, error banner; existing HostDetail tests pass (REQ-283) | L |
 | CHK-M11-271 | CODE | Router: every new hash parses and formats; malformed ids fall back to the host list; viewer offered neither schedules nor run scan; the profile page links to Run scan with the profile chosen | L |
 | CHK-M11-272 | CODE | REQ-284 (2): a `<script>` hostname, plugin name, eval detail and stdout render as text in every new screen; no `dangerouslySetInnerHTML`, `innerHTML`, `fetch(`; session in memory only (no `localStorage` / `sessionStorage`) | L |
+| CHK-M11-273 | CODE | TASK-256 `TargetPicker` (#154 (a), #122 (b), #68): the three forms "All hosts", "Hosts with any of these tags", "These hosts" (chosen from `GET /agents`, paged through the client); the tag check runs before anything is sent: 1–32 distinct tags, each 1–64 characters from `[A-Za-z0-9._:-]` (64 accepted, 65 refused; 32 accepted, 33 refused; `/`, `<`, a non-ASCII letter and an empty list refused; a space or comma separates; a repeated tag is sent once, so the body holds distinct tags); a refused form sends no request and names the problem; no host chosen is refused; `<script>` hostnames in the host list render as text | L |
+| CHK-M11-274 | CODE | TASK-256 `toTarget` / `fromTarget` / `describeTarget`: each form gives exactly one key (`{all: true}`, `{tags: [...]}`, `{agents: [...]}`, #122 (b)); `fromTarget(toTarget(x))` returns `x` for each form, and `toTarget(fromTarget(t))` returns `t` for each stored target (the detail's `target`, without `resolved_agents`); `describeTarget` names each form in plain text (a `<script>` tag value stays text) | L |
+| CHK-M11-275 | CODE | TASK-256 `ScanTable` / `ScanStateBadge`: one row per scan with policy name, version, trigger, state, target kind, host count and times; each of the six scan states has its own label; a row links to that scan's detail through the `ScanLinks` prop (mocked in the screen tests until TASK-251 wires the router); a `<script>` policy name renders as text; an empty list has no body rows (the empty-state text is each screen's: "No scans.", "No scans of this host yet.") | L |
 
 Web plants (throwaway copy; the unmodified copy green first; "red" = the named web test fails for the planted reason, or the lint exits non-zero on the planted line):
 
@@ -322,7 +325,17 @@ Web plants (throwaway copy; the unmodified copy green first; "red" = the named w
 | CHK-M11-364 round to nearest (0.9996 → "100.0 %") | `Score.tsx` / `format.ts` | CHK-M11-261 0.9996 row | W2 |
 | CHK-M11-365 `original_result` hidden | `ScanResults.tsx` (and `ResultBadge.tsx` in W2) | CHK-M11-268 / CHK-M11-262 both-verdicts row | W2, W3 |
 | CHK-M11-366 a viewer offered Run scan or Schedules | `routes.tsx` / `Scans.tsx` | CHK-M11-265 viewer row, CHK-M11-271 | W3, W4 |
-| CHK-M11-375 (tester extra, S) a `<script>` hostname rendered as HTML (`innerHTML`) | `ScanDetail.tsx`, `Scans.tsx` / `HostScans.tsx` | CHK-M11-272 for that screen | W3 |
+| CHK-M11-375 (tester extra, S) a `<script>` hostname rendered as HTML (`innerHTML`) | `ScanDetail.tsx`, `Scans.tsx` / `HostScans.tsx`, `ScanTable.tsx`, `TargetPicker.tsx` (TASK-256) | CHK-M11-272, -273, -275 for that file | W3 |
+| CHK-M11-379 (tester extra) the tag check relaxed (65 characters, or `<` / space allowed) | `TargetPicker.tsx` (TASK-256) | CHK-M11-273 tag rows | W3 |
+| CHK-M11-430 (tester extra, S) a scan hash with any non-empty id accepted | `router.ts` (TASK-251) | CHK-M11-271 fallback rows | W4 |
+| CHK-M11-431 (tester extra) a Run scan hash with any profile id accepted | `router.ts` (TASK-251) | CHK-M11-271 fallback rows | W4 |
+| CHK-M11-432 (tester extra) the in-flight guard removed (double click) | `RunScan.tsx` | CHK-M11-266 double-click row | W3 |
+| CHK-M11-433 (tester extra) a new Idempotency-Key on every send (retry gets a new key) | `RunScan.tsx` | CHK-M11-266 retry row | W3 |
+| CHK-M11-434 (tester extra, S) Cancel offered to viewers | `ScanDetail.tsx` | CHK-M11-267 viewer row | W3 |
+| CHK-M11-435 (tester extra) an edit always sends `cron` | `ScheduleForm.tsx` | CHK-M11-269 changed-fields rows | W3 |
+| CHK-M11-436 (tester extra, S) a reload after a refused re-evaluate or cancel | `ScanDetail.tsx` | CHK-M11-267 "no other request" rows | W3 |
+| CHK-M11-437 (tester extra) the CSV export drops the current filters | `ScanResults.tsx` | CHK-M11-268 export row | W3 |
+| CHK-M11-438 (tester extra) the host-id filter sent untrimmed and in its typed case | `Scans.tsx` | CHK-M11-265 filter row | W3 |
 | CHK-M11-376 (tester extra, S) the output column shown with an empty cell for viewer items (keys absent) | `ScanResults.tsx` | CHK-M11-268 no-output row | W3 |
 | CHK-M11-377 (tester extra) score formatter `floor(s*100*10)` | `format.ts` | CHK-M11-261 29/100 row | W2 |
 | CHK-M11-378 (tester extra) CSV download without `parseAs: "blob"` (text parse) | `download.ts` | CHK-M11-263 byte-for-byte row | W2 |

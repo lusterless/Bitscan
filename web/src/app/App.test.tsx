@@ -7,6 +7,10 @@
 // TASK-173 TEST (TP-M7-29): CHK-M5-280 updated for REQ-183 (3) (Profiles for
 // every role; Upload, Import history and Rebuild for admins, TS §6.2
 // L1100-L1107), plus CHK-M7-390 (shell part), CHK-M7-392, CHK-M7-393.
+// TASK-251 TEST (TP-M11-14): CHK-M5-280 updated for REQ-279 and REQ-282
+// (PD-51: Scans for every role, Schedules for operator and admin), plus
+// CHK-M11-271 (shell part: role gating, the profile page's Run scan) and
+// CHK-M11-272 (session in memory on the M11 screens: the afterEach leak check).
 import {
   answer,
   bsu,
@@ -25,6 +29,7 @@ import {
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { detail, host, scanItem, SCAN } from "../test/m11";
 import { App } from "./App";
 import { clearSession, currentSession } from "./session";
 
@@ -359,15 +364,19 @@ describe("CHK-M5-280 navigation per role", () => {
     "Hosts #/hosts",
     "Package search #/packages",
     "Profiles #/profiles",
+    // TASK-251 TEST (PD-51, changed by requirement): REQ-279 Scans for every
+    // role; REQ-282 Schedules for operators and admins only (#122 (i)).
+    "Scans #/scans",
   ];
   const account = ["TOTP #/account/totp", "Password #/account/password"];
   it.each([
     ["viewer", [...common, ...account]],
-    ["operator", [...common, ...account]],
+    ["operator", [...common, "Schedules #/schedules", ...account]],
     [
       "admin",
       [
         ...common,
+        "Schedules #/schedules",
         "Upload policy #/catalog/upload",
         "Import history #/catalog/imports",
         "Rebuild catalog #/catalog/rebuild",
@@ -903,5 +912,164 @@ describe("CHK-M7-392 hostile text on the M7 screens, inside the shell", () => {
     ).toContain(H);
     expect(container.querySelectorAll("script, img")).toHaveLength(0);
     expect(document.querySelectorAll("script, img")).toHaveLength(0);
+  });
+});
+
+// ------------------------------------------------------------ CHK-M11-271
+
+const NEW_SCAN = "9a0b1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d";
+
+/** The M11 routes on top of the M5/M7 manager double. */
+function m11(call: Call): Response | null {
+  const page = (items: unknown[]) => json(200, { items, next_cursor: null });
+  switch (call.method + " " + call.path) {
+    case "GET /api/v1/scans":
+      return page([scanItem(1, { scan_id: SCAN, policy_name: H })]);
+    case "GET /api/v1/scans/" + SCAN:
+    case "GET /api/v1/scans/" + NEW_SCAN:
+      return json(
+        200,
+        detail({ policy_name: H, hosts: [host(1, { hostname: H })] }),
+      );
+    case "GET /api/v1/scans/" + SCAN + "/results":
+      return page([]);
+    case "GET /api/v1/scan-schedules":
+      return page([]);
+    case "GET /api/v1/agents/" + ID + "/scans":
+      return page([scanItem(2, { policy_name: H })]);
+    case "POST /api/v1/scans":
+      return json(202, {
+        scan_id: NEW_SCAN,
+        state: "queued",
+        policy_version: 1,
+        jobs: 1,
+      });
+    default:
+      return null;
+  }
+}
+
+const NOT_AVAILABLE = "This page is not available for your role.";
+
+describe("CHK-M11-271 role gating in the shell (plant CHK-M11-366)", () => {
+  it("a viewer opening Run scan or Schedules by URL gets Not available; neither screen mounts or sends a request", async () => {
+    manager("viewer", true, m11);
+    render(<App />);
+    await signIn("123456");
+    for (const hash of ["#/scans/run", "#/scans/run/7", "#/schedules"]) {
+      const before = calls.length;
+      await go(hash);
+      expect(screen.getByText(NOT_AVAILABLE)).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: "Run scan" })).toBeNull();
+      expect(screen.queryByRole("heading", { name: "Schedules" })).toBeNull();
+      expect(screen.queryByRole("form", { name: "Run scan" })).toBeNull();
+      expect(calls.slice(before).map((c) => c.method + " " + c.path)).toEqual(
+        [],
+      );
+    }
+    expect(requested().filter((r) => r.includes("scan-schedules"))).toEqual([]);
+    expect(requested()).not.toContain("POST /api/v1/scans");
+  });
+
+  it.each(["operator", "admin"])(
+    "%s gets the Run scan and Schedules screens",
+    async (role) => {
+      manager(role, true, m11);
+      render(<App />);
+      await signIn("123456");
+      await go("#/scans/run");
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Run scan" }),
+      ).toBeTruthy();
+      await go("#/schedules");
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Schedules" }),
+      ).toBeTruthy();
+      expect(requested()).toContain("GET /api/v1/scan-schedules");
+      expect(screen.queryByText(NOT_AVAILABLE)).toBeNull();
+    },
+  );
+
+  it("a viewer gets Scans, the scan detail and the results, with no Run scan", async () => {
+    manager("viewer", true, m11);
+    render(<App />);
+    await signIn("123456");
+    await go("#/scans");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Scans" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Run scan" })).toBeNull();
+    expect(screen.getAllByText(H).length).toBeGreaterThan(0);
+    await go("#/scans/" + SCAN);
+    expect(screen.getByRole("heading", { level: 1, name: H })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Re-evaluate" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel scan" })).toBeNull();
+    await go("#/scans/" + SCAN + "/results");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Results" }),
+    ).toBeTruthy();
+    expect(document.querySelectorAll("script, img")).toHaveLength(0);
+  });
+
+  it("the Scans list links into the shell's routes", async () => {
+    manager("operator", true, m11);
+    render(<App />);
+    await signIn("123456");
+    await go("#/scans");
+    expect(
+      screen.getByRole("link", { name: "Run scan" }).getAttribute("href"),
+    ).toBe("#/scans/run");
+    const row = screen.getAllByRole("row")[1] as HTMLElement;
+    expect(row.querySelector("a")?.getAttribute("href")).toBe(
+      "#/scans/" + SCAN,
+    );
+  });
+});
+
+describe("CHK-M11-271 Run scan from a profile's page (#154 (c))", () => {
+  it("an operator follows Run scan with the profile chosen, submits, and lands on the new scan", async () => {
+    manager("operator", true, m11);
+    render(<App />);
+    await signIn("123456");
+    await go("#/profiles/" + PID);
+    const link = screen.getByRole("link", { name: "Run scan" });
+    expect(link.getAttribute("href")).toBe("#/scans/run/" + PID);
+    await go("#/scans/run/" + PID);
+    const select = screen.getByRole("combobox", {
+      name: "Profile",
+    }) as HTMLSelectElement;
+    expect(select.value).toBe(PID);
+    fireEvent.click(screen.getByRole("button", { name: "Run scan" }));
+    await settle();
+    const post = calls.find(
+      (c) => c.method === "POST" && c.path === "/api/v1/scans",
+    );
+    expect(JSON.parse(post?.body ?? "null")).toEqual({
+      policy_id: 7,
+      target: { all: true },
+    });
+    expect(window.location.hash).toBe("#/scans/" + NEW_SCAN);
+    expect(screen.getByRole("heading", { level: 1, name: H })).toBeTruthy();
+  });
+
+  it("a viewer's profile page offers no Run scan", async () => {
+    manager("viewer", true, m11);
+    render(<App />);
+    await signIn("123456");
+    await go("#/profiles/" + PID);
+    expect(screen.queryByRole("link", { name: "Run scan" })).toBeNull();
+  });
+});
+
+describe("CHK-M11-270 the host page in the shell shows its scan history", () => {
+  it("with links into the scan detail", async () => {
+    manager("viewer", true, m11);
+    render(<App />);
+    await signIn("123456");
+    await go("#/hosts/" + ID);
+    expect(requested()).toContain("GET /api/v1/agents/" + ID + "/scans");
+    const region = screen.getByRole("region", { name: "Scans" });
+    const link = within(region).getAllByRole("link")[0];
+    expect(link?.getAttribute("href")).toMatch(/^#\/scans\/[0-9a-f-]{36}$/);
   });
 });
