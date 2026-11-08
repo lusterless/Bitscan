@@ -1183,7 +1183,9 @@ def test_the_m9_scans_and_schedules_sections_behave_as_written(  # noqa: PLR0915
             (sched,),
         )
 
-    first = until(lambda: scans_of(r_all), 100)
+    # An every-minute cron fires up to 60 s after creation and the tick runs
+    # every 30 s, so 100 s left little slack (flaky in the M11 W3 run).
+    first = until(lambda: scans_of(r_all), 180)
     sc = (first or [("", "", "x", None)])[0]
     entry = next(
         ((a, d) for a, tg, d in audit("scan.create") if tg == f"scan:{sc[0]}"), None
@@ -1279,32 +1281,25 @@ def test_the_m9_scans_and_schedules_sections_behave_as_written(  # noqa: PLR0915
             r"\b(?:TASK|REQ|CHK)-\d+|tester|impl-|planner|\bM\d+\b", whole
         ),
     )
+    # M11 (REQ-289; PD-51): REQ-233's "results views are not part of this
+    # version yet" sentence is superseded. Old → new: CHK-M9-285's README-text
+    # row → the Scans section has its "### Scan results" subsection and the
+    # sentence is gone; how keys are kept and the scan-state lag are unchanged.
+    wants = (
+        "### Scan results",
+        "in memory, for 24 hours",
+        "forgotten when the manager restarts",
+        "lag",
+    )
+    stated = all(x in whole for x in wants) and "not part of this version" not in whole
     w.check(
-        "the README says the results views are not part of this version, and how"
-        " keys are kept",
+        "the README documents scan results (the old 'not part of this version'"
+        " line is gone), and how keys are kept",
         "README Scans",
-        "results routes 'not part of this version yet'; keys 'in memory, for 24"
-        " hours' and forgotten on restart; scan state lags",
-        "stated"
-        if all(
-            x in whole
-            for x in (
-                "not part of this version yet",
-                "in memory, for 24 hours",
-                "forgotten when the manager restarts",
-                "lag",
-            )
-        )
-        else "missing",
-        all(
-            x in whole
-            for x in (
-                "not part of this version yet",
-                "in memory, for 24 hours",
-                "forgotten when the manager restarts",
-                "lag",
-            )
-        ),
+        "'### Scan results' present, 'not part of this version' absent; keys 'in"
+        " memory, for 24 hours' and forgotten on restart; scan state lags",
+        "stated" if stated else "missing",
+        stated,
     )
     w.check(
         "the Schedules section is under Scans",

@@ -6,21 +6,21 @@ Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs
 
 The manager runs:
 
-- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), fleet package search and its CSV export (`/api/v1/packages/search`), the policy catalog (`/api/v1/policies`, `/api/v1/imports`, `/api/v1/tasks`), compliance scans and scan schedules (`/api/v1/scans`, `/api/v1/scan-schedules`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; the scheduler (inventory runs, `offline_sweep` and scheduled scans); and the [web UI](#web-ui);
+- `bitscan-manager serve`: the HTTPS API with the health routes, sign-in and sign-out, TOTP enrolment (`/api/v1/auth/totp/enrol`), password change (`/api/v1/auth/password`), API tokens (`/api/v1/api-tokens`), user administration (`/api/v1/users`), enrolment tokens and requests, the host routes (`/api/v1/agents`), fleet package search and its CSV export (`/api/v1/packages/search`), the policy catalog (`/api/v1/policies`, `/api/v1/imports`, `/api/v1/tasks`), compliance scans, their results, scores, CSV export and re-evaluation, and scan schedules (`/api/v1/scans`, `/api/v1/scan-schedules`), runtime settings, the audit log and metrics; the six agent routes under `/api/v1/agent/`; the scheduler (inventory runs, `offline_sweep`, scheduled scans and [retention](#retention)); and the [web UI](#web-ui);
 - the folder watcher, which imports `.bit` policy files as they change (see [Policies](#policies));
 - the server commands `users create-admin`, `users create-api-token`, `users reset-totp` and `bits rebuild`;
 - `db migrate` and `db maintain`.
 
 The agent package (`bitscan-agent`) installs the `bitscan-agent` and `bitscan-runner` services. The agent enrols, sends a heartbeat every 5 minutes, pulls its jobs and uploads the inventory.
 
-**Compliance jobs (pre-release `0.2.0~pre1-1`, not a supported release).** Hosts on this build run compliance jobs:
+**Compliance scans and results (pre-release `0.2.0~pre2-1`, not a supported release).** Hosts on this build run compliance jobs:
 
 - The agent hands each job to `bitscan-runner`. The runner runs every check in its sandbox as the `bitscan-runner` user: it can read every file, but it cannot write outside its private `/tmp` or open IP connections.
 - The runner redacts the output on the host and returns it.
 - The agent keeps the results in an on-disk spool until the manager has answered them.
 - The optional `bitscan-capread` helper stays off until an administrator enables it on the host.
 
-The routes and pages that show scan results and scores come in a later version (see [Scans](#scans)). [`agent-install.md`](deploy/runbooks/agent-install.md) sections 9 to 11 cover the cgroup v2 requirement, `runner_unavailable`, the helper and the spool.
+The manager lists scans, shows each host's results and score, exports them as CSV and re-evaluates them (see [Scan results](#scan-results)). It also deletes old data on a schedule (see [Retention](#retention)). [`agent-install.md`](deploy/runbooks/agent-install.md) sections 9 to 11 cover the cgroup v2 requirement, `runner_unavailable`, the helper and the spool.
 
 The specifications are in `docs/spec/`: `Technical_Specification.md` and `bit_Schema_Reference.md`.
 
@@ -236,11 +236,12 @@ The build replaces the contents of `manager/bitscan_manager/webui/` with `index.
 
 | Page | viewer | operator | admin |
 | --- | --- | --- | --- |
-| Hosts, host detail, Package search, Profiles, profile detail, TOTP, Password | yes | yes | yes |
+| Hosts, host detail, Package search, Profiles, profile detail, Scans, scan detail, scan results, TOTP, Password | yes | yes | yes |
+| Run scan, Schedules | no | yes | yes |
 | Upload policy, Import history, Rebuild catalog | no | no | yes |
 | Enrolment requests, Enrolment tokens | no | no | yes |
 
-Admin actions on the enrolment pages, deleting a profile and rebuilding the catalog need a TOTP-verified session. If the session is not TOTP-verified, the page offers **Sign in again**.
+Admin actions on the enrolment pages, deleting a profile, rebuilding the catalog and re-evaluating a scan need a TOTP-verified session. If the session is not TOTP-verified, the page offers **Sign in again**.
 
 - **Profiles:** every profile that isn't deleted, filtered by **All**, **Enabled** or **Disabled**. A name opens the profile page: its details and every check with its command. Admins also get **Enable** or **Disable**, **Clear override** and **Delete** (which asks for confirmation). A deleted profile shows **Deleted** and offers no actions.
 - **Upload policy** (admin): choose a `.bit` file and press **Upload**. The page shows **Imported** or **Rejected** and the findings.
@@ -250,6 +251,11 @@ Admin actions on the enrolment pages, deleting a profile and rebuilding the cata
 - **Enrolment tokens:** the form's defaults create a single-use token valid for 24 hours, for any source address, without auto-approve. The new `bse_` token is shown once, with a **Copy** button; it cannot be shown again after **Done**. A token can be revoked from the list.
 - **Enrolment requests:** **Show** switches between pending and decided requests. Each request shows the host, its source address, OS, agent version and machine-id. Any existing agent with the same hostname or machine-id is listed under a warning, because a cloned image shares the machine-id. **Approve** and **Reject** each ask for confirmation. A request already decided elsewhere shows "This request was already decided."
 - **Hosts:** every host with its status, OS, agent version, last heartbeat and inventory, tags and runner helpers. A hostname opens the host page: identity and token times (never the token), the operating system and its raw `os_info`, the packages added and removed by the last inventory that changed the list, and the full package list.
+- **Scans:** every scan, newest first, filtered by profile, host id, state and creation date (UTC). Operators and admins get **Run scan**, which is also on the page of an enabled profile: choose the profile and the target (hosts, tags or every host) and press **Run scan**; the new scan's page opens.
+- **Scan detail:** the scan's profile, version, trigger, target and state, and one row per host with its jobs, the passed, failed and not-run counts and the [score](#scan-results), shown as a percentage rounded down to one decimal ("75.0 %"), or "n/a", with the error count beside it. Operators and admins get **Cancel scan** while the scan is not finished; admins get **Re-evaluate**. Both ask for confirmation.
+- **Scan results:** one row per check of each host, filtered by status (PASS, FAIL, ERROR, Not run) and host. A re-evaluated result shows its current verdict with the original beside it. Operators and admins also see each check's output; viewers never do. **Export CSV** downloads the rows for the current filters.
+- **Schedules** (operator and admin): list, create, edit and delete [schedules](#schedules).
+- **Host detail** also lists the scans that included the host, newest first.
 - **Package search:** the fields are the [package search parameters](#package-search). From 3 characters, **Name contains** suggests up to 10 package names; choosing one fills **Exact name**. **View** groups the results by package and version (the default) or by host. A version opens the hosts that have it, keeping the search's other filters. **Export CSV** downloads the result set on screen as `packages.csv`.
 
 ## API
@@ -273,7 +279,7 @@ Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, 
   - `GET /agents/{agent_id}/packages` lists the host's packages by name, architecture and version (Debian version order).
   - No response holds a token or a token hash.
 - **Package search:** `GET /packages/search` and `GET /packages/search.csv` (viewer). See [Package search](#package-search).
-- **Scans:** `POST /scans` and `POST /scans/{scan_id}/cancel` (operator, session or API token). See [Scans](#scans).
+- **Scans:** `POST /scans` and `POST /scans/{scan_id}/cancel` (operator, session or API token); `GET /scans`, `GET /scans/{scan_id}`, `GET /scans/{scan_id}/results`, `GET /scans/{scan_id}/results.csv` and `GET /agents/{agent_id}/scans` (viewer, session or API token); `POST /scans/{scan_id}/reevaluate` (admin, TOTP-verified session). See [Scans](#scans) and [Scan results](#scan-results).
 - **Scan schedules:** `/scan-schedules` (operator, session or API token, also for reading). See [Schedules](#schedules).
 - **Tags:** `PUT /agents/{agent_id}/tags` (operator) with `{"tags": [...]}` replaces the whole set: up to 32 distinct tags, each 1–64 characters from `A–Z a–z 0–9 . _ : -`. `[]` clears them.
 - **Revoke:**
@@ -476,7 +482,59 @@ curl -s https://manager.example:8443/api/v1/scans \
 - Results are accepted for 7 days after a job was handed out, so a host that was offline can still deliver them; they can still turn a `failed` or `partial` job into `partial` or `completed`. For each host and check, the first result to arrive is kept, from the job or from its retry.
 - The scan's own state is `queued`, `running`, `completed`, `partial` (some results, not all), `failed` (no results) or `cancelled` (cancelled before any result). It is finished once no job is queued, handed out or running. It is updated by `offline_sweep`, so it can lag up to a minute behind its jobs.
 
-**Results.** The routes and pages that list scans and show their results and scores are not part of this version yet.
+### Scan results
+
+Every read below needs a viewer, with a session or an API token, and writes nothing. Results and scores are worked out when they are read, so a late result or a re-evaluation shows at the next read.
+
+**Listing scans.** `GET /api/v1/scans` lists scans newest first.
+
+- Filters combine with AND: `policy_id`; `agent_id` (in the hyphenated form; a scan whose target included that host); `state` (`queued`, `running`, `completed`, `partial`, `failed` or `cancelled`); `created_after` (inclusive) and `created_before` (exclusive), each an RFC 3339 time with an offset, for example `2026-11-01T00:00:00Z`.
+- Items are `{scan_id, policy_id, policy_name, policy_version, trigger, schedule_id, requested_by, state, target_kind, resolved_count, created_at, finished_at}`. `target_kind` is `agents`, `tags` or `all`, and `resolved_count` is the number of hosts the target resolved to.
+- A cursor works only with the same filters. Once the scan it points at has been deleted by [retention](#retention), it gets 400 `Invalid request: query.cursor`.
+- `GET /api/v1/agents/{agent_id}/scans` lists, in the same form, the scans whose target included the host, decommissioned hosts too. An unknown host gets 404.
+
+**One scan.** `GET /api/v1/scans/{scan_id}` returns the item above, plus `target` as it was requested and `hosts`. `hosts` has one entry per host with a job in the scan, ordered by hostname: `{agent_id, hostname, jobs, passed, failed, errors, not_run, score}`.
+
+- `jobs` lists the host's job and then its retry, each with `{job_id, state, retry_of, dispatched_at, started_at, finished_at}`. A retry's results count together with its job's.
+- The counts use each check's current verdict (see re-evaluation below). `not_run` counts the checks with no result.
+- **Score:** `score` is passed ÷ (passed + failed), from 0 to 1. ERROR and not-run checks are left out, and the error count is given beside it. With no PASS or FAIL result, `score` is `null`, which the web UI shows as "n/a".
+- A scan of a profile that was deleted later is still returned. An unknown scan gets 404, and an id not in the hyphenated form 400.
+
+**Results.** `GET /api/v1/scans/{scan_id}/results` returns one item per check of each host's job, ordered by host (`agent_id`) and then by the check's place in the profile.
+
+- Items are `{agent_id, hostname, job_id, retry, plugin_uuid, plugin_name, result, eval_detail, original_result, original_eval_detail, reeval_policy_version, reevaluated_by, reevaluated_at, operator, expected, execute, exit_code, timed_out, truncated, started_at, finished_at, received_at}`.
+  - `retry` is `true` when the result came to the retry.
+  - `operator`, `expected`, `execute` and `plugin_name` are those the job was built with.
+  - `result` is the current verdict: that of the latest re-evaluation, if any, else the stored one. `original_result` is the verdict stored when the result arrived. Each comes with its detail.
+- **Not run:** a check with no result has `result: null` and null result fields.
+- **Filters:** `status` (`PASS`, `FAIL` or `ERROR` on the current verdict, or `NOT_RUN`) and `agent_id` (hyphenated). Anything else gets 400.
+- **Output:** `stdout` and `stderr` are in the items only for operators and admins, with a session or an API token alike. The caller's role is read at each request. A viewer's items have no `stdout` or `stderr` key at all.
+- `limit` and `cursor` page as on every list. A cursor works only with the same `status` and `agent_id`.
+
+**CSV export.** `GET /api/v1/scans/{scan_id}/results.csv` takes the same `status` and `agent_id`, and returns the whole set as one file.
+
+- The answer is `text/csv; charset=utf-8` (UTF-8 without BOM, CRLF line ends), with `Content-Disposition: attachment; filename="scan-<scan_id>-results.csv"`.
+- **Columns:** `hostname, agent_id, plugin_uuid, plugin_name, result, eval_detail, original_result, original_eval_detail, reevaluated_at, reeval_policy_version, exit_code, timed_out, truncated, started_at, finished_at, job_id, retry`. Operators and admins also get `stdout` and `stderr`; for a viewer those columns are not in the file.
+- **Cells:** an empty cell for null, `true` or `false`, and UTC times ending in `Z`. A not-run check has an empty `result`.
+- At most 100,000 rows. A larger set gets 400 `Invalid request: more than 100000 rows; narrow the filters`, before any CSV is sent.
+- Formula escaping and quoting are those of the [package CSV](#package-search): a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return, or with whitespace followed by one of these, gets a leading `'`. This applies in every column, check output included.
+
+**Re-evaluation (admin, TOTP-verified session).** `POST /api/v1/scans/{scan_id}/reevaluate`, with no body, re-checks the scan's stored results against the `Operator` and `ExpectedResult` of the profile's current version.
+
+- It is refused for API tokens, and once the audit sink has been down for 15 minutes.
+- It adds a new verdict for each result and never changes the stored ones.
+- Some results are not re-checked:
+  - A check that the current version no longer lists keeps its verdict.
+  - A result the manager stored as ERROR on arrival (`oversize`, `spool_overflow` or `runner_unavailable`) stays ERROR.
+- It runs during the request, so re-evaluating a very large scan holds the request until it ends.
+- The answer is 200 `{scan_id, policy_id, scan_policy_version, policy_version, rows_added, not_in_version}`. `scan_policy_version` is the version the scan was built from, `policy_version` the version used now, and `not_in_version` the number of results whose check that version no longer lists.
+- An unknown scan gets 404, and a scan of a deleted profile 409 `conflict`.
+- Each re-evaluation writes one `scan.reevaluate` audit entry and raises no alert. Calling it again adds another set of verdicts; the latest one counts.
+
+```sh
+curl -s -X POST 'https://manager.example:8443/api/v1/scans/<scan_id>/reevaluate' \
+  -H 'Authorization: Bearer <TOTP-verified session token>'
+```
 
 ### Schedules
 
@@ -607,7 +665,7 @@ The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_`
 
 ## Scheduler
 
-`serve` runs three scheduled jobs in its own process. None ever runs twice at once.
+`serve` runs four scheduled jobs in its own process. None ever runs twice at once.
 
 - **Inventory** (mandatory):
   - At start-up, and then every `inventory_interval_s` (default 6 hours, range 1–24 hours), it queues one inventory job for each host that is not decommissioned or awaiting approval and has no open inventory job.
@@ -618,9 +676,61 @@ The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_`
   - It sets each host `online` (a heartbeat in the last 10 minutes), `stale` (10–30 minutes) or `offline` (over 30 minutes). A host that has never sent a heartbeat ages from its enrolment or approval.
   - An offline host with no heartbeat for more than `decommission_after_days` is `decommissioned` and its token revoked; 0 means never.
   - Queued jobs past their pick-up time expire. An inventory job not uploaded within 30 minutes of being handed out fails. Inventory jobs are never retried.
-  - Compliance jobs past their deadline end `partial` or `failed`, and those handed out more than 24 hours ago that never started fail; each such job gets its single retry (see [Scans](#scans)).
+  - Compliance jobs past their deadline end `partial`, `failed` or `completed`, and those handed out more than 24 hours ago that never started fail; each such job gets its single retry (see [Scans](#scans)).
   - It updates the state of every scan that can still change.
   - It raises the fleet alerts: more than 5 % of hosts offline; a job of an online host queued for over an hour; a heartbeating host whose inventory is older than twice the interval; and rows in the default `scan_result` partition.
 - **Scan schedules** (every 30 seconds): runs each due [schedule](#schedules) once.
+- **Retention** (10 minutes after start-up, then daily): deletes data past its retention period; see [Retention](#retention).
 
-A failed run is logged by its kind of error, and the next run happens as usual. On `SIGTERM` the scheduler stops first; a run waiting on an unavailable database gives up within seconds.
+A failed run is logged by its kind of error, and the next run happens as usual. On `SIGTERM` the scheduler stops first; a run waiting on an unavailable database gives up within seconds, and a retention run stops at its next batch.
+
+### Retention
+
+The retention job deletes old data so the database does not grow without limit. It connects only as `bitscan_retention`, with the DSN in `BITSCAN_RETENTION_DSN_FILE`; that role can delete from the retention tables only. Its interval is the `retention` row of `system_schedule` (daily, as the first migration seeds it), read at start-up.
+
+| Data | Deleted when |
+| --- | --- |
+| A scan, with its jobs, results and re-evaluations, all together | the scan was created more than 400 days ago |
+| An inventory job | it finished more than 30 days ago |
+| An inventory snapshot (the record of packages added and removed) | it was collected more than 180 days ago |
+| An enrolment request | it was decided (approved or rejected) more than 90 days ago; pending requests stay |
+| A user token (session or API token) | it expired more than 90 days ago, whether or not it was revoked |
+| An audit log entry | it is more than 3 calendar years old (see below) |
+| A package version | no host lists it any more |
+
+- **Never deleted:** hosts, their `os_info` and current package lists, enrolment tokens, profiles and checks, schedules and settings.
+- **Partitions:** `db maintain` still drops whole `scan_result` partitions past 400 days. Retention runs no DDL.
+- **Audit log:** only the oldest entries go, in id order, and only those already queued for the audit sink. Each batch of at most 10,000 entries is deleted in one transaction. That transaction first appends an `audit.checkpoint` entry, with actor `system` and detail `{last_deleted_id, last_deleted_row_hash, deleted}`, so the hash chain still verifies from there. The checkpoint is sent to the sink like every entry.
+- **Batches:** each batch is its own transaction: 100 scans, 1,000 inventory jobs or 10,000 rows. A batch that fails is rolled back alone, and the next run finishes the work.
+- **Safety checks:**
+  - If the manager's clock and the database's differ by more than 5 minutes, the run deletes nothing and logs `retention refused: clock_doubt`.
+  - If a table holds rows dated more than a day in the future, that step is skipped and the other steps run.
+  - A scan that is being re-evaluated is left for the next run.
+- **Logs:**
+  - Each step logs one `retention step done` line with the step name (`scans`, `inventory_jobs`, `snapshots`, `requests`, `tokens`, `audit` or `packages`), the rows deleted, the batches and any reason it was skipped.
+  - A step that fails logs `retention step failed` with its name and error type, and the later steps still run.
+  - No deleted row's content is ever logged.
+- A list cursor that points at a deleted scan gets 400; start the list again.
+
+## Nightly end-to-end run
+
+The workflow `.github/workflows/e2e.yml` runs every night at 01:40 UTC and can also be started by hand. A push runs it only when its head commit message contains `[e2e]`. It builds the agent `.deb` and the manager wheel from the commit, then runs the whole chain on three machines:
+
+- the manager host, installed by [`manager-install.md`](deploy/runbooks/manager-install.md), with test stand-ins for OpenBao and the audit sink;
+- two QEMU/KVM guests from the official Ubuntu 22.04 and 24.04 cloud images, each installing the agent by [`agent-install.md`](deploy/runbooks/agent-install.md).
+
+**The chain:** enrol, then approve the enrolment (admin TOTP session), heartbeat and inventory. Then it imports the example policy of [`bit_Schema_Reference.md`](docs/spec/bit_Schema_Reference.md) section 1.1, scans both hosts and reads the results.
+
+**Pass condition:** both hosts PASS with exit code 0, score 1.0 and no errors, and a viewer's results hold no output.
+
+**Compatibility:** two more runs, in parallel, each on its own runner with its own guest and manager host:
+
+- `compat-a`: this manager with the 0.1.0 agent, whose checks all come back as ERROR `runner_unavailable`;
+- `compat-b`: this agent with the 0.1.0 manager.
+
+**Report and result:**
+- Each step is one row per host, PASS, FAIL or NOT RUN with its reason.
+- Each run uploads its report as an artifact, `e2e-report-nightly`, `e2e-report-compat-a` or `e2e-report-compat-b`, holding `report.json` and `report.md`. The tables are also shown on the run's summary page.
+- The workflow fails when any row is FAIL or an expected row is missing.
+- Tokens and passwords are kept out of the report and logs.
+- To run the chain on your own Linux machine (root, Docker, QEMU and `/dev/kvm`), follow [`e2e/m11/README.md`](e2e/m11/README.md).
