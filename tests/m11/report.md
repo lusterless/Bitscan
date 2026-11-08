@@ -23,6 +23,7 @@ Phase report for M11 (results and end-to-end). The lead folds in each section un
 | TASK-250 | TASK-250 TEST (W3/W4 web batch): PASS | `work/reports/TASK-250-test.md` |
 | TASK-256 | TASK-256 TEST (W3/W4 web batch): PASS | `work/reports/TASK-256-test.md` |
 | TASK-251 | TASK-251 TEST (W3/W4 web batch): PASS | `work/reports/TASK-251-test.md` |
+| TASK-257 | TASK-257 TEST: PASS | `work/reports/TASK-257-test.md` |
 | TASK-255 | TASK-255 TEST: PASS | `work/reports/TASK-255-test.md` |
 | TP-M11-17 | TP-M11-17 (harness carries): PASS | `work/reports/TP-M11-17-test.md`; rows in `work/reports/M11-e2e-test.md` |
 
@@ -800,3 +801,14 @@ The lead's points:
 | CHK-M5-280 → CHK-M5-280 (M11) | PD-51 replacement | PASS | old → new above |
 | CHK-M11-366 (shell, profile) | plants (b), (c), (d) | PASS (red as required) | 1, 2 and 1 failed |
 | CHK-M11-430, -431 | plants | PASS (red as required) | 15 and 8 failed / 148 |
+
+## TASK-257 (vitest testTimeout)
+
+### Report rows (for tests/m11/report.md)
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| TASK-257 run 1 | `npx vitest run` (testTimeout 20000) | PASS | 741/741; slowest 3673 ms |
+| TASK-257 run 2 | `npx vitest run` (testTimeout 20000) | PASS | 741/741; slowest 3089 ms |
+| TASK-257 gates | lint, typecheck, prettier on `vite.config.ts` | PASS | all exit 0 |
+| TASK-257 plant (5000) | 3 full runs in a throwaway copy | PASS (the setting shown to matter) | the M5 paging tests reached 4939 and 4784 ms of 5000; observed timing out in the earlier W3 run |

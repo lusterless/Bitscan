@@ -15,5 +15,8 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // TASK-257: heavy screen renders take 2.2-3.2 s under full parallel
+    // load, so vitest's 5 s default timed out once. No assertion changes.
+    testTimeout: 20000,
   },
 });
