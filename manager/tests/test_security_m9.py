@@ -171,12 +171,35 @@ def test_only_the_builder_and_two_repositories_write_a_compliance_payload() -> N
 # ------------------------------------------------------------ CHK-M9-276
 
 
+M9_OPS = {
+    ("/api/v1/scans", "post"),
+    ("/api/v1/scans/{id}/cancel", "post"),
+    ("/api/v1/scan-schedules", "post"),
+    ("/api/v1/scan-schedules", "get"),
+    ("/api/v1/scan-schedules/{id}", "get"),
+    ("/api/v1/scan-schedules/{id}", "patch"),
+    ("/api/v1/scan-schedules/{id}", "delete"),
+}
+# CHK-M9-276 (M11), PD-51 (main, 2026-11-09): M11 adds exactly these five
+# operations under /scans (TS §6.2 L1113, L1120, L1122, L1123, L1125; plan
+# TASK-232 §3); its sixth, GET /agents/{id}/scans, is outside this prefix.
+M11_SCAN_OPS = {
+    ("/api/v1/scans", "get"),
+    ("/api/v1/scans/{id}", "get"),
+    ("/api/v1/scans/{id}/results", "get"),
+    ("/api/v1/scans/{id}/results.csv", "get"),
+    ("/api/v1/scans/{id}/reevaluate", "post"),
+}
+
+
 def test_no_m9_route_takes_command_text_or_names_inventory() -> None:
-    """REQ-212 (1), (4), REQ-229 (4), TS §6.2 L1129: the seven M9 operations
-    are exactly POST /scans, POST /scans/{id}/cancel and the five
-    /scan-schedules operations; their request bodies are closed
-    (additionalProperties false) and hold no command-like property; no M9
-    path, parameter or property names inventory or a disable switch."""
+    """REQ-212 (1), (4), REQ-229 (4), TS §6.2 L1129: the operations under
+    /scans and /scan-schedules are exactly M9's seven (POST /scans, POST
+    /scans/{id}/cancel and the five /scan-schedules operations) and M11's
+    five (CHK-M9-276 (M11)), so any other operation fails; their request
+    bodies are closed (additionalProperties false) and hold no command-like
+    property, and M11's take none; no path, parameter or property names
+    inventory or a disable switch."""
     doc = json.loads(OPENAPI.read_text(encoding="utf-8"))
     m9 = {
         (p, m)
@@ -184,15 +207,9 @@ def test_no_m9_route_takes_command_text_or_names_inventory() -> None:
         for m in ops
         if p.startswith(("/api/v1/scans", "/api/v1/scan-schedules"))
     }
-    assert m9 == {
-        ("/api/v1/scans", "post"),
-        ("/api/v1/scans/{id}/cancel", "post"),
-        ("/api/v1/scan-schedules", "post"),
-        ("/api/v1/scan-schedules", "get"),
-        ("/api/v1/scan-schedules/{id}", "get"),
-        ("/api/v1/scan-schedules/{id}", "patch"),
-        ("/api/v1/scan-schedules/{id}", "delete"),
-    }, m9
+    assert m9 == M9_OPS | M11_SCAN_OPS, m9 ^ (M9_OPS | M11_SCAN_OPS)
+    for path, method in M11_SCAN_OPS:
+        assert "requestBody" not in doc["paths"][path][method], (path, method)
     comps = doc["components"]["schemas"]
     for path, method in m9:
         op = doc["paths"][path][method]
