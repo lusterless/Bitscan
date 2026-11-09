@@ -347,6 +347,8 @@ def ruff(rel: str, text: str) -> subprocess.CompletedProcess[str]:
         input=text,
         capture_output=True,
         text=True,
+        encoding="utf-8",  # ruff reads and writes UTF-8 on every platform
+        errors="replace",
         cwd=MANAGER,
         timeout=120,
     )
