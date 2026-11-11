@@ -14,7 +14,7 @@ Spec: TS §3.3 (status, decommission), §3.4 (inventory), §4.4 (scans and job s
 - A target is exactly one of `{"agents": […]}`, `{"tags": […]}` (any of the tags) or `{"all": true}`; reject anything else. Resolve it at queue time to agents that are not decommissioned or awaiting approval (offline agents still get jobs), and store the request and the resolved list in `scan.target`.
 - Each scan records the `policy.version` it was built from. Jobs queued after an import use the new version; queued jobs keep their commands.
 - A disabled policy returns 409; disabling hides it from selection and blocks new scans, while running scans finish. A newer queued job for the same agent and policy cancels the older queued one. Deleting a policy cancels its queued jobs and disables its schedules.
-- **Open spec question:** whether disabling a policy cancels its jobs that are still `queued`; TS §4.3 says only "Running scans finish" (`work/open-questions.md` #18).
+- **Decided** (`work/open-questions.md` #18, owner-approved): disabling a policy cancels nothing; its queued jobs still run, and it can't be chosen for new scans.
 - Manual scans are picked up at each agent's next job pull (≤ `job_pull_seconds` + 30 s); there is no way to push a job sooner (TS §4.4). An all-hosts scan started with an API token alerts.
 - Scheduled scans use cron in the schedule's `timezone` (default UTC); users may enable or disable schedules. Runs missed while the manager was down are not back-filled. Skip, and log, a run if the previous scan from that schedule has `finished_at IS NULL` or the policy is disabled.
 
@@ -35,9 +35,9 @@ Spec: TS §3.3 (status, decommission), §3.4 (inventory), §4.4 (scans and job s
 - First result wins per host and plugin across the original and its retry: lock `COALESCE(retry_of, job_id)` with `SELECT … FOR UPDATE` while inserting.
 - Cancel is manager-side only. Queued jobs become `cancelled` and are never returned by a pull; dispatched or running jobs become `cancelled`, and later result posts for them get 409 `job_not_acceptable` and are not stored (TS §4.4).
 - A scan is finished (`finished_at` set) once none of its jobs is `queued`, `dispatched` or `running`; late results can still update its state and score. Scan state: `completed` when every job completed; `partial` when at least one job produced results and at least one did not complete; `failed` when no job produced results; `cancelled` when cancelled before any result; otherwise `queued` or `running`. A scan never takes `dispatched` or `expired`; those `scan_state` values (TS §5.2) are for jobs.
-- **Open spec question:** TS §4.4 says only "otherwise `queued` or `running`"; ask when a scan moves from `queued` to `running` (`work/open-questions.md` #22).
-- **Open spec question:** a target can resolve to zero agents (an unused tag, or every host decommissioned); TS §4.4 and §6.4 do not say whether `POST /scans` refuses it or what state the scan gets (`work/open-questions.md` #3).
-- **Open spec question:** TS §4.4 does not state the scan state when it is cancelled after some results arrived; ask before choosing.
+- **Decided** (`work/open-questions.md` #22 and #127 (d), owner-approved): a scan is `running` once any of its jobs has left `queued`.
+- **Decided** (`work/open-questions.md` #3, owner-approved): `POST /scans` with a target that resolves to no eligible host is refused with 422 and writes nothing. A scheduled run with no target host is skipped and logged (`no_target_agents`).
+- **Decided** (`work/open-questions.md` #127 (d), owner-approved): the scan state is derived per host unit (a job and its retry). If some unit is open, the scan is `queued` or `running`; otherwise it is `completed` if every unit has every result, `partial` if any unit has results, `cancelled` if any job is cancelled, and `failed` otherwise. So a scan cancelled after some results arrived ends `partial`.
 
 ## Inventory (mandatory, G2)
 

@@ -12,7 +12,7 @@ Spec: TS §8.6 (configuration), §8.7 (deployment and CLI), §8.2 (configuration
 ## Start-up configuration (`/etc/bitscan/manager.env` + unit credentials; restart to change)
 
 - Required: `BITSCAN_DB_DSN_FILE` (`%d/app_dsn`, the `bitscan_app` DSN; refuse a DSN without TLS), `BITSCAN_RETENTION_DSN_FILE`, `BITSCAN_VAULT_ADDR`, `BITSCAN_TOTP_KEY_REF` (vault key that encrypts TOTP seeds), `BITSCAN_VAULT_TOKEN_FILE` (`%d/vault_token`; the manager's vault token or AppRole secret), `BITSCAN_TLS_CERT_FILE`, `BITSCAN_TLS_KEY_FILE`, `BITSCAN_AUDIT_SINK`. Fail start-up if any is missing.
-- **Open spec question:** the vault product and API, and the audit-sink wire format (syslog flavour, HTTPS body and authentication), are not specified (TS §8.6, §5.3) (`work/open-questions.md` #24).
+- **Decided** (`work/open-questions.md` #24, owner-approved): the vault is OpenBao, through the Vault Transit API. The audit sink is `syslog+tls://` or an HTTPS POST of one JSON audit entry per request, where a 2xx acknowledges that entry.
 - Optional: `BITSCAN_LISTEN` (default `0.0.0.0:8443`, HTTPS), `BITSCAN_BITS_DIR` (default `/var/lib/bitscan/bits`; uploads go to its `uploaded/` subfolder).
 - `BITSCAN_MIGRATE_DSN_FILE` is read only by `db migrate` and `db maintain`, which only the migrate and maintain units load; `serve` never reads it.
 - Secrets are read from the `*_FILE` paths, never from plain environment values. `serve` reloads the TLS certificate on `SIGHUP`.
