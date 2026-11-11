@@ -284,7 +284,8 @@ Not re-run in r1 (not asked; for the PR's CI and the next nightly): G41 and the 
 | Other scheduler suites | `test_scheduler_runner.py`, `test_serve_scheduler_linux.py` | **PASS** | 25/25 |
 | Runbook text | `check_runbook_text.py` | **PASS** | README "OK 11 sh blocks, 0 findings"; `manager-operations.md` "OK 24 sh blocks, 0 findings" |
 | Plant | `SCAN_CHUNK` back to 12 (throwaway copy) | **red** | `test_constants_are_the_spec_values`, `test_chunks` (2 failed, 48 passed) |
-| G18, G5 | not re-run | — | The change is one constant (no statement added or removed, so G5's 98.5920 % stands), and every test that reads `SCAN_CHUNK` or runs a retention chunk was run above. G18 r1 (11,909/11,909) ran with 12 |
+| G18 on the final tree | `g18.sh g18r2 2` (W, `CI=true`, `-n 2`, coverage; main asked for it on record before the merge): `0f53917` plus the r1 changes, `SCAN_CHUNK = 2` | **PASS** | **11,907/11,909 passed, 2 failed, 0 errors, 0 skipped** (42 min 35 s, 212 files, alongside tester-m11t's timing database, 256 MB available at the low point). The 2 failures are the same M7 timing bounds as G18 r1, in code no M11 task touches: `test_bit102_lexer.py::test_pathological_inputs_bounded[seps]` ("0.168 s < 0.1 s" false) and `test_bit_parse.py::test_35015_elements_is_bit002_bounded` ("2.054 s < 2.0 s" false). Re-run alone: **2/2 passed** (environment flakes). Final **11,909/11,909**, 0 skipped. In it: G19 2/2, G30 569/569, G31 32/32, G32 129/129, G33 54/54, G34 33/33, G6 6/6, G80 167/167, G81 237/237, G82 231/231, **G83 46/46**, the M5 walk 1/1 |
+| G5 on the final tree | in that run | **PASS** | **98.5920 %** (6,022 of 6,108 statements; 98.59 % to two decimals, not rounded up; gate 85), unchanged; `services/retention/task.py` 102/102, `rules.py` 62/62 |
 
 PD-51 rows of r1b:
 
