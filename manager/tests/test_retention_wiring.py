@@ -1108,9 +1108,11 @@ def test_stop_during_a_real_retention_run_gives_up_at_the_next_transaction(
 ) -> None:
     """CHK-M11-197 on PostgreSQL with the real scheduler and run_retention:
     stop() while the scans step's first chunk is in flight; that chunk
-    commits, every later step gives up at its first transaction
-    (SchedulerStopping, logged once per step by name and type), no statement
-    runs on the retention pool afterwards, and stop() returns."""
+    commits, every later transaction gives up (SchedulerStopping, logged once
+    per step by name and type), no statement runs on the retention pool
+    afterwards, and stop() returns. When that first chunk is full (the aged
+    world's two expired scans fill a chunk of rules.SCAN_CHUNK = 2, TASK-261
+    r1), the scans step asks for another chunk and gives up there too."""
     app_db, rdb = pools
     with m.owner(fresh) as c:
         w = m.aged_world(c, m.now_utc())
@@ -1147,11 +1149,16 @@ def test_stop_during_a_real_retention_run_gives_up_at_the_next_transaction(
     assert mark
     assert [r for r in spy.roles[mark[0] :] if r == "bitscan_retention"] == []
     later = ("inventory_jobs", "snapshots", "requests", "tokens", "audit", "packages")
+    # PD-51 (TASK-261 r1): a full first chunk makes the scans step ask for one
+    # more transaction, which the stop flag refuses.
+    full = len(GONE["scan"]) >= rules.SCAN_CHUNK
+    stopped = ("scans", *later) if full else later
     assert step_records(caplog, "retention step failed") == [
-        {"step": s, "exc_type": "SchedulerStopping"} for s in later
+        {"step": s, "exc_type": "SchedulerStopping"} for s in stopped
     ]
     done = {d["step"]: d for d in step_records(caplog, "retention step done")}
-    assert done["scans"]["deleted"] == 2 and done["scans"]["skipped"] is None
+    assert done["scans"]["deleted"] == 2
+    assert done["scans"]["skipped"] == ("failed" if full else None)
     left = survivors(fresh, w)
     want = {
         r: labs - GONE["scan"] if r == "scan" else labs for r, labs in labels(w).items()

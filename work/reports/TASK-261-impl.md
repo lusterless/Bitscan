@@ -78,3 +78,37 @@ File: `deploy/runbooks/manager-operations.md`, one line changed (§6 "Batches", 
 - §1 to §7 keep their block order. §1's four blocks are as before, and the edit touches no sh block.
 
 Check: `python -I deploy/tests/check_runbook_text.py deploy/runbooks/manager-operations.md` gives `OK 1 files, 24 sh blocks, 0 findings`. `grep` finds no "100 scans", no "no index" and no `m0005` left in the file.
+
+## r1 (2026-11-11): SCAN_CHUNK 12 → 2
+
+Why: tester-m11t measured on the real `m0006` at fleet size. A chunk of 12 fleet scans was cancelled at 300 s, 6 took 208 s, and 3 took up to 128.5 s. The lead set **2**, estimated at about 85 s and still to be measured. That leaves the most margin for slower production disks, at almost no cost, since a night runs as many chunks as it needs. This is the user's standing remedy (decisions 2026-11-09 (3)).
+
+### Files (r1)
+
+- `manager/bitscan_manager/services/retention/rules.py`:
+  - `SCAN_CHUNK: Final = 2` (was 12);
+  - the comment now carries the measured 12 / 3 values.
+- `README.md` §Retention "Batches": "12 scans" is now "2 scans".
+
+No other file changed. `services/retention/task.py` uses `rules.SCAN_CHUNK` symbolically:
+- each chunk asks for `2 + len(skipped)` rows;
+- the loop's end conditions are unchanged.
+
+### Routed (not my file)
+
+`deploy/runbooks/manager-operations.md` §6 L280 now reads "12 scans". impl-deploy's matching line, sent through the lead, changes "12 scans" to "2 scans" and keeps the rest of the sentence as it is.
+
+### For the testers (r1)
+
+- `test_retention_rules.py` (the chunk tuple) and `test_retention_pg.py` pin the chunk value or depend on it. Notably, `test_fault_in_the_second_scans_chunk`'s implicit sizing, as tester-m11g found in r0.
+- The stranding row becomes 3 locked scans with the deletable ones behind (`rules.SCAN_CHUNK + 1`).
+- G83 (`test_security_m11.py`) covers `rules.py` only through the S608 / `re` / frozen checks. The value change doesn't touch them.
+- tester-m11t: CHK-M11-387 on the new value. Plant: `SCAN_CHUNK` 12 gives the 300 s cancel already measured.
+
+### Checks run (r1)
+
+`ruff check`, `ruff format --check` and `mypy --strict` on `rules.py`: clean.
+
+## Runbook part, r1 (impl-deploy, 2026-11-11)
+
+- `deploy/runbooks/manager-operations.md` §6 "Batches" (L280): only "12 scans" becomes "2 scans", to match `rules.SCAN_CHUNK = 2`. The rest of the line, including the `m0006` sentence, is unchanged. `check_runbook_text.py` gives `OK 1 files, 24 sh blocks, 0 findings`.

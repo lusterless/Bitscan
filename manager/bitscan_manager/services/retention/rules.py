@@ -20,9 +20,10 @@ AUDIT_YEARS: Final = 3  # calendar years on audit_log.at (#150 (d))
 CLOCK_SKEW: Final = timedelta(minutes=5)  # #150 (j)
 FUTURE_SLACK: Final = timedelta(days=1)  # #150 (j)
 
-# One transaction per chunk (#150 (g)). Scans: 12, not 100, so a chunk of
-# fleet-wide scans stays well inside statement_timeout (TASK-261, CHK-M11-387).
-SCAN_CHUNK: Final = 12
+# One transaction per chunk (#150 (g)). Scans: 2, not 100, so a chunk of
+# fleet-wide scans stays well inside statement_timeout (TASK-261, CHK-M11-387:
+# 12 fleet scans were cancelled at 300 s, 3 took up to 128.5 s).
+SCAN_CHUNK: Final = 2
 JOB_CHUNK: Final = 1_000
 ROW_CHUNK: Final = 10_000
 AUDIT_CHUNK: Final = 10_000

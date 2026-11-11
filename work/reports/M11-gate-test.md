@@ -273,3 +273,24 @@ PD-51 rows of r1 (earlier checks whose asserted value TASK-261 changes by the us
 | CHK-M3-300 section, REQ-088 query allow-list (`test_no_query_parameter_can_switch_inventory_off`) | its M11 form (TASK-232) | the four M11 read paths take exactly their declared parameter sets (`M11_QUERY`); every other path keeps the M3 allow-list. The reviewer's nit 5 (`work/reviews/M11-gate.md`): recorded in TASK-232's report and approved there; listed here for completeness | `test_invariants_m3.py` |
 
 Not re-run in r1 (not asked; for the PR's CI and the next nightly): G41 and the nightly / N−1 rows, which start `serve` after `db migrate` (they derive the head and take any migration); the web gates (no web change).
+
+## r1b: TASK-261 r1, `SCAN_CHUNK` 12 → 2 (2026-11-11)
+
+**Verdict: PASS (TASK-261 r1 TEST).** The lead set `SCAN_CHUNK = 2` from tester-m11t's fleet numbers on the real `m0006`: 12 fleet scans were cancelled at 300 s, 6 took 208 s and 3 took about 128 s (`work/status.md`, 2026-11-11). Changed: `services/retention/rules.py` (`SCAN_CHUNK: Final = 2`), README §Retention "2 scans" (impl-manager-b), and `manager-operations.md` §6 "2 scans" (impl-deploy). Nothing else changed.
+
+| Check | Command | Result | Evidence |
+| --- | --- | --- | --- |
+| Retention suites, G83, README walks | `run.sh r2t -n 2` over `test_security_m11.py`, the 7 retention files (`test_retention_rules`, `_repo_pg`, `_grants_pg`, `_pg`, `_race_pg`, `_wiring`, `test_serve_retention_linux`) and the 4 README walks (W, `CI=true`) | **PASS** | **209/210, 1 failed**: `test_retention_wiring.py::test_stop_during_a_real_retention_run_gives_up_at_the_next_transaction`. The aged world's 2 expired scans now fill a chunk, so the scans step asks for a second chunk and the stop flag refuses it. That is the stop rule working, logged `{step: scans, exc_type: SchedulerStopping}`, and the test had pinned a chunk larger than 2. Changed under PD-51 (below). Re-run alone: **1/1**. Final 210/210 (G83 46/46 in it; the stranding row `test_locked_scans_at_the_head_do_not_stall_the_step` now runs with 3 locked scans plus 50 behind and passes) |
+| Other scheduler suites | `test_scheduler_runner.py`, `test_serve_scheduler_linux.py` | **PASS** | 25/25 |
+| Runbook text | `check_runbook_text.py` | **PASS** | README "OK 11 sh blocks, 0 findings"; `manager-operations.md` "OK 24 sh blocks, 0 findings" |
+| Plant | `SCAN_CHUNK` back to 12 (throwaway copy) | **red** | `test_constants_are_the_spec_values`, `test_chunks` (2 failed, 48 passed) |
+| G18, G5 | not re-run | — | The change is one constant (no statement added or removed, so G5's 98.5920 % stands), and every test that reads `SCAN_CHUNK` or runs a retention chunk was run above. G18 r1 (11,909/11,909) ran with 12 |
+
+PD-51 rows of r1b:
+
+| Old | New | Rule | File |
+| --- | --- | --- | --- |
+| CHK-M11-040 (r1): scans 12 | CHK-M11-040 (r1b) | scans 2, the rest unchanged | `test_retention_rules.py` |
+| CHK-M11-181 (r1): 250 scans in 21 chunks | CHK-M11-181 (r1b) | 250 scans in 125 chunks of 2 (the next, empty chunk is not counted); inventory unchanged | `test_retention_pg.py::test_chunks` |
+| CHK-M11-177 (r1): `150 − SCAN_CHUNK` left | unchanged | already symbolic; only the comment's "pinned at 12" now reads 2 | `test_retention_pg.py` |
+| CHK-M11-197 (stop mid-run: the scans step done, the six later steps give up) | CHK-M11-197 (r1b) | when the first scans chunk is full (`len(GONE["scan"]) >= rules.SCAN_CHUNK`), the scans step also gives up at its next transaction (`skipped` "failed", `deleted` 2 committed); otherwise as before. No statement on the retention pool after the stop, and stop() under 10 s, both unchanged | `test_retention_wiring.py` |

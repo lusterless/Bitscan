@@ -261,8 +261,9 @@ def test_chunks(fresh: PgServer, rdb: Any) -> None:
             (a.agent_id, old, old + timedelta(days=1), old, old),
         )
     res = run(rdb, now)
-    # Chunks of 12 scans (TASK-261, PD-51): 20 full chunks and one of 10.
-    assert (res["scans"].deleted, res["scans"].chunks) == (250, 21)
+    # Chunks of 2 scans (TASK-261 r1, PD-51): 125 full chunks; the next one
+    # finds nothing and is not counted.
+    assert (res["scans"].deleted, res["scans"].chunks) == (250, 125)
     assert (res["inventory_jobs"].deleted, res["inventory_jobs"].chunks) == (2500, 3)
 
 
@@ -382,7 +383,7 @@ def test_fault_in_the_second_scans_chunk(
     res = run(rdb, now)
     monkeypatch.undo()
     # The first chunk stays deleted, the second is rolled back (chunks of
-    # rules.SCAN_CHUNK, pinned at 12 in test_retention_rules; TASK-261, PD-51).
+    # rules.SCAN_CHUNK, pinned at 2 in test_retention_rules; TASK-261, PD-51).
     chunk = rules.SCAN_CHUNK
     assert 150 > 2 * chunk  # a second, full chunk exists
     assert len(scan_ids(fresh)) == 150 - chunk

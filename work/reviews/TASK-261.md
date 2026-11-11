@@ -1,54 +1,63 @@
-# TASK-261 REVIEW: retention indexes (m0006) and scan chunk 12 (M11 gate fix round)
+# TASK-261 REVIEW: retention indexes (m0006) and the scan chunk (M11 gate fix round)
 
-Reviewer: reviewer-m11, 2026-11-11. Round 1. High risk (migration); the user's second look is pre-authorised.
+Reviewer: reviewer-m11, 2026-11-11. Round 2 (r1: `SCAN_CHUNK` 12 → 2). High risk (migration); the user's second look is pre-authorised.
 
 Verdict: APPROVED
 
-**Scope reviewed**
-- Product: `manager/bitscan_manager/db/migrations/versions/m0006_retention_indexes.py` (new) and `manager/bitscan_manager/services/retention/rules.py` (`SCAN_CHUNK` 100 → 12).
-- Docs: `README.md` §Retention and `deploy/runbooks/manager-operations.md` §6 "Batches".
-- Tester changes: `test_retention_rules.py`, `test_retention_pg.py`, `test_security_m11.py` and `e2e/m6/ops_walk.sh`.
+## Round 2 (r1)
 
-**Checked against**
-- The owner-approved TS §5.2 change `68d3881` (L893, L894, L943).
-- `work/decisions.md`, 2026-11-11 (1) and (2), and the stale-comments row.
-- CLAUDE.md ("the DDL in TS §5.2 is the schema; Alembic migrations must reproduce it exactly, including grants").
-- `.claude/rules/manager/database.md` (forward-only migrations, one per PR).
-- `work/reports/CHK-M11-387-test.md`.
+**What changed:**
+- `manager/bitscan_manager/services/retention/rules.py`: `SCAN_CHUNK: Final = 2`, with a comment giving the measured reason.
+- `README.md` §Retention and `deploy/runbooks/manager-operations.md` §6: "2 scans".
+- Tester changes, all listed in the gate report's r1b PD-51 table:
+  - `test_retention_rules.py` (pin 2);
+  - `test_retention_pg.py::test_chunks` (250 scans in 125 chunks);
+  - `test_retention_wiring.py::test_stop_during_a_real_retention_run_gives_up_at_the_next_transaction` (CHK-M11-197).
 
-**Reports**
-- `work/reports/TASK-261-impl.md`.
-- The "r1" section of `work/reports/M11-gate-test.md`: PASS. G19 2/2 with 6/6 plants red, retention suites green, G18 11,909/11,909, G5 98.5920 %, G83 46/46.
+**Basis:** the lead's decision of 2026-11-11 under the user's standing remedy (decisions 2026-11-09 (3): lower the chunk and re-measure). tester-m11t's interim numbers on the real `m0006` (`work/status.md`, 2026-11-11) are:
+- 12 fleet scans per chunk: cancelled at 300 s, in the indexed but I/O-bound `scan_result` cascade.
+- 6 fleet scans: 208 to 268 s.
+- 3 fleet scans: about 128 s.
+- 1 fleet scan: 24 to 25 s.
 
-## Checks
+Choosing 2 rather than 3 gives margin against slower disks. It costs only more chunks, and single-host scans take about 0.1 s a chunk. That is consistent with the numbers.
 
-- **The migration reproduces the spec exactly.**
-  - `STATEMENTS` holds the three spec lines in spec order with only the `--` comments removed. The spec's alignment spaces (`ix_job_scan     ON`) are kept.
-  - `revision = "m0006"` and `down_revision = "m0005"`; Alembic has a single head.
-  - There are no grants and no other DDL. An index takes its table's owner (`bitscan_owner` under `SET ROLE` in the unchanged `env.py`), so no grant is needed, and m0005's grants are untouched.
-  - `downgrade()` only raises, so the migration is forward-only.
-  - G19's schema diff of the migrated database against the new DDL is green. It is red when `m0006` is removed (the true before-state), an index is dropped, a column is wrong, or a GRANT is added.
-  - The new G83 row `test_the_m11_migration_is_exactly_the_spec_indexes` compares the migration's SQL strings with the spec lines parsed from the reference DDL. It does not compare against a copy, so it can fail.
-- **Plain `CREATE INDEX`:** the spec writes it without `CONCURRENTLY`, and it can't be concurrent inside Alembic's transaction. Migrations run with the manager stopped (runbook §1). The measured build was 0.5 to 2.0 s at 10,000 hosts.
-- **`SCAN_CHUNK = 12`:** this follows my gate review. With the indexes, a 100-fleet-scan backlog chunk was estimated at 20 to 27 min; 12 fleet scans at 10.8 to 17.9 s each come to about 130 to 215 s, inside the 300 s timeout. The value is to be confirmed by tester-m11t's re-measurement (gate condition below). No other rule changed, and the retention loop is unchanged.
-- **Docs:**
-  - The README and runbook now say "12 scans".
-  - The runbook's "no index … known limit" sentence, now false, is replaced by one naming `m0006`'s indexes.
-  - `check_runbook_text.py` reports 0 findings, and the README walks pass 4/4.
-- **Tester changes (PD-51 r1 rows):**
-  - The chunk-constant row now pins 12.
-  - `test_chunks` expects (250, 21): 20 × 12 + 10.
-  - The second-chunk fault row is written in terms of `rules.SCAN_CHUNK`, with a guard that a full second chunk exists. It still pins the deleted count, now via the constants row.
-  - The frozen-folder row now allows exactly `m0006`, and m0001 to m0005 stay byte-pinned to `6efe0fb`.
-  - `ops_walk.sh` derives the head from the walked tree's files, as `manager_walk.py` does.
-  - Every other assertion is kept, and each change is listed old → new.
-- **The downgrade plant green in `test_downgrade_functions_raise`:** I accept this. That test only checks that calling `downgrade()` outside Alembic raises, and a planted `op.execute(DROP INDEX …)` raises there too. The plant is red in `test_migration_files_are_forward_only` (the AST rule) and in the new m0006 row, which are the checks meant to catch it.
-- **Stale "no index" comments in frozen files** (`results.py`, `scan_progress.py`, `scan_reads.py`, `job_intake.py`): the lead deferred these to after M11 so the frozen pins stay intact. They are comments only, so I agree.
+**Checks:**
+- **The constant change:** it adds and removes no statement, so G5 (98.5920 %) stands. The retention loop and the skipped-ids logic are unchanged and still terminate with a chunk of 2: the limit is `2 + len(skipped)`.
+- **CHK-M11-197:** the test still pins the stop rule. With the aged world's two expired scans filling a chunk of 2, the scans step commits its first chunk (2 deleted). It then asks for a second transaction, which the stop flag refuses, logging `{step: scans, exc_type: SchedulerStopping}` with `skipped` "failed". Each later step gives up once. No retention statement runs after the stop, and `stop()` returns in under 10 s.
+  - The expectation follows `rules.SCAN_CHUNK` through a `full` flag, so both branches stay checked.
+  - Every other assertion is unchanged.
+- **The plant** (the chunk back to 12) is red.
+- **Re-run by the tester:** 210/210 across the retention suites, G83 and the README walks, and 25/25 for the scheduler suites. `check_runbook_text.py` is clean.
+
+**What this approval does not cover:** the fleet-size proof that a chunk of 2 fits, and that a full pass and the 7-night run finish with no step failed. Those are the last condition of `work/reviews/M11-gate.md`, waiting for tester-m11t's CHK-M11-387 r1 report.
+
+**Findings:** none.
+
+## Round 1 (`m0006`, `SCAN_CHUNK` 12)
+
+**Scope reviewed:**
+- `manager/bitscan_manager/db/migrations/versions/m0006_retention_indexes.py` (new) and `manager/bitscan_manager/services/retention/rules.py`.
+- The README §Retention and runbook §6 lines.
+- The tester's changes to `test_retention_rules.py`, `test_retention_pg.py`, `test_security_m11.py` and `e2e/m6/ops_walk.sh`.
+
+**Checked against:**
+- the owner-approved TS §5.2 change `68d3881` (L893, L894, L943);
+- decisions 2026-11-11;
+- CLAUDE.md ("Alembic migrations must reproduce it exactly, including grants");
+- `.claude/rules/manager/database.md`.
+
+**Checks:**
+- **The migration reproduces the spec exactly:**
+  - `m0006` holds the three spec lines in order, with only the comments removed.
+  - It follows `m0005`, adds no grant (an index takes its table's owner) and no other DDL, and its `downgrade()` only raises.
+  - G19 matches the new DDL. Its plants are red: `m0006` removed (the before-state), one index dropped, a wrong column, an extra GRANT, a downgrade.
+  - The new G83 row compares the migration's SQL against the spec lines parsed from the reference DDL.
+- **No `CONCURRENTLY`,** as the spec writes the lines. It also cannot be used inside Alembic's transaction. Migrations run with the manager stopped.
+- **The downgrade plant** stays green in `test_downgrade_functions_raise`, which accepts any exception. I accept that, because the plant is red in the forward-only AST rule and in the m0006 row.
+- **Stale "no index" comments in frozen files** are a post-M11 follow-up, as decisions 2026-11-11 records.
 - **Re-run (Windows):**
-  - `ruff check`, `ruff format --check` and `mypy --strict` on the two product files and the three test files: clean.
-  - `test_security_m11.py` and `test_retention_rules.py` CODE rows: 89 passed. That includes the S608 and `re`-ban rows, which pass on Windows now that `fe0bd24` added `encoding="utf-8"`.
-  - I also confirmed the three spec lines in `docs/spec/Technical_Specification.md`.
+  - `ruff check`, `ruff format --check` and `mypy --strict` are clean.
+  - 89 CODE rows pass.
 
-## Findings
-
-None.
+**Findings:** none.

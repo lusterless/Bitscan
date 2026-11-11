@@ -702,7 +702,7 @@ The retention job deletes old data so the database does not grow without limit. 
 - **Never deleted:** hosts, their `os_info` and current package lists, enrolment tokens, profiles and checks, schedules and settings.
 - **Partitions:** `db maintain` still drops whole `scan_result` partitions past 400 days. Retention runs no DDL.
 - **Audit log:** only the oldest entries go, in id order, and only those already queued for the audit sink. Each batch of at most 10,000 entries is deleted in one transaction. That transaction first appends an `audit.checkpoint` entry, with actor `system` and detail `{last_deleted_id, last_deleted_row_hash, deleted}`, so the hash chain still verifies from there. The checkpoint is sent to the sink like every entry.
-- **Batches:** each batch is its own transaction: 12 scans, 1,000 inventory jobs or 10,000 rows. A batch that fails is rolled back alone, and the next run finishes the work.
+- **Batches:** each batch is its own transaction: 2 scans, 1,000 inventory jobs or 10,000 rows. A batch that fails is rolled back alone, and the next run finishes the work.
 - **Safety checks:**
   - If the manager's clock and the database's differ by more than 5 minutes, the run deletes nothing and logs `retention refused: clock_doubt`.
   - If a table holds rows dated more than a day in the future, that step is skipped and the other steps run.
