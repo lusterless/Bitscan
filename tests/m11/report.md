@@ -5,7 +5,7 @@ Phase report for M11 (results and end-to-end). The lead folds in each section un
 | Report | Verdict line | Source |
 | --- | --- | --- |
 | M11 gate | M11 gate: PASS, except G39 NOT RUN (safety-check refusal) and CHK-M11-387 FAIL as the v1 limit (pending the user) | `work/reports/M11-gate-test.md` |
-| CHK-M11-387 | #151 retention timing: FAIL as the v1 limit (pending the user) | `work/reports/CHK-M11-387-test.md` |
+| CHK-M11-387 | #151 retention timing: r0 FAIL as built (no indexes); **r1 PASS** on `m0006` with `SCAN_CHUNK` 2 | `work/reports/CHK-M11-387-test.md` (r1 section) |
 | TASK-232 | TASK-232 TEST (r0 and r1): PASS | `work/reports/TASK-232-test.md` |
 | TASK-233 | TASK-233 TEST: PASS | `work/reports/TASK-233-test.md` |
 | TASK-234 | TASK-234 TEST: PASS | `work/reports/TASK-234-test.md` |
@@ -1538,3 +1538,7 @@ One day's backlog is 40,000 inventory jobs (10,000 hosts, every 6 h), plus the d
 ## TASK-261 (retention indexes m0006, SCAN_CHUNK 12; gate r1)
 
 The test report is the "r1" section of `work/reports/M11-gate-test.md` (tester-m11g): G19 matches the TS §5.2 DDL of `68d3881`, 6/6 plants red; targeted run 289/289; G18 11,909/11,909; G5 98.5920 %; G83 46/46. The CHK-M11-387 re-measurement on the real migration follows in `work/reports/CHK-M11-387-test.md` (r1).
+
+### CHK-M11-387 r1 (2026-11-11, on m0006, SCAN_CHUNK 2): PASS as the v1 limit
+
+The worst 2-fleet-scan backlog chunk took 43.7 s (A) and 31.2 s (B) against 300 s; 1,000 inventory jobs took 0.75–2.74 s. Full passes had no failed step: A 1 night 50.1 s, 7 nights 186.7 s; B 1 night 35.6 s, 7 nights 150.4 s; the longest transaction 27.7 s. 12 fleet scans per chunk were cancelled at 300 s; 6 took 208 s; 3 took about 128 s. One B cancel at 300 s was index bloat from the tester's own churn (a 2 GB PK for 2 M rows; 8.3 s after REINDEX on the test database), not a pattern a real night produces. Residual risk, for the operator: size database memory for the current partition's indexes, and alert on a retention step failing on consecutive nights. Full detail in the r1 section of `work/reports/CHK-M11-387-test.md`.

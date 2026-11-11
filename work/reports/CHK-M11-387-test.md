@@ -2,7 +2,9 @@
 
 tester-m11t, 2026-11-09. Tree: `m11-results` at `c090303`. HEAD is now `c62da73`, but the retention code, the repositories, the pool, `serve.py` and the spec are unchanged since then (`git diff --stat c090303 HEAD` is empty for them). Gate items: `work/decisions.md`, 2026-11-08, "Gate item: the retention chunk against `statement_timeout`", and the lead's requests of 2026-11-09 (options (1) to (4)).
 
-## Verdict: FAIL as the v1 limit. This is a finding for the user, not a product bug
+> **r1 (2026-11-11) supersedes this verdict.** With migration `m0006` and `SCAN_CHUNK` = 2 (TASK-261 r1), CHK-M11-387 is **PASS as the v1 limit**. See "r1" at the end. The r0 text below is kept as the record of the finding.
+
+## r0 verdict (2026-11-09): FAIL as the v1 limit. This is a finding for the user, not a product bug
 
 The product code works as specified, and no code or setting was changed. But at fleet size, two retention steps cannot finish one chunk inside the inherited `statement_timeout` of 300 s, so they delete nothing, every night:
 
@@ -170,3 +172,99 @@ One day's backlog is 40,000 inventory jobs (10,000 hosts, every 6 h), plus the d
 3. **Hardware and cache.** The sequential scans read mostly from the OS cache (`shared read`), with a 1.4 GB container cap and `shared_buffers` 128 MB. The same re-evaluation scan took 164 ms (A) and 106 ms (B), so treat per-call costs as ±40 %. A production server with more memory and a faster core might be up to about 2× faster per scan (my estimate, not measured). That would put the inventory chunk near 300 s, not well under it, and the per-job cost still grows with `scan_job`.
 4. **Assumptions:** the scan frequency, the plugin count (200), the 2 % retry rate and one re-evaluated fleet scan are mine (TS is silent). The re-evaluation cascade cost scales with the size of `scan_result_reeval`.
 5. Nothing in the tree was edited. The test indexes existed only on the throwaway database, which has been removed.
+
+## r1 (2026-11-11): the real migration m0006, `SCAN_CHUNK` 12, then 2
+
+tester-m11t. Fix round TASK-261 (impl-manager-b): migration `m0006_retention_indexes.py` creates `ix_job_scan`, `ix_job_retry_of` and `ix_reeval_job` exactly as TS §5.2 `68d3881` writes them, and `rules.SCAN_CHUNK` changed 100 → 12 → **2** (`0f53917`, `24a1126`). User decisions 2026-11-11, plus the standing remedy of 2026-11-09 (3).
+
+### Verdict r1: PASS as the v1 limit, at `SCAN_CHUNK` = 2
+
+Every chunk measured at `SCAN_CHUNK` = 2 fits well under the 300 s `statement_timeout`:
+
+- the worst backlog chunk (2 fleet-wide scans, about 20,400 jobs and 4.0 M results) took 28 to 44 s, 15 % of the limit at most;
+- a 1,000-job inventory chunk took 0.75 to 2.74 s;
+- the other steps took under 2 s.
+
+Full `run_retention` passes:
+
+- after a day's backlog: 35.6 s (B) and 50.1 s (A);
+- after a **7-night backlog**: 150.4 s (B, 7 fleet scans) and 186.7 s (A). Both caught up completely, with no step failed. The longest single transaction was 27.7 s.
+
+**12 was measured and failed** (cancelled at 300 s). 6 and 3 were measured at 69 to 89 % and 43 % of the limit. That is why 2 was chosen. Read the 12, 6 and 3 numbers as pessimistic (see "The 300 s cancel at B" below), but even at those rates a chunk of 2 stays under 30 % of the limit.
+
+One residual risk is listed under "The 300 s cancel at B". It is not a gate failure.
+
+### Method (as r0, with these differences)
+
+- **Tree:** the worktree with TASK-261 synced into WSL (head `m0006`; `SCAN_CHUNK` read from `rules` at run time; 12 for the first runs, 2 from "A-r1c2" on). The measured code equals `24a1126`: the diff against HEAD at sync time was only the value and its comment.
+- **Fresh database:** `db migrate` to `m0006`. `pg_indexes` showed `CREATE INDEX ix_job_retry_of ON public.scan_job USING btree (retry_of)`, `... ix_job_scan ON public.scan_job USING btree (scan_id)` and `... ix_reeval_job ON public.scan_result_reeval USING btree (job_id)`. No hand-made indexes in r1. Data set A was loaded on top (the indexes maintained during the load, as in production), then grown to B.
+- **Chunks:** "one chunk" is, as in r0, the body of `task._scans` (`scan_chunk(cutoff, SCAN_CHUNK)`, `try_reeval_lock`, `delete_scans`) or the step's `delete_*` function. The rows for chunk sizes 6 and 3 call the same repository functions with n = 6 or 3, which is exactly what `SCAN_CHUNK` = 6 or 3 runs, without a code change.
+- **Passes:** the real `run_retention` on the serve-built pool. A thin wrapper times every `db.transaction()`, so each chunk inside a pass is measured.
+- **One night's backlog (past the cutoffs):**
+  - 40,000 inventory jobs, 10,000 snapshots, 200 tokens, 30 requests;
+  - 1,000 audit entries (the shipper cursor lets exactly that many go);
+  - 1,000 unreferenced packages;
+  - 5 single-host scans, plus the night's fleet scans: one per week on A, one per night on B.
+  - "7 nights" is seven times that, and on B, seven fleet scans. Every scan being deleted has 200 results per job.
+- **Test-container change only:** `--shm-size 256m`. With the three new indexes, `VACUUM` runs a parallel index vacuum that needs 67 MB of dynamic shared memory, more than the default 64 MB `/dev/shm`. Production hosts are not affected.
+- **Interruptions (none changed a result):**
+  - WSL was shut down from outside at 01:56 UTC during the first load, so the database was rebuilt;
+  - the session restarted at about 13:35 local, and dockerd restarted at 14:26 local, stopping the container during the B 7-night set-up. It was restarted from its data, and the pass resumed on the scans already built (`M11T_KEEP=1`).
+- Script `C:\Users\kaiquan.koh\Documents\m11t-timing\r1.py` (with `m11t.py` and `probe.py`); logs in `...\m11t-timing\logs-r1\`. No `bs[uaek]_` value in any log. The container has been removed.
+
+### Chunk timings r1, against 300 s
+
+The "Share" column is the worst value as a share of the 300 s limit.
+
+| Chunk | A (weekly fleet scans; `scan_job` 1.82 M) | B (daily fleet scans; `scan_job` 5.31 M) | Share |
+| --- | --- | --- | --- |
+| **12 fleet scans** (122,413 jobs, 24.0 M results) | **cancelled at 300 s**, in the RI cascade `DELETE FROM scan_result WHERE $1 = job_id`, which is indexed: the cost is deleting the rows | not run | over |
+| 6 fleet scans (61,200 jobs, 12.0 M results), after that aborted chunk | 262.2 / 268.2 s | | 87 to 89 % |
+| 6 fleet scans, fresh | 208.0 s | | 69 % |
+| 3 fleet scans, fresh (30,600 jobs, 6.0 M results) | 128.5 / 126.5 s | | 43 % |
+| **2 fleet scans, `SCAN_CHUNK` = 2** (about 20,400 jobs, 4.0 M results) | **43.7 / 28.6 / 38.5 s** | **31.2 / 28.3 s** | **15 %** |
+| 1 fleet scan (about 10,190 jobs, 2.0 M results) | 24.1 / 24.9 s | 15.2 / 19.0 s (and one cancelled, see below) | 8 % |
+| 1 scan × 1,000 hosts (200,000 results and 200,000 re-evaluation rows) | 0.74 / 2.86 s | | 1 % |
+| `SCAN_CHUNK` single-host scans (12 on A, 2 on B) | 0.08 to 0.11 s | 0.03 to 0.08 s | under 0.1 % |
+| 1,000 inventory jobs | 0.84 to 0.90 s | 0.75 to 2.74 s | 1 % |
+| snapshots / tokens / requests: 10,000 each | 0.06–0.11 / 0.03–0.06 / 0.05 s | | under 0.1 % |
+| audit 10,000 plus checkpoint / packages 10,000 | 0.09–1.67 / 0.27–0.32 s | | 1 % |
+
+### Full passes r1 (`SCAN_CHUNK` = 2): no step failed, nothing left past any cutoff
+
+| Pass | Backlog | Total | Transactions (longest) | Per step |
+| --- | --- | --- | --- | --- |
+| A, 1 night | 7 scans (1 fleet, one 1,000-host, 5 manual; 11,217 jobs, 2.2 M results), 40,000 inventory, 10,000 snapshots, 200 tokens, 10,100 requests, 1,000 audit, 1,000 packages | **50.1 s** | 59 (22.4 s) | scans 7 in 4 chunks, 26.7 s; inventory 40 chunks, 21.3 s; snapshots 1.6 s; requests 2 chunks, 0.06 s; tokens 0.03 s; audit 0.17 s; packages 0.14 s |
+| A, **7 nights** | 36 scans (1 fleet, 35 manual; 10,216 jobs, 2.0 M results), 280,000 inventory, 70,000 snapshots, 1,400 tokens, 210 requests, 7,000 audit, 7,000 packages | **186.7 s** | 319 (27.7 s; none over 150 s) | scans 18 chunks, 28.4 s; inventory 280 chunks, 154.7 s; snapshots 7 chunks, 2.6 s; requests 0.04 s; tokens 0.06 s; audit 0.53 s; packages 0.29 s |
+| B, 1 night | 6 scans (1 fleet, 5 manual; 10,210 jobs, 2.0 M results), 40,000 inventory, 10,000 snapshots, 200 tokens, 30 requests, 1,000 audit, 1,000 packages | **35.6 s** | 58 (15.3 s) | scans 3 chunks, 15.4 s; inventory 40 chunks, 19.1 s; snapshots 0.86 s; the rest under 0.1 s |
+| B, **7 nights** | 42 scans (**7 fleet**, 35 manual; 71,438 jobs, **14.0 M results**), 280,000 inventory, 70,000 snapshots, 1,400 tokens, 210 requests, 7,000 audit, 7,000 packages | **150.4 s** | 322 (14.8 s; next 14.3, 12.9, 12.2, 12.0) | scans 21 chunks, 86.6 s; inventory 280 chunks, 61.8 s; snapshots 7 chunks, 1.6 s; the rest under 0.3 s |
+
+The audit entries left after the passes are those beyond the shipper cursor, which stay by design (#150 (d)).
+
+### The 300 s cancel at B, and whether a real night could hit it
+
+**What happened.** The first B chunk of one 10,000-host scan was cancelled at 300.01 s, in the `scan_result` cascade.
+
+**The partition's state.** `scan_result_2025_10` had a **primary-key index of 2,073.6 MB for 2.05 M live rows**, about 20 times its compacted size (115 MB after `REINDEX`).
+- **How it got there:** by then my measurements had inserted and deleted about 40 fleet scans' results (over 80 M rows) in that one partition within about 3 hours. Autovacuum had removed the dead tuples (1,026 dead), but a B-tree does not shrink.
+- **Partition statistics:** fresh (`ANALYZE`d after each load; autovacuum had run), so stale statistics were not the cause.
+- **One probe for one job:** `Index Only Scan ... rows=200`, `Buffers: shared hit=170 read=14`, `Heap Fetches: 200` (`explain-B-r1-probe-results-0.txt`). That is about 184 pages to find one job's 200 rows, repeated about 10,000 times per fleet scan, against a 1.4 GB container.
+
+**What I did.** I ran `REINDEX TABLE scan_result_2025_10` as owner: plain maintenance, no schema change, test database only. Then:
+- the same scan deleted in **8.33 s** (the row "B-r1c2-reindexed");
+- every later B chunk (after a `REINDEX` each time) took 15 to 31 s;
+- the B 7-night pass's longest transaction was 14.8 s, on an index of 678 MB holding the 7 fleet scans' 14.0 M rows.
+
+**Cause:** index bloat from this test's churn. A second, smaller factor is my bulk loader: it appears to spread one job's 200 result rows over many heap pages (`Heap Fetches: 200` touching about 170 pages), where real intake writes one job's results together. Both make my data pessimistic. Both probably also inflated the A rows for 12, 6 and 3 fleet scans, which were measured on the same partition as its churn grew. "12 failed" is therefore a pessimistic measurement; 2 is the conservative choice.
+
+**Could a real night hit it?**
+- **The churn pattern, no.** Normal operation writes a monthly partition once, during its month. Retention deletes those scans once, after 400 days. `db maintain` then drops the whole partition, about 30 days later at most (#44). Nothing inserts into a partition while retention empties it.
+- **Two things are not proven here:**
+  1. A real B partition holds about 30 fleet scans a month (about 60 M rows, an index of about 3 GB). That is larger than this container's memory and was not reproduced at full size. Retention's per-job probes into it are random reads. On a manager with too little memory for the current partitions, a fleet-scan chunk could be much slower than the 15 to 44 s measured here.
+  2. Over a partition's 30-day deletion window, its index keeps its full size while it empties, so probes get no cheaper.
+- **If it happened:** with `SCAN_CHUNK` = 2, at most 2 fleet scans are at stake per chunk. A cancelled chunk rolls back, is logged by step and exception type (REQ-277), and is retried the next night, so nothing is lost. But one fleet scan that can't be deleted within 300 s would hold up the scans step, as in r0. Lowering `SCAN_CHUNK` further can't help below 1.
+- **Suggested for the owner (no change made):** size the manager's database memory for the current month's `scan_result` indexes, and alert on a retention step that fails on consecutive nights. The existing failure log line makes that possible. A `REINDEX` is not needed in normal operation.
+
+### On the plant (TASK-261 impl report)
+
+"`SCAN_CHUNK` back to 12 (or 100) must push the backlog chunk over 300 s": **red as required.** It is the measured row "12 fleet scans: cancelled at 300 s" on the real `m0006` database. A chunk of 100 fleet scans (about 200 M result rows) was not built: it would not fit in WSL alongside the gate runs, and 12 already overruns.
