@@ -277,7 +277,7 @@ Hosts, their OS details and current package lists, enrolment tokens, policies, s
 
 **As which role:** every retention statement runs as the database role `bitscan_retention`, with the DSN in `/etc/bitscan/secrets/retention.dsn` (`manager-install.md` section 5). That role can read every table, delete only from the tables above, and add audit checkpoint entries. The manager doesn't start without that file.
 
-**Batches:** each batch is one transaction: 100 scans, 1,000 inventory jobs or 10,000 rows. A batch that fails is rolled back alone; batches committed before it stay deleted, and the next run continues. Each statement may take at most 5 minutes. On a large database, deleting scans and inventory jobs is slow, because the schema has no index on the columns those deletes check; this is a known limit of this version.
+**Batches:** each batch is one transaction: 12 scans, 1,000 inventory jobs or 10,000 rows. A batch that fails is rolled back alone; batches committed before it stay deleted, and the next run continues. Each statement may take at most 5 minutes. On a large database, the scan and inventory-job deletes use the indexes that migration `m0006` adds (on the scan and retry columns of `scan_job`, and on the job column of `scan_result_reeval`).
 
 **Audit log:** each batch of at most 10,000 entries first appends one `audit.checkpoint` entry (actor `system`) with the id and row hash of the last entry it deletes and the number deleted, so the hash chain still verifies from there. The checkpoint goes to the audit sink like every entry. Entries not yet queued for the sink stay, so a sink outage also holds back the audit deletes. The last checkpoints (on the database host):
 

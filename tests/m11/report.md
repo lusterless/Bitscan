@@ -33,6 +33,7 @@ Phase report for M11 (results and end-to-end). The lead folds in each section un
 | TASK-253 | TASK-253 TEST: PASS | `work/reports/TASK-253-test.md` |
 | TASK-259 | TASK-259 TEST: PASS | `work/reports/TASK-259-test.md` |
 | TASK-255 | TASK-255 TEST: PASS | `work/reports/TASK-255-test.md` |
+| TASK-261 | TASK-261 TEST (gate r1): PASS | `work/reports/M11-gate-test.md` (r1 section) |
 | TASK-260 | TASK-260 TEST: PASS | `work/reports/TASK-260-test.md` |
 | TP-M11-17 | TP-M11-17 (harness carries): PASS | `work/reports/TP-M11-17-test.md`; rows in `work/reports/M11-e2e-test.md` |
 | TP-M11-18 | TP-M11-18 (nightly harness): PASS | `work/reports/TP-M11-18-test.md`; rows in `work/reports/M11-e2e-test.md` |
@@ -1533,3 +1534,7 @@ One day's backlog is 40,000 inventory jobs (10,000 hosts, every 6 h), plus the d
 3. **Hardware and cache.** The sequential scans read mostly from the OS cache (`shared read`), with a 1.4 GB container cap and `shared_buffers` 128 MB. The same re-evaluation scan took 164 ms (A) and 106 ms (B), so treat per-call costs as ±40 %. A production server with more memory and a faster core might be up to about 2× faster per scan (my estimate, not measured). That would put the inventory chunk near 300 s, not well under it, and the per-job cost still grows with `scan_job`.
 4. **Assumptions:** the scan frequency, the plugin count (200), the 2 % retry rate and one re-evaluated fleet scan are mine (TS is silent). The re-evaluation cascade cost scales with the size of `scan_result_reeval`.
 5. Nothing in the tree was edited. The test indexes existed only on the throwaway database, which has been removed.
+
+## TASK-261 (retention indexes m0006, SCAN_CHUNK 12; gate r1)
+
+The test report is the "r1" section of `work/reports/M11-gate-test.md` (tester-m11g): G19 matches the TS §5.2 DDL of `68d3881`, 6/6 plants red; targeted run 289/289; G18 11,909/11,909; G5 98.5920 %; G83 46/46. The CHK-M11-387 re-measurement on the real migration follows in `work/reports/CHK-M11-387-test.md` (r1).

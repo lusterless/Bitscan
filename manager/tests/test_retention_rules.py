@@ -38,8 +38,9 @@ def test_constants_are_the_spec_values() -> None:
     assert rules.AUDIT_YEARS == 3
     assert rules.CLOCK_SKEW == timedelta(minutes=5)
     assert rules.FUTURE_SLACK == timedelta(days=1)
+    # Scans 12, not #150 (g)'s 100: user decision 2026-11-11, TASK-261 (PD-51).
     assert (rules.SCAN_CHUNK, rules.JOB_CHUNK, rules.ROW_CHUNK, rules.AUDIT_CHUNK) == (
-        100,
+        12,
         1_000,
         10_000,
         10_000,

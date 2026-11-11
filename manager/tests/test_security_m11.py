@@ -245,6 +245,11 @@ M11_JOBS = {
     "services/jobs/results_read.py",
     "services/jobs/scan_views.py",
 }
+# TASK-261 (user decision 2026-11-11; PD-51): M11's one migration, the three
+# TS §5.2 indexes of the owner-approved spec change 68d3881. m0001-m0005 stay
+# pinned above.
+M11_MIGRATION = "db/migrations/versions/m0006_retention_indexes.py"
+M11_INDEXES = ("ix_job_scan", "ix_job_retry_of", "ix_reeval_job")
 
 
 # ------------------------------------------------------------------ helpers
@@ -543,7 +548,7 @@ def test_the_m11_layers_point_down_only(rel: str) -> None:
 
 def test_the_frozen_files_are_byte_unchanged() -> None:
     """REQ-272 (3), (5), PD-46: every M1, M2, M5, M8 and M9 file M11 reuses,
-    and every migration, is byte-identical to 6efe0fb."""
+    and every migration up to m0005, is byte-identical to 6efe0fb."""
     changed = {
         rel: hashlib.sha256((BM / rel).read_bytes()).hexdigest()
         for rel in FROZEN
@@ -555,14 +560,53 @@ def test_the_frozen_files_are_byte_unchanged() -> None:
 
 @pytest.mark.parametrize("folder", FROZEN_DIRS)
 def test_no_file_was_added_to_a_frozen_folder(folder: str) -> None:
-    """No M11 file under bm/auth/ or the migrations (no migration in M11);
-    services/jobs/ gains exactly the three M11 modules."""
+    """No M11 file under bm/auth/; services/jobs/ gains exactly the three M11
+    modules; the migrations gain exactly m0006 (TASK-261)."""
     now = {
         p.relative_to(BM).as_posix() for p in (BM / folder).glob("*.py") if p.is_file()
     }
     pinned = {r for r in FROZEN if r.startswith(folder + "/")}
-    allowed = M11_JOBS if folder == "services/jobs" else set()
+    allowed = {
+        "services/jobs": M11_JOBS,
+        "db/migrations/versions": {M11_MIGRATION},
+    }.get(folder, set())
     assert now == pinned | allowed, sorted(now ^ (pinned | allowed))
+
+
+def test_the_m11_migration_is_exactly_the_spec_indexes() -> None:
+    """TASK-261, TS §5.2 (68d3881), forward-only migrations (TS §5.3): m0006
+    follows m0005, its SQL is exactly the spec's three index lines (comments
+    dropped), with no grant, DDL or data change besides them, and its
+    downgrade only raises."""
+    from .schema_diff import reference_sql
+
+    spec = {
+        line.split("--", 1)[0].strip()
+        for line in reference_sql()[0].split("\n")
+        if any(line.startswith(f"CREATE INDEX {name} ") for name in M11_INDEXES)
+    }
+    assert len(spec) == 3, spec
+    sql_like = re2.compile(
+        r"(?i)\b(CREATE|DROP|ALTER|GRANT|REVOKE|INSERT|UPDATE|DELETE|TRUNCATE)\b"
+    )
+    found = [s.strip() for s in sql_strings(M11_MIGRATION) if sql_like.search(s)]
+    assert sorted(found) == sorted(spec), found
+    tree = ast.parse(source(M11_MIGRATION))
+    values = {
+        t.id: n.value.value
+        for n in tree.body
+        if isinstance(n, ast.AnnAssign | ast.Assign)
+        and isinstance(n.value, ast.Constant)
+        for t in (n.targets if isinstance(n, ast.Assign) else [n.target])
+        if isinstance(t, ast.Name)
+    }
+    assert (values.get("revision"), values.get("down_revision")) == ("m0006", "m0005")
+    (down,) = [
+        n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "downgrade"
+    ]
+    assert len(down.body) == 1 and isinstance(down.body[0], ast.Raise), ast.unparse(
+        down
+    )
 
 
 # ------------------------------------------------------------ CHK-M11-249 (static)

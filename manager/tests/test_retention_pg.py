@@ -261,7 +261,8 @@ def test_chunks(fresh: PgServer, rdb: Any) -> None:
             (a.agent_id, old, old + timedelta(days=1), old, old),
         )
     res = run(rdb, now)
-    assert (res["scans"].deleted, res["scans"].chunks) == (250, 3)
+    # Chunks of 12 scans (TASK-261, PD-51): 20 full chunks and one of 10.
+    assert (res["scans"].deleted, res["scans"].chunks) == (250, 21)
     assert (res["inventory_jobs"].deleted, res["inventory_jobs"].chunks) == (2500, 3)
 
 
@@ -380,8 +381,12 @@ def test_fault_in_the_second_scans_chunk(
     caplog.set_level(logging.DEBUG)
     res = run(rdb, now)
     monkeypatch.undo()
-    assert len(scan_ids(fresh)) == 50  # the first chunk stays, the second rolled back
-    assert (res["scans"].deleted, res["scans"].skipped) == (100, "failed")
+    # The first chunk stays deleted, the second is rolled back (chunks of
+    # rules.SCAN_CHUNK, pinned at 12 in test_retention_rules; TASK-261, PD-51).
+    chunk = rules.SCAN_CHUNK
+    assert 150 > 2 * chunk  # a second, full chunk exists
+    assert len(scan_ids(fresh)) == 150 - chunk
+    assert (res["scans"].deleted, res["scans"].skipped) == (chunk, "failed")
     assert res["snapshots"].deleted == 1  # the later steps ran
     assert records(caplog, "retention step failed") == [
         {"step": "scans", "exc_type": "RuntimeError"}
