@@ -17,8 +17,13 @@ or listed below as NOT RUN with its reason, and that each anchor matches
 exactly one block; a new, removed or changed block stops the walk there.
 
 Walked blocks run **verbatim** as the administrator `admin` with sudo in the
-release folder; the only substitution is the example host name (`mgr.example`
--> `bitscan-mgr.test`). The §1.1 lab-CA blocks run on the "admin workstation"
+release folder; the only substitutions are the example host name (`mgr.example`
+-> `bitscan-mgr.test`) and, in the §6 block, the version in the two release
+file names (`bitscan-manager-X.Y.Z-requirements.txt`,
+`bitscan_manager-X.Y.Z-py3-none-any.whl`), which is set to the version of the
+wheel in --rel (`rel_version`), as `wheel_head` does for the migration head:
+the N / N−1 runs install the v0.1.0 files with the runbook of a later tree
+(Release 0.2.0, PD-51). The §1.1 lab-CA blocks run on the "admin workstation"
 (a scratch folder in WSL, as the runbook says: not on the manager host). Text
 steps are done the way the runbook says: blocks saved as files, `sudoedit` for
 every secret and config file (SUDO_EDITOR copies a staged file, so sudoedit
@@ -318,6 +323,30 @@ def wheel_head(rel: Path) -> str:
     return sorted(re.findall(r'^revision: str = "(\w+)"', text, re.MULTILINE))[-1]
 
 
+REL_WHEEL = re.compile(r"bitscan_manager-(\d+\.\d+\.\d+)-py3-none-any\.whl")
+# the two release file names of the manager-install.md §6 block; group 2 is the version
+REL_FILE = re.compile(r"(bitscan_manager-|bitscan-manager-)(\d+\.\d+\.\d+)(-py3-none-any\.whl|-requirements\.txt)")
+
+
+def rel_version(rel: Path) -> str:
+    """The version of the one manager wheel in --rel (its file name, as release.yml writes it)."""
+    names = sorted(p.name for p in rel.glob("bitscan_manager-*-py3-none-any.whl"))
+    m = REL_WHEEL.fullmatch(names[0]) if len(names) == 1 else None
+    if m is None:
+        raise Stop(f"--rel must hold exactly one bitscan_manager-X.Y.Z-py3-none-any.whl, found {names}")
+    return m.group(1)
+
+
+def rel_files(body: str, version: str) -> tuple[str, list[str]]:
+    """`body` with the version in every release file name set to `version`, and the names as written.
+    The block must name exactly one requirements file and one wheel, or the walk stops."""
+    written = [m.group(0) for m in REL_FILE.finditer(body)]
+    kinds = sorted(m.group(3) for m in REL_FILE.finditer(body))
+    if kinds != ["-py3-none-any.whl", "-requirements.txt"]:
+        raise Stop(f"§6 block: want one requirements file and one wheel name, found {written}")
+    return REL_FILE.sub(lambda m: m.group(1) + version + m.group(3), body), written
+
+
 def setup(tree: Path, rel: Path, work: Path) -> dict[str, str]:
     sec = work / "secrets"
     if sec.exists():
@@ -590,12 +619,20 @@ def walk(tree: Path, runbook: Path, vals: dict[str, str], work: Path) -> None:  
         f"rc {rc}; host {pin.strip()}; workstation {pin_ws.strip()}", rc == 0 and re.fullmatch(r"[0-9a-f]{64}", pin.strip()) is not None and pin.strip() == pin_ws.strip())
 
     # §6 software
-    rc, out = sh(sub(B["venv"]), timeout=1500)
+    try:
+        relver = rel_version(RELDIR)
+        venv, written = rel_files(B["venv"], relver)
+    except Stop as e:  # a FAIL row first, as every Stop of the walk has one
+        row("CHK-M6-048", "§6 release file names set to the --rel wheel's version", "one wheel in --rel; the block names one requirements file and one wheel",
+            str(e), False)
+        raise
+    rc, out = sh(sub(venv), timeout=1500)
     helpok = all(w in out for w in ("serve", "users", "migrate", "maintain"))
     rc2, perm = root("find /opt/bitscan-manager ! -type l -perm /022 | head; readlink /usr/bin/bitscan-manager; stat -c '%U:%G %a' /opt/bitscan-manager")
     errs = [ln for ln in out.split("\n") if re.search(r"^!! rc=|ERROR|Could not|Timeout|SSLError|HTTPSConnection|hash", ln)]
     row("CHK-M6-048", "§6 venv from the hashed lock and the wheel, link, --help, find -perm /022", "rc 0; help lists serve, users, db migrate, db maintain; find prints nothing",
-        f"rc {rc}; errors {errs[:8]}; {out[-700:]} || {perm}", rc == 0 and helpok and "!! rc=" not in out and perm.split("\n")[0] == "/opt/bitscan-manager/bin/bitscan-manager")
+        f"rc {rc}; release files {written} -> version {relver} (the --rel wheel); errors {errs[:8]}; {out[-700:]} || {perm}",
+        rc == 0 and helpok and "!! rc=" not in out and perm.split("\n")[0] == "/opt/bitscan-manager/bin/bitscan-manager")
 
     # §7 units
     rc, out = sh(sub(B["units"]))

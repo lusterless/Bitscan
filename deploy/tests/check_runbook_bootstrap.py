@@ -3,7 +3,7 @@
 Usage: python -I deploy/tests/check_runbook_bootstrap.py [--root DIR] [--runbook FILE]
 
 The runbook must hold exactly one ```sql fenced block, and that block, fences
-included, must equal TS §5.2 lines 1018-1033 byte for byte (LF endings, no
+included, must equal TS §5.2 lines 1023-1038 byte for byte (LF endings, no
 trailing blanks added or removed). The spec lines are checked to be the
 ```sql fence after the **Bootstrap** paragraph and its closing fence, so a
 moved spec block fails loudly instead of comparing the wrong lines.
@@ -19,7 +19,7 @@ from pathlib import Path
 SPEC = Path("docs/spec/Technical_Specification.md")
 RUNBOOK = Path("deploy/runbooks/manager-install.md")
 # 1-based: opening ```sql fence and closing fence of the TS §5.2 Bootstrap block
-SPEC_START, SPEC_END = 1018, 1033
+SPEC_START, SPEC_END = 1023, 1038
 
 
 def spec_block(spec: bytes) -> bytes:

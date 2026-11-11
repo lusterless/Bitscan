@@ -2,7 +2,7 @@
 
 Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported agent hosts are Ubuntu 22.04 and Ubuntu 24.04 (amd64, cgroup v2). The manager host is Ubuntu 24.04 on amd64.
 
-**Status:** release 0.1.0 is the first supported release: manager `0.1.0` and agent package `0.1.0-1` (git tag `v0.1.0`). It covers enrolment and approval, heartbeat, the mandatory inventory (`os_info` and the full `dpkg` package list), the host pages and fleet-wide package search. Compliance scans are not in 0.1.0. The agent's runner and the `bitscan-capread` helper are installed but idle, no check command runs, and the agent answers every check of a compliance job with `runner_unavailable`. The earlier pre-release agent builds (`0.1.0~preN-1`) are not supported. Upgrade them to `0.1.0-1` as described in [Installing a release](#installing-a-release).
+**Status:** release 0.2.0 is the current release: manager `0.2.0` and agent package `0.2.0-1` (git tag `v0.2.0`). It adds compliance scans, their results and scores, and [retention](#retention) to release 0.1.0 (manager `0.1.0`, agent package `0.1.0-1`, git tag `v0.1.0`). 0.1.0 covers enrolment and approval, heartbeat, the mandatory inventory (`os_info` and the full `dpkg` package list), the host pages and fleet-wide package search; its runner and `bitscan-capread` helper are idle, and its agent answers every check of a compliance job with `runner_unavailable`. The pre-release agent builds (`0.1.0~preN-1` and `0.2.0~preN-1`) are not supported. Upgrade them to `0.2.0-1` as described in [Installing a release](#installing-a-release).
 
 The manager runs:
 
@@ -13,7 +13,7 @@ The manager runs:
 
 The agent package (`bitscan-agent`) installs the `bitscan-agent` and `bitscan-runner` services. The agent enrols, sends a heartbeat every 5 minutes, pulls its jobs and uploads the inventory.
 
-**Compliance scans and results (pre-release `0.2.0~pre2-1`, not a supported release).** Hosts on this build run compliance jobs:
+**Compliance scans and results (release 0.2.0).** Hosts on agent `0.2.0-1` run compliance jobs:
 
 - The agent hands each job to `bitscan-runner`. The runner runs every check in its sandbox as the `bitscan-runner` user: it can read every file, but it cannot write outside its private `/tmp` or open IP connections.
 - The runner redacts the output on the host and returns it.
@@ -34,10 +34,10 @@ Production installs follow the runbooks in `deploy/runbooks/`:
 | [`manager-operations.md`](deploy/runbooks/manager-operations.md) | Upgrades, replacing the TLS certificate and the OpenBao token, backups and the monthly restore test, and removal |
 | [`agent-install.md`](deploy/runbooks/agent-install.md) | Installing, checking, upgrading, re-enrolling and removing the agent on each host |
 
-**Release files.** Each release is published on the project's GitHub release page. For 0.1.0 it holds:
+**Release files.** Each release is published on the project's GitHub release page. For 0.2.0 it holds:
 
-- Manager: `bitscan_manager-0.1.0-py3-none-any.whl` (the built web UI is inside), `bitscan-manager-0.1.0-requirements.txt` (the hashed runtime dependencies), and the unit files `bitscan-manager.service`, `bitscan-manager-migrate.service`, `bitscan-manager-maintain.service` and `bitscan-manager-maintain.timer`.
-- Agent: `bitscan-agent_0.1.0-1_amd64.deb`.
+- Manager: `bitscan_manager-0.2.0-py3-none-any.whl` (the built web UI is inside), `bitscan-manager-0.2.0-requirements.txt` (the hashed runtime dependencies), and the unit files `bitscan-manager.service`, `bitscan-manager-migrate.service`, `bitscan-manager-maintain.service` and `bitscan-manager-maintain.timer`.
+- Agent: `bitscan-agent_0.2.0-1_amd64.deb`.
 - CycloneDX SBOMs.
 - `SHA256SUMS`, which lists every file above.
 
@@ -51,8 +51,8 @@ Each file you downloaded must show `OK`. Stop if any line says `FAILED`, if a do
 
 **Versions and compatibility.**
 
-- The manager and the agent use semantic versioning. The agent package version adds a Debian revision, for example `0.1.0-1`.
-- A manager supports agents of its own version and the one before. An agent supports a manager of its own version and the one before. 0.1.0 is the first supported release, so no earlier supported version exists yet.
+- The manager and the agent use semantic versioning. The agent package version adds a Debian revision, for example `0.2.0-1`.
+- A manager supports agents of its own version and the one before. An agent supports a manager of its own version and the one before. So manager 0.2.0 supports agents `0.2.0-1` and `0.1.0-1`, and agent `0.2.0-1` supports managers 0.2.0 and 0.1.0. Under manager 0.2.0, a host still on `0.1.0-1` reports every check as ERROR `runner_unavailable` until its agent is upgraded. Pre-release builds (`X.Y.Z~preN-1`) are not supported by any manager.
 - Upgrade order: the manager first (migrate, then restart), then the agents. See [`manager-operations.md`](deploy/runbooks/manager-operations.md) section 1 and [`agent-install.md`](deploy/runbooks/agent-install.md) section 6.
 
 ## Prerequisites
@@ -352,6 +352,8 @@ curl -s -G https://manager.example:8443/api/v1/packages/search \
 
 A compliance profile is one `<Policy>` in a `.bit` file. The file is UTF-8 XML holding exactly one `Policy`, its `Family` (the standard, for example `CIS Ubuntu 24.04`) and up to 5,000 `Plugin` checks. Each check has the shell command to run (`Execute`), and its output is compared with `ExpectedResult` using `Operator`. Checks are shown as `<family name> - <plugin name>`. [`docs/spec/bit_Schema_Reference.md`](docs/spec/bit_Schema_Reference.md) describes the format, every element and its limits, and the validation codes; its section 1.1 is a complete example. `<PolicyName>` is the profile's name and its unique key; the file name is never used as a name.
 
+The sample policies in [`bits/samples/`](bits/samples/) (CIS Ubuntu 22.04 and 24.04 Level 1, server) are not part of the agent package or the manager release, and their CIS control numbers are not yet confirmed against the CIS benchmark (TS §8.5).
+
 ### Loading policies
 
 A policy comes from one of two places, and lives in only one of them.
@@ -390,6 +392,7 @@ curl -s https://manager.example:8443/api/v1/policies/import \
   - The codes `BIT001`–`BIT017` and `BIT102` reject the file; `BIT101` and `BIT103` are warnings.
   - `BIT102` refuses commands that write to or change the host: for example `rm`, `cp`, `tee`, `sed -i`, `apt install`, `systemctl stop`, `eval`, `source`, `xargs`, `find -exec`, and output redirection anywhere other than `/dev/null`, `/dev/stdout`, `/dev/stderr` or `/tmp/`. Rewrite such checks as the schema reference describes, for example with `find … -print` and a `while read` loop.
   - `BIT102` is only a safety net: what stops a command from changing the host is the agent's sandbox.
+  - **Known limit of this release:** `BIT102` does not check command strings passed to `su`, `runuser` or `flock` with `-c`, `trap`, brace expansion in `bash -c` scripts, commands behind the wrappers `time`, `nsenter`, `unshare`, `flock`, `setpriv`, `taskset`, `chrt`, `runuser` and `su`, long options given as abbreviations to the wrappers it does check (for example `sudo --us`), the output files that `time -o` or `--output` and `flock` open, or a command word that is not literal, such as one taken from a variable (`c=rm; "$c" x`). The runner sandbox is the real control for these.
 - **Live at once.** A successful import is stored in one transaction, and every scan job queued after it uses it; jobs already queued keep their commands. If the file's content changed, the policy's `version` goes up by 1. Checks that no profile lists any more are retired, not deleted, so old results stay readable.
 - **Automatic imports** (by the watcher and at start-up) skip a file whose content hasn't changed since its last successful import, and record it as `skipped`. Uploads and rebuilds never skip a file.
 - **Alerts.** Every import writes an audit entry.

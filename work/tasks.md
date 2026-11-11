@@ -2805,3 +2805,77 @@ All are in `work/open-questions.md` ("M11"), each with a recommended answer. "Ne
 | SR §1.1 (canonical example) | REQ-285 | Covered (the nightly's policy) |
 | SR §2.4 (operators) | none | Unchanged (M8) |
 | CLAUDE.md out of scope and owner decisions | none | Nothing planned: no signing, approval workflow, ad-hoc command, push channel, remediation, OIDC, client certificates or policy editor; no route or setting that disables inventory |
+
+## Release 0.2.0
+
+Planned 2026-11-11 (planner-rel) in the worktree `Bitscan-m11` (branch `release-0.2.0`, from `main` `d26c472` plus the M11 close-out commit). It follows the user's release decisions (decisions 2026-11-11, "Release 0.2.0 started" (1) to (4)) and `deploy/runbooks/manager-operations.md` §7. In this section `bm/` means `manager/bitscan_manager/`. **No new REQ:** every task links an existing one. There is no migration, route, agent code, unit or dependency change, no spec deviation, and no gate is lowered. No new open question: the N / N−1 pairing is the user's 2026-11-08 (1) answer ("both ways"), and #111 ships with the note (2026-11-11 (2)).
+
+### Release tasks
+
+| TASK | Title | REQ links | Area | Owner | Risk | Files expected | Depends on | Est. LOC | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TASK-146 r2 | **Carried, not new.** BIT102 revision 2 (the gaps closed), the saved r2 restored in this worktree (`work/reports/TASK-146-impl.md` "Revision 2") | REQ-157, REQ-177, REQ-180 | manager | impl-manager-rel; tester-rel; reviewer-rel | **high** (importer; two approvals, TS §8.2 L1273) | `bm/services/importer/bit102.py`, `bm/services/importer/bit102_wrappers.py`, `bm/services/importer/bit102_braces.py` (lexer `shlex_*.py` unchanged) | TASK-145 (done, unchanged) | 684 non-blank lines as built, 3 files, one task id (r2 ruling (9)) | The original one (every case of the REQ-157 (1) must-reject corpus gets BIT102 with the offending token in its message, and no case of the must-pass corpus, the SR §1.1 `Execute` included, gets one), plus every new rule of the decisions rows "BIT102 gaps closed" (1)–(4), "TASK-146 r2 shape rulings" (a)–(c) and "TASK-146 r2 rulings" (1)–(8) as must-reject and, where the rule lets a form pass, must-pass cases (for example `/usr/bin/time -o /etc/x ls`, `su root -c 'rm x'`, `runuser -u root rm x`, `flock /tmp/l -c 'rm x'`, `trap 'rm x' EXIT`, `bash -c '{rm,x} y'`, `nsenter -W /etc rm x` and `stdbuf -i0 -oL rm x` rejected; `taskset -p 1`, `flock -n 9`, `su -c id root`, `sh -c '{rm,x} y'` and `stdbuf -io L rm x` passing), each rule with a plant that turns G54 red. |
+| TASK-262 | Manager version 0.2.0 | REQ-290, REQ-141 | manager | impl-manager-rel | low (released with the TASK-263 batch) | `manager/pyproject.toml` (`version`), `bm/__init__.py` (`__version__`), `manager/openapi.json` (regenerated) | none | 2 (+1 generated line) | Both version fields read `0.2.0`; the re-exported `openapi.json` differs from the branch base only in `info.version` (`0.2.0`) and a second export is byte-identical (G6); with TASK-263's changelog in place, the `release` workflow's step "Tag, pyproject and changelog versions agree" passes for `0.2.0` and refuses `0.2.1`; `test_openapi.py` and `test_project_config.py` pass after the tester re-pins `0.1.0` → `0.2.0`. |
+| TASK-263 | Release notes and packaging text for 0.2.0 | REQ-290, REQ-142, REQ-145, REQ-139 | deploy | impl-deploy-rel | low (docs and package metadata) | `deploy/debian/changelog`, `deploy/debian/control`, `README.md`, `deploy/runbooks/agent-install.md`, `deploy/runbooks/manager-operations.md` | none | about 80 (docs) | `dpkg-parsechangelog -S Version` gives `0.2.0-1`, and the new top entry `bitscan-agent (0.2.0-1)` is dated after the `0.2.0~pre2-1` entry (Sun, 08 Nov 2026); `control` holds neither "(pre-release)" nor the "0.x pre-releases … idle" sentence; README and both runbooks hold no pre-release note for 0.2.0, and **Compatibility** (manager-operations §1, and the agent runbook's) states manager 0.2.0 supports agents 0.2.0-1 and 0.1.0-1, and agent 0.2.0-1 supports managers 0.2.0 and 0.1.0; the changelog and README say the BIT102 r2 rules are in, and that the sample policies' CIS control numbers are unconfirmed (#111) and the samples are not in the `.deb` or the manager release; `deploy/tests/check_debian_meta.py`, `check_runbook_text.py`, `check_md_links.py` and `check_release_workflow.py` pass, and lintian on the built `bitscan-agent_0.2.0-1_amd64.deb` is clean (G37). |
+
+Totals: 3 tasks (1 carried, 2 new: TASK-262, TASK-263), 0 new REQ, 3 waves, then 5 lead steps and 3 user steps.
+
+### Notes per task
+
+**TASK-146 r2 (carried).**
+- **IMPL changes no rule.** The r2 restored on 2026-11-11 is the build. IMPL checks the three product files' SHA-256 against the impl report table (`fee8ac5e…`, `af1ece39…`, `a6326ef9…`), re-runs G1–G3 (ruff, format, `mypy --strict`) on this tree, and appends a dated note to `work/reports/TASK-146-impl.md`. The two unrecorded drafts in `fixes-2026-10-30\` are compared and the differences reported to `main`; they are never applied (decision 2026-11-11 (1)).
+- **Spec:** SR §4.2 (L275–L287), SR §2.4 (L162), TS §3.7, §8.1. BIT102 is a safety net; the runner sandbox is the control. Both must exist (security invariants).
+- **Plants:** the impl report's table "For the tester: plants, one per new rule" (21 rows), plus one plant for each rule that table does not cover: shape ruling (c) (`stdbuf -i0 -oL rm x` passes), r2 ruling (1) (`su root ls` passes), (3) beyond the command word (`bash -c 'apt-get {install,x} y'` passes), (6) (`su -c '{rm,x} y'` passes), (7) (`flock -n 9` gets BIT102) and (8) (`env -a x rm y` passes). Ruling (9) is the file split, with no behaviour.
+- **Payloads are harmless only** (`rm x`, `/etc/x`, `/tmp/…`; decisions 2026-10-28 overnight (1), 2026-11-11 (1)). If a safety check stops a step, that step stops, is recorded and goes to the user: no retry, no rewording, no re-delegation.
+- **Also owed (named exception, decisions 2026-10-29):** re-run CHK-M7-191's five rejecting fixtures (G56) and G59 (both samples together, and the SR §1.1 example alone) on r2. The full suite runs in the release PR's CI.
+- The remote branch's r2 tests (`origin/claude/pensive-brahmagupta-ippcrk`) belong to a different build and are not reused (decisions 2026-10-28, "TASK-146 r2 vs the remote approval").
+- **Check ids:** CHK-M7-388 to -401 are already taken by the TASK-172 and TASK-173 web checks and plants (`tests/m7/test-plan.md` L321–L367; `tests/m7/report.md`). The note at `tests/m7/report.md` L837 ("the next r2 id is still CHK-M7-388") predates them. The r2 rows therefore start at **CHK-M7-402**, with -402 to -449 reserved for them (lead, 2026-11-11), in `tests/m7/test-plan.md` and `tests/m7/report.md`.
+- **Approvals:** a full-rigor review on its own, which reads every plant row in the test report. The TS §8.2 second approval is pre-authorised on TEST PASS plus REVIEW APPROVED with no open blocking or should-fix finding (decision 2026-11-11 (3), as PD-47); otherwise it waits for the user.
+
+**TASK-262.** Spec TS §8.2 L1272 (semantic versioning), §8.7 L1353. REQ-290 names the bump to manager `0.2.0`; REQ-141 (3) is the workflow's version refusal. `openapi.json` is regenerated with the recorded export command, not edited by hand. The wheel built from this tree is named `bitscan_manager-0.2.0-py3-none-any.whl` (REQ-137's name moves with the version). The tester re-pins `manager/tests/test_openapi.py` L75 and `test_project_config.py` L42 and lists the old and new CHK (the PD-51 pattern). The version-agreement check needs TASK-263's changelog, so it runs in the W2 batch.
+
+**TASK-263.** Spec TS §3.1 (the `.deb` with a published SHA-256), §8.2 L1272, §8.7 L1353 (manager supports its own version and the one before); the agent-to-manager half is decisions 2026-11-08 (1); #111 is decisions 2026-11-11 (2) and TS §8.5. The text is in user terms, with no task id or process note (REQ-139 (4), REQ-142 (5), REQ-145 (3)): the BIT102 r2 rules are described by what the import check now also refuses, not by a revision number. The `.claude/CLAUDE.md` N / N−1 marker is the user's edit and is not part of this task. Any checker that pins pre-release text is re-pinned by the tester, who lists the old and new CHK.
+
+**Changes to earlier requirements (Release 0.2.0).** REQ-290 (1) (`0.2.0~pre2-1`) held for the M11 head; at the release head `dpkg-parsechangelog` gives `0.2.0-1`, and `release.yml` still refuses `~`. The 0.1.0 status text of REQ-142 and REQ-145 is superseded by the 0.2.0 text. REQ-137's wheel name follows the version.
+
+### Release test plan (tester-rel)
+
+The release checks go in `tests/release/test-plan.md` and `tests/release/report.md`, with ids `CHK-R020-###`, plus one row each in the index files `tests/test-plan.md` and `tests/report.md`. Suggested ranges: 001–019 TASK-262; 020–059 TASK-263; 060–079 the release-PR runs (L4 and L5 below: the e2e report's nightly and compatibility rows read from the uploaded report; the release run's versions step, the double build byte compare, `SHA256SUMS`, and no `bits/samples/` file in the `.deb` or the wheel per decision 2026-11-11 (2)); 080 onwards plants (for example a `0.2.1` given version refused, and a `~` changelog refused). The TASK-146 r2 rows stay in `tests/m7/`, CHK-M7-402 to -449 (see above).
+
+### Release waves
+
+| Wave | Tasks (parallel) | Files touched (disjoint within the wave) |
+| --- | --- | --- |
+| W1 | TASK-146 r2 IMPL · TASK-262 IMPL · TASK-263 IMPL | `bm/services/importer/{bit102,bit102_wrappers,bit102_braces}.py`, `work/reports/TASK-146-impl.md` · `manager/pyproject.toml`, `bm/__init__.py`, `manager/openapi.json`, `work/reports/TASK-262-impl.md` · `deploy/debian/{changelog,control}`, `README.md`, `deploy/runbooks/{agent-install,manager-operations}.md`, `work/reports/TASK-263-impl.md` |
+| W2 | TASK-146 r2 TEST · TASK-262 + TASK-263 TEST (one batch) | `manager/tests/test_bit102.py`, `bits/tests/bit102/*`, `tests/m7/{test-plan,report}.md`, `work/reports/TASK-146-test.md` · `manager/tests/{test_openapi,test_project_config}.py`, any re-pinned `deploy/tests/*`, `tests/release/{test-plan,report}.md`, `tests/{test-plan,report}.md`, `work/reports/TASK-26{2,3}-test.md` |
+| W3 | TASK-146 r2 REVIEW (full rigor, on its own) · TASK-262 + TASK-263 REVIEW (one batch) | `work/reviews/TASK-146.md` · `work/reviews/TASK-262.md`, `work/reviews/TASK-263.md` |
+
+**Disjointness checked:** no file is in two W1 sets, and none is in two W2 sets. impl-manager-rel holds TASK-146 r2 and TASK-262 and runs them one after the other. Order: each IMPL → its TEST → its REVIEW. The graph is acyclic.
+
+### Lead and user steps after W3 (runbook §7; no TASK)
+
+| Step | Who | What | After |
+| --- | --- | --- | --- |
+| L1 | lead | Commit the approved work on `release-0.2.0` (decision 2026-11-11 (4)) | W3 APPROVED and the TASK-146 second approval |
+| L2 | lead | Push `release-0.2.0` | L1 |
+| L3 | lead | Open the release PR to `main` | L2 |
+| L4 | lead | Run `e2e.yml` by hand on the branch and wait; it must be green, with every nightly row and both compatibility rows (manager 0.2.0 with agent 0.1.0-1; agent 0.2.0-1 with manager 0.1.0) PASS in the uploaded report (§7 step 3); tester-rel records the rows | L3 |
+| L5 | lead | Run `release.yml` by hand with version `0.2.0` on the branch (§7 step 4); tester-rel records the rows | L3 |
+| U1 | user | Merge the PR once it is approved and every check is green (§7 step 5) | L4, L5 |
+| U2 | user | Tag `v0.2.0` on the merge commit and push it (§7 step 6) | U1 |
+| U3 | user | Check the draft release (files, `SHA256SUMS` text) and publish it (§7 step 7) | U2 |
+
+Anything red at L4 or L5 goes back to `main` and the user. The lead neither merges nor tags (decision 2026-11-11 (4)).
+
+### Coverage matrix (Release 0.2.0)
+
+| Spec section | Covered by | Status |
+| --- | --- | --- |
+| SR §4.2, §2.4 L162 (BIT102 rules); TS §3.7, §8.1 | TASK-146 r2 (REQ-157, REQ-177, REQ-180) | Covered; r2 rules per the decisions rows |
+| TS §8.2 L1272 (semantic versioning) | TASK-262, TASK-263 | Covered |
+| TS §8.2 L1273 (two approvals for the importer) | TASK-146 r2 owner note | Covered (pre-authorised second approval) |
+| TS §8.7 L1353 and TS §8.2 L1272 (N / N−1) | TASK-263 (text), L4 (compatibility rows) | Covered |
+| TS §3.1 (`.deb` with a published SHA-256) | TASK-263, L5, U3 | Covered |
+| TS §8.3 (end to end) | L4 | Covered by the hand-run `e2e.yml` |
+| TS §8.5 (CIS control numbers) | TASK-263 note only | **Open for the user** (#111); ships with the note |
+| CLAUDE.md out of scope and owner decisions | none | Nothing planned: no signing, APT repository, approval workflow or ad-hoc command |
