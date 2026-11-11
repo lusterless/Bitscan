@@ -303,6 +303,19 @@ def bits_dir_check(shell=root) -> str:  # noqa: ANN001
 # ---------------------------------------------------------------- set-up
 
 PUBLISH: list[str] = []  # --publish: docker -p values (the M11 nightly's agents reach the manager through one)
+RELDIR = Path()  # --rel
+
+
+def wheel_head(rel: Path) -> str:
+    """The head migration revision of the wheel being installed (from --rel), never the tree's: the
+    N / N−1 runs install manager 0.1.0 (head m0005) from a tree whose head is later (m0006 since
+    M11's retention indexes), and the walk must expect the installed code's own head."""
+    import zipfile
+    whl = next(rel.glob("bitscan_manager-*-py3-none-any.whl"))
+    with zipfile.ZipFile(whl) as z:
+        names = [n for n in z.namelist() if re.search(r"/db/migrations/versions/m\d{4}\w*\.py$", n)]
+        text = "\n".join(z.read(n).decode("utf-8") for n in names)
+    return sorted(re.findall(r'^revision: str = "(\w+)"', text, re.MULTILINE))[-1]
 
 
 def setup(tree: Path, rel: Path, work: Path) -> dict[str, str]:
@@ -590,7 +603,7 @@ def walk(tree: Path, runbook: Path, vals: dict[str, str], work: Path) -> None:  
 
     # §8 migrate and maintain
     rc, out = sh(sub(B["migrate"]))
-    want_head = sorted(re.findall(r'^revision: str = "(\w+)"', "\n".join(p.read_text() for p in (tree / "manager/bitscan_manager/db/migrations/versions").glob("m*.py")), re.M))[-1]
+    want_head = wheel_head(RELDIR)
     rc_j, mj = root("journalctl -u bitscan-manager-migrate --no-pager -o cat | grep -vE '^(Starting |Finished |bitscan-manager-migrate.service: )' | tail -1")
     row("CHK-M6-049", "§8 migrate start, journal, maintain run, timer", f"rc 0; the migrate CLI's last journal line is the head revision {want_head}; timer listed",
         f"rc {rc}; migrate CLI last line [{mj.strip()}]; {out[-1500:]}", rc == 0 and "!! rc=" not in out and mj.strip() == want_head
@@ -722,7 +735,7 @@ def secret_sweep(log: Path | None) -> None:
 
 
 def main() -> int:
-    global OUT, CT  # noqa: PLW0603
+    global OUT, CT, RELDIR  # noqa: PLW0603
     ap = argparse.ArgumentParser()
     ap.add_argument("--tree", required=True, type=Path)
     ap.add_argument("--rel", required=True, type=Path)
@@ -734,6 +747,7 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true")
     a = ap.parse_args()
     CT = a.name
+    RELDIR = a.rel
     PUBLISH.extend(a.publish)
     OUT = a.work / "out"
     OUT.mkdir(parents=True, exist_ok=True)

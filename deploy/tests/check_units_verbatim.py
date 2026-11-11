@@ -31,11 +31,13 @@ AGENT: dict[str, tuple[int, int]] = {
     "bitscan-capread.socket": (439, 451),
     "bitscan-capread.service": (453, 484),
 }
+# The manager blocks moved down 3 lines with the TS §5.2 index lines (68d3881,
+# TASK-261, 2026-11-11); they were at 1354, 1407, 1441, 1471 before.
 MANAGER: dict[str, tuple[int, int]] = {
-    "bitscan-manager.service": (1354, 1403),
-    "bitscan-manager-migrate.service": (1407, 1437),
-    "bitscan-manager-maintain.service": (1441, 1469),
-    "bitscan-manager-maintain.timer": (1471, 1482),
+    "bitscan-manager.service": (1357, 1406),
+    "bitscan-manager-migrate.service": (1410, 1440),
+    "bitscan-manager-maintain.service": (1444, 1472),
+    "bitscan-manager-maintain.timer": (1474, 1485),
 }
 # D-Bus policy (TS §3.7): ```xml fence at L414, closing fence at L433
 DBUS: dict[str, tuple[int, int]] = {
