@@ -1,0 +1,44 @@
+name: docs
+
+# Runbook, README and release-workflow checks (deploy/tests). They ran only by
+# hand until 0.2.0, and check_runbook_bootstrap.py stayed red on main for a
+# week unnoticed. check_manager_sboms.py needs built SBOMs, so it runs in
+# release.yml's sums job.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The runner image's system Python 3.12 with its Ubuntu python3-yaml
+      # package (check_release_workflow.py parses the workflow); nothing is
+      # installed from PyPI here.
+      - name: Runbook Bootstrap block matches TS 5.2
+        run: /usr/bin/python3 -I deploy/tests/check_runbook_bootstrap.py
+
+      - name: Runbook and README text
+        run: |
+          /usr/bin/python3 -I deploy/tests/check_runbook_text.py README.md deploy/runbooks/*.md
+
+      - name: Relative links in Markdown
+        run: |
+          /usr/bin/python3 -I deploy/tests/check_md_links.py README.md deploy/runbooks/*.md
+
+      - name: release.yml guards
+        run: /usr/bin/python3 -I deploy/tests/check_release_workflow.py
