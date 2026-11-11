@@ -80,6 +80,9 @@ jobs:
 
       - name: Install build-essential, dpkg-dev and debhelper
         run: |
+          # Hosted runners point apt at azure.archive.ubuntu.com, which failed to
+          # resolve on them for hours on 2026-11-11; use the main Ubuntu archive.
+          { sudo grep -rlZ azure.archive.ubuntu.com /etc/apt/ || true; } | sudo xargs -0r sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g'
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential dpkg-dev debhelper
 
@@ -161,6 +164,9 @@ jobs:
 
       - name: Install QEMU and cloud-image-utils
         run: |
+          # Hosted runners point apt at azure.archive.ubuntu.com, which failed to
+          # resolve on them for hours on 2026-11-11; use the main Ubuntu archive.
+          { sudo grep -rlZ azure.archive.ubuntu.com /etc/apt/ || true; } | sudo xargs -0r sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g'
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
           ls -l /dev/kvm || echo "no /dev/kvm on this runner: the pre-check row will be FAIL"

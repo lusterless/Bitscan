@@ -88,6 +88,9 @@ jobs:
       - name: Runner and capread start-up refusals (linux/amd64)
         working-directory: agent
         run: |
+          # Hosted runners point apt at azure.archive.ubuntu.com, which failed to
+          # resolve on them for hours on 2026-11-11; use the main Ubuntu archive.
+          { sudo grep -rlZ azure.archive.ubuntu.com /etc/apt/ || true; } | sudo xargs -0r sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g'
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends strace
           # The packaged users, so the user lookups pass and the systemd
