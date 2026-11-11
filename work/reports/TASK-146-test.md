@@ -124,3 +124,19 @@ On a fresh copy (`/root/bstest-m7-r1`, `CI=true`, `PYTHONPATH` pinned, `-n 2`):
 - G59 50/50.
 
 That is **2,447/2,447 passed**, 0 skipped. Whole-tree ruff, format and `mypy --strict` are clean (310 files), with no import of the removed modules. The r1 verdict above stands: **PASS**.
+
+## Revision 2, attempt 3: NOT RUN (stopped by a safety check; tester-rel, 2026-11-11, release 0.2.0)
+
+Worktree `Bitscan-m11`, branch `release-0.2.0`.
+
+**What happened:** a safety classifier stopped my response while I was still at step 0, before any test-plan row was written. Nothing had been written, run or planted. The tool calls that finished were all read-only:
+- `.claude/rules/testing.md`, `manager/importer.md` and the BIT102 part of `manager/bit-format.md`;
+- the 2026-11-11 rows and the "BIT102 gaps closed", "TASK-146 r2 shape rulings" and "TASK-146 r2 rulings" rows of `work/decisions.md`; runbook `manager-operations.md` §7;
+- `work/reports/TASK-146-impl.md`, this report, `manager/tests/test_bit102.py` and the start of both corpora;
+- a search of the test files and checkers for version pins (TASK-262/263), the e2e compat header, and the used CHK-M7 ids.
+
+No product file was read. One message went to `main` before the stop: CHK-M7-388 to -401 are already used by the M7 web rows, so the r2 rows need another range (proposed CHK-M7-402 onward). `main` approved it: the r2 rows use CHK-M7-402 onward (-402 to -449 reserved). **The earlier "next r2 id is still CHK-M7-388" note (attempt 2, above) is superseded:** it was written before the TASK-172/173 web rows took CHK-M7-388 to -401. As the user's rule says, I stopped at once: no retry, no rewording, no workaround.
+
+**State left behind:** apart from this subsection, no file was changed. `tests/release/test-plan.md` was not created; `manager/tests/test_bit102.py`, both corpora, `tests/m7/test-plan.md` and `tests/m7/report.md` have no r2 edits. No WSL copy was made, no test or gate was run, and no plant was made.
+
+**Verdict:** none. TASK-146 r2 TEST stays open and goes back to `main` and the user.

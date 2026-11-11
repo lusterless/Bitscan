@@ -277,3 +277,35 @@ The user deferred revision 2 to a later milestone (decisions row "TASK-146 r2 de
 - **r1 is restored:** `git checkout c6b7e13 -- manager/bitscan_manager/services/importer/bit102.py`. The file is now the committed r1 version, 337 lines, SHA-256 `279291cff382653ffcc59a2382e32f57c0586bbe84011acdcf466de5d8a991fd`, and `git status` shows it unmodified.
 - **The r2 modules are deleted:** `services/importer/bit102_wrappers.py` and `bit102_braces.py`. A grep of `manager/` (tests included, `.venv` excluded) finds no other import of either.
 - **Gates on the whole tree after the restore:** `ruff check manager` passes, `ruff format --check manager` reports 310 files already formatted, and `mypy --strict --config-file manager/pyproject.toml manager` finds no issues in 310 source files.
+
+## Paused (2026-11-11)
+
+impl-manager-rel, release 0.2.0. Paused at the lead's order: a safety check stopped the TASK-146 r2 TEST (attempt 3), so under the user's rule the item goes back to the user. The tree is left exactly as it is; nothing is reverted.
+
+**In the tree now** (`manager/bitscan_manager/services/importer/`):
+
+| File | State | SHA-256 |
+| --- | --- | --- |
+| `bit102.py` | modified: the saved r2, copied in | `fee8ac5e396ad920ecc326e348eea03a6d118610a062181130c384139e85a0b0` |
+| `bit102_wrappers.py` | new (untracked): the saved r2 | `af1ece3968360b9fbae8296c67b891d0ccf82ae66d12f8d905747433d32d48d8` |
+| `bit102_braces.py` | new (untracked): the saved r2 | `a6326ef92b16ae3932e2ffbff4467cc1f23e50d2d271744677a12f1fc4eea24c` |
+| `shlex_grammar.py`, `shlex_model.py`, `shlex_posix.py` | unchanged | `0475f0b9…`, `17732263…`, `0d987bf5…` |
+
+**Edits:** none beyond the three copies. Before copying, each saved file's SHA-256 matched the "Revision 2 deferred" table above, and the tree's `bit102.py` was r1 (`279291cf…`). No product line was edited, no drift fix was made, and neither `fixes-2026-10-30\` draft was applied. Other modified files in the worktree (`deploy/debian/*`, `work/status.md`, `work/tasks.md`, `work/reports/TASK-146-test.md`) are not mine.
+
+**Done before the pause (for whoever resumes; not a hand-off):**
+- Interface: the only product caller, `pipeline.py` L86, calls `bit102.check_execute(execute, line=…, element=…)`, which r2 keeps. The lexer and `model.py` are unchanged since `c6b7e13`, the commit r2 was built on.
+- From a copy in WSL Ubuntu-24.04 (`~/rel146-impl`, own venv built with `--require-hashes`): `ruff check manager` passed, `ruff format --check manager` reported 423 files formatted, and `mypy --strict --config-file manager/pyproject.toml manager` found no issues in 423 files. `pytest -n 8` on `test_bit102.py`, `test_bit102_lexer.py`, `test_bit_validate.py`, `test_bit_fixtures.py` and `test_bits_samples_pg.py` gave 2,297 passed, 0 failed, 0 skipped. Also `test_import_pipeline_pg.py`, `test_security_m7.py`, `test_policy_import_api_pg.py`, `test_bit_structure.py` and `test_bit_model.py`: 681 passed.
+- Scratch harness, run against the WSL copy: corpus 1,149/1,149, probes 195/195 (worst 0.64 ms), fuzz 20,000 inputs with no exception (worst 0.6 ms; adversarial worst 59 ms), plants 7/7 caught. The braces differential was not run (paused).
+- Draft diffs, recorded only (no recommendation was sent):
+  - `bit102.py.fix1`, one hunk in `_shell`. (a) A lone `-` now ends the shell's options and is consumed, as `--` is: in r2, `bash -c - 'rm x'` checks `-` as the script while bash and dash run `rm x`, which looks like a real #108 (f) gap. (b) `-o`/`-O` are counted inside a short cluster, each taking one word, instead of only as exact words: in r2, `bash -co pipefail 'rm x'` checks `pipefail` as the script. Both err toward rejecting. Neither probe was run.
+  - `bit102_wrappers.py.fix2-partial` adds `readings()` and a `flags` mode, so that `nsenter -mt 1 rm x` would be refused. It cites a "lead ruling 2026-10-30" that `work/decisions.md` doesn't contain, and it contradicts r2 shape ruling (c) as recorded above. It is also incomplete: nothing in `bit102.py` (r2 or fix1) calls `readings()`, so on its own it changes nothing.
+
+## Not in 0.2.0 (2026-11-11)
+
+The user ruled that release 0.2.0 ships BIT102 revision 1 as a named exception, and TASK-146 r2 is not in this release (decisions 2026-11-11, last row). The tree is back to r1:
+
+- `manager/bitscan_manager/services/importer/bit102.py` was restored with `git checkout origin/main -- <path>`. It equals `main`'s file, SHA-256 `279291cff382653ffcc59a2382e32f57c0586bbe84011acdcf466de5d8a991fd`.
+- The copied `bit102_wrappers.py` and `bit102_braces.py` are deleted. `git status -- manager/bitscan_manager/services/importer/` shows no change.
+- The saved folder `Documents\m7-deferred\task146-r2\` is untouched. Its three modules still hash `fee8ac5e…`, `af1ece39…` and `a6326ef9…`, as in the "Revision 2 deferred" table, and `fixes-2026-10-30\` is unchanged.
+- The results and draft-diff findings in "Paused (2026-11-11)" were measured on r2. They are kept for whoever resumes r2; they say nothing about r1.
