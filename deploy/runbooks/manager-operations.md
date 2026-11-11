@@ -337,3 +337,7 @@ A release changes the version in a release pull request, tests that exact build,
 **Results CSV memory.** The manager builds a scan's results CSV (`GET /scans/{id}/results.csv`) in full in memory before sending it, and refuses an export of more than 100,000 rows. For operators and admins each row also carries the check's stdout (up to 64 KB) and stderr (up to 16 KB), so at the cap with maximal output one export can need about 8 GB of manager memory, and more while the file is written. A viewer's export has no output columns and stays far smaller.
 - Size the manager host's memory for the largest exports your operators and admins will run.
 - For big scans, have users narrow the export with the `status` and `agent_id` filters (one result status, or one host at a time) rather than export the whole scan.
+
+**Database memory for retention.** Each retention batch that deletes a fleet-wide scan touches that scan's rows in the current `scan_result` partition and its indexes. With daily fleet scans of 10,000 hosts, those indexes reach about 3 GB per monthly partition. On a database host with less memory than that, a batch reads them from disk and can approach the 5-minute statement limit, and the `scans` step then fails (`QueryCanceled`).
+- Give the PostgreSQL host enough memory to hold the current partition's indexes, plus its usual working set.
+- Watch for `retention step failed` with `"step": "scans"` on two runs in a row; that is the sign the database host needs more memory.

@@ -112,7 +112,7 @@ def sibling(conn: Conn, job: IntakeJob) -> tuple[UUID, datetime] | None:
     partial at its deadline, and late results can then move it to partial or
     completed (TS §4.4 L577, L582), so scan_job is searched by retry_of for
     every original that has ended in an accepting state: failed, partial or
-    completed (a full read: no index, #127 (f)). A dispatched or running
+    completed (an ix_job_retry_of lookup, #127 (f)). A dispatched or running
     original cannot have a retry yet."""
     if job.retry_of is not None:
         row = conn.execute(

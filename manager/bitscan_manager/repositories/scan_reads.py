@@ -7,8 +7,9 @@ Lists are newest first (`created_at` then `scan_id`, both descending) and
 keyset-paged; the cursor holds the anchor's `scan_id` only, and its
 `created_at` is read here (#89, #145 (d)); a deleted anchor is AnchorGone.
 "Scans of a host" is the stored resolved target holding the agent, a JSONB
-containment test with a parameter (#145 (a), (c)); `scan_job` has no index
-on `agent_id` or `scan_id` and none may be added. The resolved list itself
+containment test with a parameter (#145 (a), (c)); `scan_job` has no full
+index on `agent_id` (only the partial ix_job_pending for queued jobs, TS
+§5.2), so the host's scans come from the target, not its jobs. The resolved list itself
 never leaves the database: items carry its length and the detail the target
 without it.
 

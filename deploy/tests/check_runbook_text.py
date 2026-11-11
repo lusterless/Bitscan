@@ -9,7 +9,8 @@ For every file:
   no `export` of a BITSCAN_ variable, no DSN given as a psql/pg_* argument
   with a password in it;
 - no real-looking token anywhere (bsu_/bsk_/bsa_/bse_ followed by 20+ token
-  characters) and no PEM private key;
+  characters; the `bse_REPLACE_…` placeholders the runbooks print are not
+  tokens) and no PEM private key;
 - no process note: no TASK-/REQ-/CHK-/TP-M ids, no `#nn` question numbers, no
   "decisions 20..", "open question", "tester", "impl-", "reviewer", "PD-nn";
 - every ```sh block parses with `bash -n` (blocks nested in lists dedented).
@@ -33,7 +34,7 @@ SH_BAD = [
     (re.compile(r"(?:psql|pg_dump|pg_restore|createdb|pg_basebackup)\b[^\n]*password\s*="), "a DSN with a password given as an argument"),
 ]
 ANY_BAD = [
-    (re.compile(r"\bbs[uaek]_[A-Za-z0-9_-]{20,}"), "a token"),
+    (re.compile(r"\bbs[uaek]_(?!REPLACE_)[A-Za-z0-9_-]{20,}"), "a token"),
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "a private key"),
     (re.compile(r"\b(?:TASK|REQ|CHK)-\d"), "a task, requirement or check id"),
     (re.compile(r"\bTP-M\d"), "a test-plan id"),
