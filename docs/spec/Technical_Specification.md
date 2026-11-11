@@ -890,6 +890,8 @@ CREATE TABLE scan_job (                  -- compliance (one per scan and agent) 
   CHECK (kind = 'inventory' OR eval_spec IS NOT NULL)
 );
 CREATE INDEX ix_job_pending ON scan_job(agent_id) WHERE state = 'queued';
+CREATE INDEX ix_job_scan     ON scan_job(scan_id);   -- retention and scan reads by scan
+CREATE INDEX ix_job_retry_of ON scan_job(retry_of);  -- the retry_of FK check on job deletes
 
 CREATE TABLE scan_result (
   job_id            UUID NOT NULL REFERENCES scan_job(job_id) ON DELETE CASCADE,
@@ -938,6 +940,7 @@ CREATE TABLE scan_result_reeval (        -- re-evaluations; original results nev
   reevaluated_by BIGINT NOT NULL,
   reevaluated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX ix_reeval_job ON scan_result_reeval(job_id);  -- the job_id FK cascade on job deletes
 
 -- ===== System =====
 CREATE TABLE task (                       -- rebuild tasks behind GET /tasks/{id}
