@@ -41,7 +41,7 @@ This runbook covers a manager installed with `manager-install.md`: the venv `/op
 5. Upgrade the agents with `agent-install.md` section 6.
 
 **Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. So between step 4 and the end of step 5, hosts still on the previous agent version keep enrolling, sending heartbeats and uploading inventory as before.
-- The 0.1.0-1 agent runs no compliance checks. Under a newer manager, every check of its compliance jobs is stored as ERROR `runner_unavailable`, so its hosts show the score `n/a` until their agent is upgraded.
+- The 0.1.0-1 agent runs no compliance checks. Under manager 0.2.0, every check of its compliance jobs is stored as ERROR `runner_unavailable`, so its hosts show the score `n/a` until their agent is upgraded.
 - An agent more than one version behind the new manager is not supported by it. Before step 2, list the agent versions in the fleet (on the database host), and upgrade any such host to at least the version before the new one first:
 
   ```sh
@@ -214,7 +214,7 @@ sudo tar -C /etc/bitscan -cf - manager.env secrets |
    It must print the same head revision id as the live database's last migration (`sudo journalctl -u bitscan-manager-migrate`), and a second run must change nothing.
 4. Clean up: `sudo -u postgres dropdb bitscan_restore`, `sudo rm -rf /var/lib/postgresql/restore-test /root/bitscan-restore.dsn`, remove the `bitscan_restore` line from `pg_hba.conf` and `sudo systemctl reload postgresql`.
 
-If only the policy catalog is damaged, it is rebuilt from the policy folder, not restored from a backup. 0.1.0 holds no policies, so this doesn't apply to it yet.
+If only the policy catalog is damaged, it is rebuilt from the policy folder, not restored from a backup. A 0.1.0 manager holds no policies, so this doesn't apply to it.
 
 ## 5. Remove the manager
 

@@ -29,7 +29,7 @@ REPO=${1:-}; WHEEL=${2:-}; WHEEL_NOUI=${3:-}
 REPO=$(cd "$REPO" && pwd)
 . /etc/os-release
 [ "$VERSION_ID" = 24.04 ] || { echo "needs Ubuntu 24.04 (got $VERSION_ID)" >&2; exit 2; }
-VERSION=0.1.0
+VERSION=0.2.0
 NAME=bitscan_manager-$VERSION-py3-none-any.whl
 W=$(mktemp -d "${WHEEL_WORK:-/tmp}/m6-wheel.XXXXXX")
 SERVE_PID=

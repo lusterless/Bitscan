@@ -417,8 +417,22 @@ def walk_pki(B: dict[str, str], work: Path) -> Path:
     return lab
 
 
+def wheel_version(rel: Path) -> str:
+    """The version of the wheel being installed (from --rel). The compatibility runs install
+    manager 0.1.0 with the tree's runbook, which names the current release's files, so the walk
+    names the files of the release it installs (as wheel_head does for the migration head)."""
+    whl = next(rel.glob("bitscan_manager-*-py3-none-any.whl"))
+    return whl.name.split("-")[1]
+
+
+def release_files(md: str, version: str) -> str:
+    """The runbook with its manager file names set to `version`; nothing else changes."""
+    return re.sub(r"\b(bitscan_manager-|bitscan-manager-)\d+\.\d+\.\d+(?=-py3-none-any\.whl|-requirements\.txt)",
+                  lambda m: m.group(1) + version, md)
+
+
 def walk(tree: Path, runbook: Path, vals: dict[str, str], work: Path) -> None:  # noqa: PLR0915
-    md = runbook.read_text()
+    md = release_files(runbook.read_text(), wheel_version(RELDIR))
     B, errors, loose, n, n_sh = resolve(md)
     row("CHK-M6-042", "runbook block layout: every fenced block is walked or NOT RUN with a reason, each anchor matches one block",
         f"{len(PLAN)} planned blocks found once each; no block outside the plan",

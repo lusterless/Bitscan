@@ -1,3 +1,21 @@
+bitscan-agent (0.2.0-1) unstable; urgency=medium
+
+  * Release 0.2.0: compliance scans.
+  * bitscan-runner runs the checks of compliance jobs in its sandbox as the
+    bitscan-runner user: it reads every file, writes only to its private
+    /tmp, opens no IP connection and gains no privilege. Output is redacted
+    on the host before it is sent.
+  * Results are kept in an on-disk spool until the manager has answered
+    them, across restarts and upgrades.
+  * The optional bitscan-capread helper (nft ruleset, audit rules) is
+    installed disabled; only a host administrator enables it.
+  * Supports manager 0.2.0 and 0.1.0. Enrolment, heartbeat, inventory and
+    the job protocol are unchanged.
+  * Upgrades 0.1.0-1, 0.2.0~pre1-1 and 0.2.0~pre2-1 in place and keeps
+    their configuration, agent token and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Wed, 11 Nov 2026 00:00:00 +0000
+
 bitscan-agent (0.2.0~pre2-1) unstable; urgency=medium
 
   * Pre-release: results and end to end. Not a supported release.
