@@ -80,6 +80,11 @@ jobs:
 
       - name: Install build-essential, dpkg-dev and debhelper
         run: |
+          # The hosted runners' Azure DNS failed to resolve *.ubuntu.com for hours on
+          # 2026-11-11; use public resolvers on the default-route link (apt still
+          # checks every package signature).
+          sudo resolvectl dns "$(ip -o route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
+          sudo resolvectl flush-caches
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential dpkg-dev debhelper
 
@@ -161,6 +166,11 @@ jobs:
 
       - name: Install QEMU and cloud-image-utils
         run: |
+          # The hosted runners' Azure DNS failed to resolve *.ubuntu.com for hours on
+          # 2026-11-11; use public resolvers on the default-route link (apt still
+          # checks every package signature).
+          sudo resolvectl dns "$(ip -o route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
+          sudo resolvectl flush-caches
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
           ls -l /dev/kvm || echo "no /dev/kvm on this runner: the pre-check row will be FAIL"

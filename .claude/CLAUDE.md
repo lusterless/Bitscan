@@ -102,7 +102,7 @@ work/                 # agent-team output (see "Agent team" below)
 - Go: wrap errors with `%w`, and pass a `context.Context` with cancellation through every job.
 - Conventional Commits and semantic versioning for agent and manager. Every PR needs one approval; changes to the importer, auth, agent or runner need two (TS §8.2).
 - Compatibility: test manager N with agents N and N−1; the manager supports agents of its own version and the one before, and is upgraded first (TS §8.7).
-- **Open spec question:** TS §8.2 also says "agent supports manager N and N-1"; ask whether agent N must also be tested against manager N−1.
+- **Decided** (owner, M11; REQ-288): yes. The `e2e.yml` `compat-b` run tests agent N against manager N−1, and `compat-a` tests manager N with agent N−1.
 - Each PR that implements spec behaviour names the TS/SR sections it implements.
 - Add or update the tests listed for the area in TS §8.3; each rule's "Tests" line names them, and `.claude/rules/testing.md` holds the gates. Do not lower a gate.
 - Local dev is Windows 11 + Git Bash. Python runs from the venv at `manager/.venv`; PostgreSQL tests need Docker (Testcontainers). Do not commit or push unless asked.

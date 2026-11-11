@@ -24,7 +24,7 @@ Spec: TS §6.2 (routes and roles), §6.3 (conventions), §4.3 (profiles), §4.5 
 - An admin without TOTP sees only the TOTP enrolment screen and sign-out.
 - The enrolment approval screen shows hostname, source IP, OS, and any agent with the same hostname or machine-id. The enrolment-token form hints that a multi-use token should set `max_uses` to the expected host count and set `allowed_cidrs`.
 - Package search uses the TS §7.1 parameters, with type-ahead (top 10 names) and results grouped package → version → host count, with click-through to the host list (TS §7.3). The CSV export comes from `/packages/search.csv`; the server already escapes formula cells. The host page shows added / removed packages since the last snapshot.
-- **Open spec question:** TS §7.3 asks for type-ahead (top 10 names), but TS §6.2 has no route for it and `/packages/search` rows are per version or per host, not per name; ask how the UI gets the names (`work/open-questions.md` #32).
+- **Decided** (`work/open-questions.md` #32, owner-approved): no new route. From 3 characters, the UI calls `/packages/search` with `q`, `group_by=package` and `limit=500` and offers at most 10 distinct names; choosing one fills the exact-name filter.
 - A policy can show the states *Disabled* and *Deleted*. There are no approval states.
 - Show changes to a host's enabled runner helpers (`runner_helpers`); the manager shows and audit-logs any change (TS §3.7).
 

@@ -36,13 +36,13 @@ Spec: TS §6 (routes, auth, conventions, agent wire contract) and §3.2 (enrolme
 - Session only, any signed-in user: `POST /auth/totp/enrol`, `POST /auth/password` (current password required), `POST /api-tokens` (viewer).
 - Admin, session or API token: `PATCH /policies/{id}`, `POST /policies/import` (one `.bit`, `bsu_` or `bsk_`), `GET /tasks/{id}`, `/imports`, `/enrollment-requests`, `/settings`, `/audit-log`. Only admins create or update policies, and there is no route that edits plugins or commands.
 - Operator: `PUT /agents/{id}/tags`, `POST /scans`, `POST /scans/{id}/cancel`, CRUD `/scan-schedules`. Viewer: `GET` and `DELETE /api-tokens` (your own tokens) and the other `GET` routes in the table. No role: `POST /auth/login` and `/auth/logout`.
-- **Open spec question:** whether an API token may itself call `DELETE /api-tokens`; the TS §6.2 row has no "session only" marker (`work/open-questions.md` #8).
+- **Decided** (`work/open-questions.md` #8, owner-approved): an API token may call `DELETE /api-tokens` to revoke its own user's tokens (viewer and up); the route is not session-only.
 - Lists (TS §6.2): `GET /policies` takes `?status=enabled`; `GET /scans` filters by policy, host, state and date; `GET /scans/{id}/results` and `/results.csv` filter by status and host; `GET /agents` returns hosts with status, OS, last heartbeat and inventory.
 - `GET /scans/{id}/results` and `/results.csv` include `stdout` and `stderr` only for operator and admin. They use the latest re-evaluation per job and plugin and return both `result` and `original_result`.
 - Policies: `PATCH` with `{"policy_status": …}` sets `status_overridden = true`; `{"status_overridden": false}` restores `policy_status` from `file_status`. Re-enabling a disabled policy alerts. `DELETE` of a server-folder policy returns 409 `policy_managed_on_server`.
 - A scan of a disabled policy returns 409. A scan of a deleted policy must be refused too: no jobs can be built from it (TS §3.3, §4.3).
-- **Open spec question:** which status a scan of a deleted policy returns (404 or 409).
-- **Open spec question:** whether `GET /policies` lists deleted policies; TS §4.3 says only that a deleted policy disappears from selection (`work/open-questions.md` #9).
+- **Decided** (`work/open-questions.md` #122 (f), owner-approved): `POST /scans` for a deleted policy answers 409 `conflict`, as for a disabled one; an unknown policy is 404.
+- **Decided** (`work/open-questions.md` #9, owner-approved): `GET /policies` lists only policies that aren't deleted. `GET /policies/{id}` still returns a deleted policy, with `deleted_at`, so old results stay readable.
 - `POST /scans` returns 202 with `{scan_id, state, policy_version, jobs}` (TS §6.4). An all-hosts scan started with an API token alerts.
 - There is no endpoint to disable inventory or to run an ad-hoc command.
 
@@ -63,7 +63,7 @@ Spec: TS §6 (routes, auth, conventions, agent wire contract) and §3.2 (enrolme
   - `q` needs at least 3 characters;
   - `status` defaults to `installed`;
   - responses are `{items, next_cursor}`; `group_by` pages hold at most 500 groups.
-- **Open spec question:** TS §8.4 names `/healthz` and `/readyz` but not their prefix or authentication, and gives no route for the Prometheus metrics, while TS §2.3 says every call carries a bearer token (`work/open-questions.md` #5).
+- **Decided** (`work/open-questions.md` #5 and #70, owner-approved): `/healthz` and `/readyz` are unauthenticated and outside `/api/v1`. Metrics are `GET /api/v1/metrics`, a user route with the normal bearer check, minimum role viewer, in Prometheus text format.
 - Health: `/healthz` is liveness; `/readyz` fails unless the DB is reachable, migrations are current and the `system_schedule` rows (including `inventory`) are present.
 - Alerts are audit entries with `detail.alert = true` plus the metric `bitscan_alerts_total{kind}`. TS §8.4 lists which events alert.
 

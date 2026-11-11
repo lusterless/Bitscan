@@ -22,7 +22,7 @@ Spec: TS §3.2 (enrolment, approval, token check, rotation), §2.3 (token table)
   - Held re-enrolment: return the existing `agent_id`; keep the new token hash in `enrollment_request.new_token_hash` (usable only after approval); the token check looks there to answer 403 `pending_approval`.
   - Approve (admin, TOTP session): a re-enrolment re-links to the existing `agent` row, keeping history, and revokes the old token; approving a re-enrolment alerts.
   - Reject: keep the request; set a new agent row to `decommissioned` (never delete it); the agent gets 401 `enrollment_rejected`.
-  - **Open spec question:** TS §3.2 step 5 does not say what a rejected *re-enrolment* does to the existing agent row and its old token; the host has already replaced its token on disk (step 4) (`work/open-questions.md` #26).
+  - **Decided** (`work/open-questions.md` #26, owner-approved): a rejected re-enrolment leaves the existing agent row and its old token unchanged. The new token gets 401 `enrollment_rejected`, and the host re-enrols with a new `bse_` token.
 - The approval API returns hostname, source IP, OS, and any agent with the same hostname or machine-id (cloned images show up this way).
 
 ## Agent token check (every agent route)
@@ -30,7 +30,7 @@ Spec: TS §3.2 (enrolment, approval, token check, rotation), §2.3 (token table)
 - Missing, unknown, revoked or expired token: 401 (revoked and expired tokens use `token_revoked` and `token_expired`). Awaiting approval: 403 `pending_approval` on every route.
 - Valid token with a different `X-Bitscan-Machine-Id`: 401 `machine_id_mismatch`, revoke the token and alert.
 - Heartbeat: alert when `clock` and `server_time` differ by more than 5 minutes; store `runner_helpers`, and audit-log and alert on any change.
-- **Open spec question:** the TS §6.5 heartbeat fields `last_error`, `spool_bytes`, `current_job_id`, `last_pull_at` and `uptime_s` have no `agent` column, no writer is named for `agent_ip_seen`, and an `enrolled` agent that never heartbeats has no age for the TS §3.3 status thresholds (`work/open-questions.md` #25).
+- **Decided** (`work/open-questions.md` #25, owner-approved): the heartbeat fields with no `agent` column go to logs and metrics only; `agent_ip_seen` is upserted on every authenticated agent call; an `enrolled` agent that never heartbeats is aged from `enrolled_at`.
 
 ## Lifetime and rotation (TS §3.2 step 7)
 

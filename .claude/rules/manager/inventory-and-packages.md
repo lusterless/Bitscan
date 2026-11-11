@@ -13,9 +13,9 @@ Spec: TS §3.4 (mandatory inventory), §6.5 (inventory body), §7 (search), §6.
 - Limits, checked by the manager whatever the agent claims: gzip body ≤ 10 MB, decompressed as a stream with a hard cap of 64 MB, ≤ 50,000 package rows, every field length-checked against its column, `os_info.raw` ≤ 256 KB. Anything over a limit is rejected (413 or 422) and audit-logged; if it carried a `job_id`, that inventory job becomes `failed`.
 - Accept at most one upload without `job_id` per agent per 10 minutes; answer 429 otherwise.
 - With a valid `job_id` the upload completes that job (204). A later upload carrying a `job_id` whose job already failed is still stored, as an unscheduled snapshot.
-- **Open spec question:** TS §3.4 does not say whether such a late `job_id` upload counts against the one-unscheduled-upload-per-10-minutes limit.
+- **Decided** (`work/open-questions.md` #72 (e), owner-approved): yes. An upload naming an inventory job that already failed or completed is stored as an unscheduled upload, leaves the job unchanged, and counts against the one-per-10-minutes limit (429 otherwise).
 - Every upload replaces `os_info` and sets `agent.last_inventory_at`. If `list_sha256` (hex SHA-256 of the sorted UTF-8 lines `name\tversion\tarchitecture\tstatus\n`, TS §6.5) differs from the last snapshot: upsert `agent_package`, delete rows for packages no longer listed, and write an `inventory_snapshot` with what was added and removed.
-- **Open spec question:** TS §3.4 compares the uploaded `list_sha256` with the last snapshot but does not say whether the manager recomputes it from `packages` or uses the agent's value (`work/open-questions.md` #33).
+- **Decided** (`work/open-questions.md` #33, owner-approved): the manager recomputes `list_sha256` from `packages` and answers 422 when it differs from the agent's value.
 - `package` rows are shared: insert with `INSERT … ON CONFLICT DO NOTHING` then SELECT (the app has no UPDATE on `package`). Unreferenced rows are pruned by the retention task.
 - Alert when one agent adds more than 1,000 previously unseen packages in a day.
 

@@ -16,7 +16,7 @@ Spec: TS §4.5, SR §2.4 (operator definitions) and SR §1.1 (the canonical exam
   - RE2 (multiline, a search: `^`/`$` anchor per line): `regex`, `not_regex`. Never use Python `re`;
   - numeric: `eq`, `ne`, `gt`, `ge`, `lt`, `le`. The whole trimmed stdout must be one decimal integer or float with an optional sign;
   - presence: `empty`, `not_empty`.
-- **Open spec question:** whether exponents (`1e3`), `nan`/`inf`, `_` separators, `.5` and `5.` count as numbers, for stdout and for BIT012 (`work/open-questions.md` #13).
+- **Decided** (`work/open-questions.md` #13, owner-approved): a number is `[+-]?[0-9]+(\.[0-9]+)?` with ASCII digits only: no exponent, `nan`, `inf`, `_`, hexadecimal, or leading or trailing point, so `.5` and `5.` are not numbers. Numbers compare as exact decimals, and the same grammar serves stdout and BIT012.
 - The command's own exit code never decides PASS or FAIL. Return ERROR only for:
   - a timeout;
   - exit code 126 or 127, or 128 and above;
@@ -25,8 +25,8 @@ Spec: TS §4.5, SR §2.4 (operator definitions) and SR §1.1 (the canonical exam
   - a runner error (`spool_overflow`, `runner_unavailable`);
   - output over the caps. The manager rejects stdout over 64 KB or stderr over 16 KB as ERROR `oversize`, whatever the agent claims.
 - `eval_detail` holds the evaluation detail, for example `stdout not numeric` or `spool_overflow` (TS §5.2); results over the caps are ERROR `oversize` (TS §4.5).
-- **Open spec question:** the wire contract has one `truncated` flag but the ERROR rule says "stdout truncated at 64 KB"; ask whether truncation of stderr alone is ERROR.
-- **Open spec question:** `evaluate()` has no input for the runner `error` or for stderr size, yet TS §4.5 lists runner errors and output over the caps as ERROR cases with unit tests; ask whether result intake decides them before `evaluate()` or the signature changes, which `eval_detail` values are used, and how such results re-evaluate (`work/open-questions.md` #12).
+- **Decided** (`work/open-questions.md` #113, owner-approved): no. `truncated` means stdout was cut at 64 KB, and only that is ERROR `stdout truncated`; the runner cuts stderr at 16 KB without setting the flag.
+- **Decided** (`work/open-questions.md` #12, owner-approved): result intake stores runner errors and oversize output as ERROR (`eval_code` 2, `eval_detail` the `error` value or `oversize`) before `evaluate()` is called. The `evaluate()` signature stays as specified, and these results stay ERROR on re-evaluation.
 - Host compliance score = PASS ÷ (PASS + FAIL), excluding ERROR and *Not run* (plugins with no result), shown with the error count beside it. When PASS + FAIL = 0 the score is NULL, shown as "n/a".
 - Re-evaluation (`POST /scans/{id}/reevaluate`, admin, TOTP session, audit-logged) adds `scan_result_reeval` rows against the policy's current version, each recording that `policy_version` and `reevaluated_by`; it is the only way a shown verdict changes, and only through the admin route. Views, CSV exports and scores use the latest re-evaluation for each job and plugin, otherwise the original result. The API returns both `result` and `original_result`. Plugins no longer in the current version keep their original verdict.
 
