@@ -1,0 +1,242 @@
+name: e2e
+
+# Nightly end to end (TS 8.3 "End-to-end (nightly, 3 VMs)", 8.7; REQ-285 to
+# REQ-288). Builds the agent .deb and the manager wheel (with the web UI) from
+# the commit, then runs the e2e/m11 harness on hosted runners:
+# - nightly:  manager N (systemd container installed by manager-install.md)
+#             with agent N on Ubuntu 22.04 and 24.04 QEMU/KVM guests: enrol,
+#             approve, heartbeat, inventory, import, scan, results;
+# - compat-a: manager N with agent 0.1.0 (v0.1.0 release);
+# - compat-b: agent N with manager 0.1.0 (v0.1.0 release).
+# The upgrade walk (compat.py --phase upgrade) runs at milestone gates only.
+# Each run uploads its row report; the job fails when a row is FAIL or an
+# expected row is missing (nightly.py --check-report).
+#
+# The token is read-only and is given only to the step that downloads the
+# v0.1.0 release. The workflow holds no secret, and commits, tags, publishes
+# and releases nothing. The harness keeps its run log in the root-only work
+# folder: only the masked report reaches the job log and the artifacts.
+#
+# A push runs this only when its head commit message holds "[e2e]" (as
+# sandbox.yml's "[sandbox-plants]"); any other push runs nothing. It exists for
+# the pre-merge acceptance run and for planted-fault runs on throwaway
+# branches: schedule and workflow_dispatch run only once e2e.yml is on the
+# default branch.
+#
+# No KVM: a runner without /dev/kvm makes the pre-check row (CHK-M11-294 or
+# -304) FAIL and the run red, never a silent skip. The fallback the owner has
+# approved is manual and is never automated from here: the same chain on the
+# local Hyper-V VMs bitscan-u2204 and bitscan-u2404 with a WSL manager, one VM
+# at a time, each restored from its "clean" checkpoint, with no token or
+# install.env printed or saved. It is started by hand on the owner's machine;
+# this workflow has no path to that machine. (The e2e/m11 harness drives QEMU
+# guests only, so that fallback also needs a Hyper-V form of guests.sh.)
+
+on:
+  schedule:
+    - cron: "40 1 * * *"
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  build:
+    name: Build the .deb and the manager release folder
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[e2e]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install build-essential, dpkg-dev and debhelper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential dpkg-dev debhelper
+
+      - name: Build the .deb and its SHA-256 file
+        run: bash deploy/debian/build-deb.sh "$RUNNER_TEMP/deb"
+
+      - name: Build the web UI
+        working-directory: web
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      # As release.yml: the wheel from the hashed dev lock, nothing downloaded
+      # for the build itself, and it must carry the built UI.
+      - name: Build the wheel
+        run: |
+          python -m venv "$RUNNER_TEMP/build"
+          "$RUNNER_TEMP/build/bin/python" -m pip install --require-hashes -r manager/requirements-dev.txt
+          "$RUNNER_TEMP/build/bin/python" -m pip wheel --no-deps --no-build-isolation --no-index -w "$RUNNER_TEMP/dist" ./manager
+          whl="$(ls "$RUNNER_TEMP"/dist/bitscan_manager-*-py3-none-any.whl)"
+          python -I -c 'import sys, zipfile; n = zipfile.ZipFile(sys.argv[1]).namelist(); sys.exit(0 if "bitscan_manager/webui/index.html" in n else "wheel without the UI")' "$whl"
+
+      # The six files manager-install.md section 2 checks, and their SHA256SUMS.
+      - name: Collect the manager release folder
+        run: |
+          ver="$(python -I -c 'import tomllib; print(tomllib.load(open("manager/pyproject.toml", "rb"))["project"]["version"])')"
+          rel="$RUNNER_TEMP/rel"
+          mkdir "$rel"
+          cp -- "$RUNNER_TEMP/dist/bitscan_manager-${ver}-py3-none-any.whl" "$rel/"
+          cp -- manager/requirements.txt "$rel/bitscan-manager-${ver}-requirements.txt"
+          cp -- deploy/systemd/bitscan-manager.service deploy/systemd/bitscan-manager-migrate.service \
+            deploy/systemd/bitscan-manager-maintain.service deploy/systemd/bitscan-manager-maintain.timer "$rel/"
+          cd "$rel"
+          mapfile -t files < <(find . -mindepth 1 -printf '%P\n' | sort)
+          if [ "${#files[@]}" -ne 6 ]; then
+            printf '%s\n' "want 6 release files, got:" "${files[@]}"
+            exit 1
+          fi
+          sha256sum -- "${files[@]}" >SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-deb
+          path: ${{ runner.temp }}/deb/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-rel
+          path: ${{ runner.temp }}/rel/
+          if-no-files-found: error
+
+  e2e:
+    name: End to end (${{ matrix.run }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [nightly, compat-a, compat-b]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      RUN: ${{ matrix.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: e2e-deb
+          path: ${{ runner.temp }}/deb
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: e2e-rel
+          path: ${{ runner.temp }}/rel
+
+      - name: Install QEMU and cloud-image-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
+          ls -l /dev/kvm || echo "no /dev/kvm on this runner: the pre-check row will be FAIL"
+
+      # extra-ca/ stays empty on a hosted runner (no TLS-intercepting proxy).
+      - name: Build the manager host image
+        run: |
+          mkdir -p "$RUNNER_TEMP/ctx/extra-ca"
+          docker build -t m6b-mgrhost -f e2e/m6/manager-host.Dockerfile "$RUNNER_TEMP/ctx"
+
+      - name: Fetch the Ubuntu cloud images (checked against their SHA256SUMS)
+        run: sudo bash e2e/m11/guests.sh fetch "$RUNNER_TEMP/img"
+
+      # Read-only token, this step only. The files go into an empty folder of
+      # their own; the sums come from the release page, a different origin.
+      - name: Download the v0.1.0 release and its published sums
+        if: matrix.run != 'nightly'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir "$RUNNER_TEMP/v010"
+          gh release download v0.1.0 --dir "$RUNNER_TEMP/v010"
+          gh release view v0.1.0 --json body -q .body >"$RUNNER_TEMP/v010-notes.txt"
+
+      - name: Run the harness (${{ matrix.run }})
+        run: |
+          deb="$(ls "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb)"
+          w="$RUNNER_TEMP/work"
+          # The run log stays root-only on this throwaway runner and is never printed or uploaded.
+          sudo install -m 0600 /dev/null "$w.log"
+          case "$RUN" in
+            nightly)
+              sudo sh -c 'python3 -I e2e/m11/nightly.py --tree "$1" --rel "$2" --deb "$3" --images "$4" \
+                --work "$5" --log "$5.log" >"$5.log" 2>&1' sh \
+                "$GITHUB_WORKSPACE" "$RUNNER_TEMP/rel" "$deb" "$RUNNER_TEMP/img" "$w" ;;
+            compat-a | compat-b)
+              sudo sh -c 'python3 -I e2e/m11/compat.py --phase "$1" --tree "$2" --rel "$3" --deb-n "$4" \
+                --v010 "$5" --v010-sums "$6" --images "$7" --work "$8" --log "$8.log" >"$8.log" 2>&1' sh \
+                "${RUN#compat-}" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/rel" "$deb" "$RUNNER_TEMP/v010" \
+                "$RUNNER_TEMP/v010-notes.txt" "$RUNNER_TEMP/img" "$w" ;;
+          esac
+
+      # The work folder is root-only (0700): copy out just the two report files.
+      - name: Row report
+        if: always()
+        run: |
+          out="$RUNNER_TEMP/report"
+          mkdir -p "$out"
+          for f in report.json report.md; do
+            if sudo test -f "$RUNNER_TEMP/work/$f"; then
+              sudo install -m 0644 "$RUNNER_TEMP/work/$f" "$out/$f"
+            fi
+          done
+          if [ -f "$out/report.md" ]; then
+            { echo "## e2e $RUN"; echo; cat "$out/report.md"; } >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "## e2e $RUN: no report (the harness did not finish)" >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: e2e-report-${{ matrix.run }}
+          path: |
+            ${{ runner.temp }}/report/report.json
+            ${{ runner.temp }}/report/report.md
+          if-no-files-found: warn
+
+      # The gate (REQ-286): red on any FAIL row or a missing expected row, and
+      # on a missing report, whatever the harness exit code was.
+      - name: Every expected row present, none FAIL
+        if: always()
+        run: |
+          if [ ! -f "$RUNNER_TEMP/report/report.json" ]; then
+            echo "no report.json: the run is red"
+            exit 1
+          fi
+          python3 -I e2e/m11/nightly.py --check-report "$RUNNER_TEMP/report/report.json"

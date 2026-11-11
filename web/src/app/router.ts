@@ -13,7 +13,12 @@ export type Route =
   | { readonly name: "enrolment-requests" }
   | { readonly name: "enrolment-tokens" }
   | { readonly name: "totp" }
-  | { readonly name: "password" };
+  | { readonly name: "password" }
+  | { readonly name: "scans" }
+  | { readonly name: "scan"; readonly scanId: string }
+  | { readonly name: "scan-results"; readonly scanId: string }
+  | { readonly name: "run-scan"; readonly policyId: string | null }
+  | { readonly name: "schedules" };
 
 export type RouteName = Route["name"];
 
@@ -27,9 +32,15 @@ const ENROLMENT_REQUESTS: Route = Object.freeze({ name: "enrolment-requests" });
 const ENROLMENT_TOKENS: Route = Object.freeze({ name: "enrolment-tokens" });
 const TOTP: Route = Object.freeze({ name: "totp" });
 const PASSWORD: Route = Object.freeze({ name: "password" });
+const SCANS: Route = Object.freeze({ name: "scans" });
+const RUN_SCAN: Route = Object.freeze({ name: "run-scan", policyId: null });
+const SCHEDULES: Route = Object.freeze({ name: "schedules" });
 
 const HOST_PREFIX = "/hosts/";
 const PROFILE_PREFIX = "/profiles/";
+const SCAN_PREFIX = "/scans/";
+const RUN_SCAN_PREFIX = "/scans/run/";
+const RESULTS_SUFFIX = "/results";
 
 function isHex(ch: string): boolean {
   return (
@@ -96,6 +107,12 @@ export function parseHash(hash: string): Route {
       return TOTP;
     case "/account/password":
       return PASSWORD;
+    case "/scans":
+      return SCANS;
+    case "/scans/run":
+      return RUN_SCAN;
+    case "/schedules":
+      return SCHEDULES;
   }
   if (path.startsWith(HOST_PREFIX)) {
     const id = path.slice(HOST_PREFIX.length);
@@ -107,6 +124,21 @@ export function parseHash(hash: string): Route {
     const id = path.slice(PROFILE_PREFIX.length);
     if (isPolicyId(id)) {
       return { name: "profile", policyId: id };
+    }
+  }
+  if (path.startsWith(RUN_SCAN_PREFIX)) {
+    const id = path.slice(RUN_SCAN_PREFIX.length);
+    return isPolicyId(id) ? { name: "run-scan", policyId: id } : HOSTS;
+  }
+  if (path.startsWith(SCAN_PREFIX)) {
+    const rest = path.slice(SCAN_PREFIX.length);
+    const results = rest.endsWith(RESULTS_SUFFIX);
+    const id = results ? rest.slice(0, -RESULTS_SUFFIX.length) : rest;
+    if (isUuid(id)) {
+      const scanId = id.toLowerCase();
+      return results
+        ? { name: "scan-results", scanId }
+        : { name: "scan", scanId };
     }
   }
   return HOSTS;
@@ -138,6 +170,18 @@ export function formatHash(route: Route): string {
       return "#/account/totp";
     case "password":
       return "#/account/password";
+    case "scans":
+      return "#/scans";
+    case "scan":
+      return "#" + SCAN_PREFIX + route.scanId;
+    case "scan-results":
+      return "#" + SCAN_PREFIX + route.scanId + RESULTS_SUFFIX;
+    case "run-scan":
+      return route.policyId === null
+        ? "#/scans/run"
+        : "#" + RUN_SCAN_PREFIX + route.policyId;
+    case "schedules":
+      return "#/schedules";
     default: {
       const unhandled: never = route;
       return unhandled;

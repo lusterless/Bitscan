@@ -9,9 +9,15 @@ import { PolicyUpload } from "../screens/PolicyUpload";
 import { ProfileDetail } from "../screens/ProfileDetail";
 import { Profiles } from "../screens/Profiles";
 import { Rebuild } from "../screens/Rebuild";
+import { RunScan } from "../screens/RunScan";
+import { ScanDetail } from "../screens/ScanDetail";
+import { ScanResults } from "../screens/ScanResults";
+import { Scans } from "../screens/Scans";
+import { Schedules } from "../screens/Schedules";
 import { TotpEnrol } from "../screens/TotpEnrol";
 import type { IconName } from "../components/Icon";
-import { navigate, type Route, type RouteName } from "./router";
+import type { ScanLinks } from "../components/ScanTable";
+import { formatHash, navigate, type Route, type RouteName } from "./router";
 import type { Role } from "./session";
 
 const EVERYONE: readonly Role[] = Object.freeze([
@@ -19,6 +25,7 @@ const EVERYONE: readonly Role[] = Object.freeze([
   "operator",
   "admin",
 ]);
+const OPERATOR: readonly Role[] = Object.freeze(["operator", "admin"]);
 const ADMIN: readonly Role[] = Object.freeze(["admin"]);
 
 /**
@@ -40,6 +47,13 @@ export const ROUTE_ROLES: Readonly<Record<RouteName, readonly Role[]>> =
     "enrolment-tokens": ADMIN,
     totp: EVERYONE,
     password: EVERYONE,
+    // TS §6.2: the scan reads are viewer; POST /scans and every
+    // /scan-schedules route are operator (#122 (i)).
+    scans: EVERYONE,
+    scan: EVERYONE,
+    "scan-results": EVERYONE,
+    "run-scan": OPERATOR,
+    schedules: OPERATOR,
   });
 
 export function isAllowed(name: RouteName, role: Role): boolean {
@@ -76,6 +90,18 @@ const NAV: readonly NavEntry[] = Object.freeze([
     label: "Profiles",
     group: "Compliance",
     icon: "profiles",
+  },
+  {
+    route: { name: "scans" },
+    label: "Scans",
+    group: "Compliance",
+    icon: "scans",
+  },
+  {
+    route: { name: "schedules" },
+    label: "Schedules",
+    group: "Compliance",
+    icon: "schedules",
   },
   {
     route: { name: "policy-upload" },
@@ -122,16 +148,29 @@ export function navFor(role: Role): readonly NavEntry[] {
 
 /** The nav entry a route belongs to; a detail page belongs to its list. */
 export function entryFor(route: Route): NavEntry | null {
-  const name =
-    route.name === "host"
-      ? "hosts"
-      : route.name === "profile"
-        ? "profiles"
-        : route.name;
+  const parents: Partial<Record<RouteName, RouteName>> = {
+    host: "hosts",
+    profile: "profiles",
+    scan: "scans",
+    "scan-results": "scans",
+    "run-scan": "scans",
+  };
+  const name = parents[route.name] ?? route.name;
   return NAV.find((entry) => entry.route.name === name) ?? null;
 }
 
 const HOSTS: Route = Object.freeze({ name: "hosts" });
+
+/** The links the M11 screens take (TASK-256), built from the hash routes. */
+export const SCAN_LINKS: ScanLinks = Object.freeze({
+  scansHref: formatHash({ name: "scans" }),
+  runScanHref: formatHash({ name: "run-scan", policyId: null }),
+  scanHref: (scanId: string) => formatHash({ name: "scan", scanId }),
+  resultsHref: (scanId: string) => formatHash({ name: "scan-results", scanId }),
+  openScan: (scanId: string) => {
+    navigate({ name: "scan", scanId });
+  },
+});
 
 function NotAvailable() {
   return (
@@ -169,6 +208,7 @@ export function RouteView({ route, role, onPasswordChanged }: RouteViewProps) {
           key={route.agentId}
           agentId={route.agentId}
           navigate={navigate}
+          scanLinks={SCAN_LINKS}
         />
       );
     case "packages":
@@ -205,6 +245,35 @@ export function RouteView({ route, role, onPasswordChanged }: RouteViewProps) {
       );
     case "password":
       return <PasswordChange onChanged={onPasswordChanged} />;
+    case "scans":
+      return <Scans role={role} links={SCAN_LINKS} />;
+    case "scan":
+      return (
+        <ScanDetail
+          key={route.scanId}
+          scanId={route.scanId}
+          role={role}
+          links={SCAN_LINKS}
+        />
+      );
+    case "scan-results":
+      return (
+        <ScanResults
+          key={route.scanId}
+          scanId={route.scanId}
+          links={SCAN_LINKS}
+        />
+      );
+    case "run-scan":
+      return (
+        <RunScan
+          key={route.policyId ?? ""}
+          policyId={route.policyId}
+          links={SCAN_LINKS}
+        />
+      );
+    case "schedules":
+      return <Schedules />;
     default: {
       const unhandled: never = route;
       return unhandled;

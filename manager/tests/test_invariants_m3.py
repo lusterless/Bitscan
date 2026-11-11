@@ -111,6 +111,16 @@ SPEC_OPS = AGENT_OPS | USER_OPS | HEALTH_OPS | STATIC_OPS
 SEARCH_PARAMS = {"q", "name", "version", "version_op", "arch", "status", "os",
                  "tag", "host", "agent_id", "group_by"}  # fmt: skip
 PACKAGE_PATHS = {V1 + "/packages/search", V1 + "/packages/search.csv"}
+# M11 (TASK-232 contract): the query parameters of the four M11 read paths.
+M11_QUERY = {
+    V1 + "/scans": {
+        "limit", "cursor", "policy_id", "agent_id", "state", "created_after",
+        "created_before",
+    },
+    V1 + "/scans/{id}/results": {"limit", "cursor", "status", "agent_id"},
+    V1 + "/scans/{id}/results.csv": {"status", "agent_id"},
+    V1 + "/agents/{id}/scans": {"limit", "cursor"},
+}  # fmt: skip
 
 # The M3 head (REQ-062 to REQ-086): the operations that must exist now.
 M3_USER_OPS = {
@@ -293,9 +303,14 @@ def test_no_query_parameter_can_switch_inventory_off() -> None:
     names = {
         name
         for _, path, name in params
-        if path not in PACKAGE_PATHS and path != policies
+        if path not in PACKAGE_PATHS and path != policies and path not in M11_QUERY
     }
     assert names <= {"limit", "cursor", "state", "job_id"}, names
+    # M11 (REQ-088 as changed by M11; plan TASK-232 §3, #144 (d), #145 (a),
+    # #146 (a)): the scan list, results and host history take exactly their
+    # declared filters, none of which concerns inventory.
+    for path, want in M11_QUERY.items():
+        assert {n for _, p, n in params if p == path} == want, path
     # M7 (TS §6.2 L1100, #9): the profile list pages and filters by status
     # (enabled or disabled) only.
     assert {n for _, p, n in params if p == policies} == {"limit", "cursor", "status"}

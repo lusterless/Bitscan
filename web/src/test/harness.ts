@@ -20,6 +20,8 @@ export interface Call {
   readonly authorization: string | null;
   /** The Content-Type header as sent (M7: the multipart upload). */
   readonly contentType: string | null;
+  /** Every request header as sent (M11: Idempotency-Key on POST /scans). */
+  readonly headers: Headers;
   readonly body: string;
   /**
    * The FormData given to `new Request` (M7 upload). undici serialises a
@@ -83,6 +85,7 @@ async function fakeNetwork(input: Request | string | URL): Promise<Response> {
     url: url.pathname + url.search,
     authorization: request.headers.get("Authorization"),
     contentType: request.headers.get("Content-Type"),
+    headers: new Headers(request.headers),
     body: await request.clone().text(),
     form: forms.get(request) ?? null,
   };

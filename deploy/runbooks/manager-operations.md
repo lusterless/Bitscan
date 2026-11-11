@@ -1,10 +1,10 @@
-# Operate the Bitscan manager: upgrade, certificates, backups, removal
+# Operate the Bitscan manager: upgrade, certificates, backups, removal, retention, releases
 
 This runbook covers a manager installed with `manager-install.md`: the venv `/opt/bitscan-manager`, the units in `/etc/systemd/system/`, `/etc/bitscan/manager.env` and `/etc/bitscan/secrets/`. Run every command as an administrator with `sudo`. As at install time, never put a password, token or DSN on a command line or in an environment variable. Create secret files empty with mode 0600 first, then write them with `sudoedit`.
 
 ## 1. Upgrade
 
-**Order:** manager first (migrate, then restart), then the agents. Never upgrade agents before the manager.
+**Order:** manager first (migrate, then restart), then the agents. Never upgrade agents before the manager. Hosts whose agent is one version behind keep working while you roll the agents out (see **Compatibility** below).
 
 1. Check the new release files as in `manager-install.md` section 2: the wheel, the requirements file and the four unit files, against `SHA256SUMS` copied from the release page.
 2. Stop the manager, so it never runs with half-installed code, then install the new dependencies and the new wheel (for example 0.1.1). The manager is unavailable from this stop until the start in step 4. Agents back off and retry meanwhile, and users can't sign in.
@@ -40,7 +40,15 @@ This runbook covers a manager installed with `manager-install.md`: the venv `/op
    The migration must return without an error, and its log ends with the new head revision id. The manager starts listening a moment after `systemctl start` returns, so the loop tries `curl` up to 10 times, a second apart. `curl` must print `{"status":"ok"}`; a 503 with `migrations` means the migration did not run. Agents keep their tokens: while the manager is down they retry with back-off, and they need no re-enrolment.
 5. Upgrade the agents with `agent-install.md` section 6.
 
-**Compatibility:** a manager supports agents of its own version and the one before. 0.1.0 is the first supported release, so no earlier supported version exists yet. The pre-release agent builds (`0.1.0~preN-1`) are not supported by any manager; upgrade them to 0.1.0-1 or later.
+**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. So between step 4 and the end of step 5, hosts still on the previous agent version keep enrolling, sending heartbeats and uploading inventory as before.
+- The 0.1.0-1 agent runs no compliance checks. Under a newer manager, every check of its compliance jobs is stored as ERROR `runner_unavailable`, so its hosts show the score `n/a` until their agent is upgraded.
+- An agent more than one version behind the new manager is not supported by it. Before step 2, list the agent versions in the fleet (on the database host), and upgrade any such host to at least the version before the new one first:
+
+  ```sh
+  sudo -u postgres psql -X -d bitscan -c "SELECT agent_version, count(*) FROM agent WHERE status <> 'decommissioned' GROUP BY agent_version ORDER BY count(*) DESC"
+  ```
+
+- Pre-release agent builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade them to a release.
 
 ## 2. Replace the TLS certificate
 
@@ -248,3 +256,83 @@ sudo deluser --system bitscan-manager
 ```
 
 Remove the Bitscan lines from `pg_hba.conf` as well. On a host that also runs the agent, keep `/etc/bitscan` itself: it holds the agent's `agent.yaml`.
+
+## 6. Retention
+
+The manager deletes old data itself, in its retention job. Nothing needs to be scheduled for it, and there is no setting or command to run it by hand or to turn it off.
+
+| Data | Deleted when |
+| --- | --- |
+| A scan, with its jobs, results and re-evaluations, all together | the scan was created more than 400 days ago |
+| An inventory job | it finished more than 30 days ago |
+| An inventory snapshot | it was collected more than 180 days ago |
+| An enrolment request | it was decided more than 90 days ago; pending requests stay |
+| A user token (session or API token) | it expired more than 90 days ago, revoked or not |
+| An audit log entry | it is more than 3 calendar years old, oldest first, and already queued for the audit sink |
+| A package version | no host lists it any more |
+
+Hosts, their OS details and current package lists, enrolment tokens, policies, schedules and settings are never deleted. Whole `scan_result` partitions past retention are dropped separately, by `bitscan-manager-maintain.timer` (`db maintain`); `systemctl list-timers bitscan-manager-maintain.timer` shows its last and next run.
+
+**When:** the first run starts 10 minutes after the manager starts, then one runs at the interval of the `retention` row of `system_schedule` (daily, as the first migration seeds it), read when the manager starts. Every restart begins this again. Runs never overlap. On `systemctl stop` a running run stops at its next batch.
+
+**As which role:** every retention statement runs as the database role `bitscan_retention`, with the DSN in `/etc/bitscan/secrets/retention.dsn` (`manager-install.md` section 5). That role can read every table, delete only from the tables above, and add audit checkpoint entries. The manager doesn't start without that file.
+
+**Batches:** each batch is one transaction: 2 scans, 1,000 inventory jobs or 10,000 rows. A batch that fails is rolled back alone; batches committed before it stay deleted, and the next run continues. Each statement may take at most 5 minutes. On a large database, the scan and inventory-job deletes use the indexes that migration `m0006` adds (on the scan and retry columns of `scan_job`, and on the job column of `scan_result_reeval`).
+
+**Audit log:** each batch of at most 10,000 entries first appends one `audit.checkpoint` entry (actor `system`) with the id and row hash of the last entry it deletes and the number deleted, so the hash chain still verifies from there. The checkpoint goes to the audit sink like every entry. Entries not yet queued for the sink stay, so a sink outage also holds back the audit deletes. The last checkpoints (on the database host):
+
+```sh
+sudo -u postgres psql -X -d bitscan -c "SELECT audit_id, at, detail FROM audit_log WHERE action = 'audit.checkpoint' ORDER BY audit_id DESC LIMIT 5"
+```
+
+**Logs:** each run writes one JSON line per step to the manager's journal. The lines hold step names, counts and error types, never a deleted row's content. Show recent runs:
+
+```sh
+sudo journalctl -u bitscan-manager --since yesterday -o cat --no-pager | grep -E '"message": "retention |"job": "retention"'
+```
+
+A completed step looks like this; the steps are `scans`, `inventory_jobs`, `snapshots`, `requests`, `tokens`, `audit` and `packages`, in that order, and `deleted` counts scans for `scans` and rows for the others:
+
+```text
+{"time": "2026-11-09T02:10:01.204+00:00", "level": "INFO", "logger": "bitscan_manager.services.retention.task", "message": "retention step done", "request_id": null, "agent_id": null, "job_id": null, "step": "scans", "deleted": 120, "chunks": 2, "skipped": null}
+```
+
+What `skipped` and the other lines mean:
+- `null`: the step ran.
+- `clock_doubt`, on every step, after a `retention refused: clock_doubt` line: the manager's clock and the database's differ by more than 5 minutes, so the run deleted nothing. Fix the time sync of both hosts (`timedatectl`); the next run deletes as usual.
+- `future_rows`: the step's table holds a row dated more than a day after now, written while a clock was wrong. That step is skipped while such a row exists; the other steps run. Check the clocks of the manager and database hosts.
+- `failed`, after a `retention step failed` line with `exc_type`: the step stopped; the later steps still ran. `QueryCanceled` means a statement hit the 5-minute limit. If a step fails on every run, keep its log lines for the support case.
+- `scheduler run failed` with `"job": "retention"`: the run stopped before its steps, for example because the database was unreachable for the clock check. Nothing was deleted; the next interval tries again.
+
+## 7. Release checklist
+
+A release changes the version in a release pull request, tests that exact build, and only then gets its tag. Nothing is published before the tag: the `release` workflow refuses a changelog version holding `~`, and it only drafts a release, which a person publishes. The steps for 0.2.0:
+
+1. Check that nothing planned for the release is still open, including the deferred review of the importer's BIT102 command rules and the CIS control numbers in `bits/samples/`.
+2. In a release pull request, set the versions:
+   - `deploy/debian/changelog`: a new top entry `bitscan-agent (0.2.0-1)`, dated after the entry below it, describing the release;
+   - `manager/pyproject.toml` (`version`) and `manager/bitscan_manager/__init__.py` (`__version__`): `0.2.0`;
+   - the runbooks and `README.md`: replace the pre-release notes with the release, and update **Compatibility** in section 1.
+3. On that pull request's branch, run the end-to-end workflow by hand and wait for it. It must be green: every row of the nightly chain and of the compatibility rows (this manager with the 0.1.0 agent, this agent with the 0.1.0 manager) is PASS. Read the uploaded report, not only the result:
+
+   ```sh
+   gh workflow run e2e.yml --ref <release branch>
+   gh run list --workflow e2e.yml --branch <release branch> --limit 1
+   ```
+
+4. Run the `release` workflow by hand with version `0.2.0` on the same branch. It checks that the given version, `pyproject.toml` and the changelog agree, builds the agent package twice and checks both builds are identical, builds the manager files and writes the SHA-256 sums, without creating a release.
+5. Merge the pull request once it is approved and every check is green.
+6. The release owner tags the merge commit and pushes the tag. The `release` workflow then builds the files and creates a draft release:
+
+   ```sh
+   git tag -a v0.2.0 -m "Bitscan 0.2.0" <merge commit>
+   git push origin v0.2.0
+   ```
+
+7. Check the draft (the files, and the `SHA256SUMS` text in its notes), then publish it.
+
+## 8. Known limits
+
+**Results CSV memory.** The manager builds a scan's results CSV (`GET /scans/{id}/results.csv`) in full in memory before sending it, and refuses an export of more than 100,000 rows. For operators and admins each row also carries the check's stdout (up to 64 KB) and stderr (up to 16 KB), so at the cap with maximal output one export can need about 8 GB of manager memory, and more while the file is written. A viewer's export has no output columns and stays far smaller.
+- Size the manager host's memory for the largest exports your operators and admins will run.
+- For big scans, have users narrow the export with the `status` and `agent_id` filters (one result status, or one host at a time) rather than export the whole scan.

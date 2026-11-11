@@ -11,6 +11,8 @@ export type IconName =
   | "upload"
   | "imports"
   | "rebuild"
+  | "scans"
+  | "schedules"
   | "sign-out"
   | "menu"
   | "close"
@@ -81,6 +83,18 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2" />
       <path d="M18.5 2v4h-4M5.5 22v-4h4" />
+    </>
+  ),
+  scans: (
+    <>
+      <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+      <path d="M7 12h10" />
+    </>
+  ),
+  schedules: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18M12 14v3l2 1" />
     </>
   ),
   "sign-out": (

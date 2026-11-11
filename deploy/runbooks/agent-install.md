@@ -4,7 +4,7 @@ The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-
 
 **Release 0.1.0** (package `0.1.0-1`) is the first supported release. It supports enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list), which the manager shows on its host pages and in package search. Compliance scans are not in 0.1.0: the runner and the helper are installed but idle, no check command runs, and the agent reports every check of a compliance job as `runner_unavailable`. The earlier pre-release builds (`0.1.0~preN-1`) are not supported; upgrade them as in section 6.
 
-**Pre-release `0.2.0~pre1-1`** (not a supported release) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Sections 9 to 11 cover the runner, the optional helper and the spool.
+**Pre-release `0.2.0~pre2-1`** (not a supported release) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Sections 9 to 11 cover the runner, the optional helper and the spool.
 
 ## 1. Before you start
 
@@ -175,7 +175,7 @@ Check the new package as in section 2, then:
 sudo apt install ./bitscan-agent_<new version>_amd64.deb
 ```
 
-An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A pre-release host upgrades in place the same way: `0.1.0~pre1-1` sorts below `0.1.0-1`. A `0.1.0-1` host upgrades to the pre-release `0.2.0~pre1-1` the same way, since it sorts above `0.1.0-1`.
+An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A pre-release host upgrades in place the same way: `0.1.0~pre1-1` sorts below `0.1.0-1`. A `0.1.0-1` or `0.2.0~pre1-1` host upgrades to the pre-release `0.2.0~pre2-1` the same way, since it sorts above both.
 
 Check the result:
 

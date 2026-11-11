@@ -2542,3 +2542,266 @@ All are in `work/open-questions.md` ("M10"), each with a recommended answer. "Ne
 | TS §8.6 L1324, L1329–L1339 redaction patterns | REQ-242 to REQ-244 | Covered (runner side) |
 | TS §6.2 L1121, L1123, CSV; TS §8.3 End-to-end; N / N−1 | none | **M11** |
 | CLAUDE.md out of scope and owner decisions | none | Nothing planned: no job signing, client certificates, push channel, listening port, ad-hoc command, remediation, inventory switch or manager-side host change |
+
+## M11 results and end-to-end
+
+Planned 2026-11-08 (planner-m11) in the worktree `Bitscan-m11` (branch `m11-results`, from main `6efe0fb`, M10 closed). Consistency pass done: every TASK links a REQ and every REQ has a TASK or is a named test requirement; waves are file-disjoint; every task is within 5 files and about 200 hand-written lines; the spine is acyclic; no gate is lowered. Summary for the user: `work/plans/M11-breakdown.md`.
+
+Scope: REQ-264 to REQ-292 in `work/requirements.md`. In this section `bm/` means `manager/bitscan_manager/` and `wb/` means `web/src/`.
+
+**No new spec deviation, no migration, no agent, contract or unit change, no new dependency.** Every open item (#144 to #154 new; #3, #9, #12, #28, #74, #84, #89, #93, #111, #118, #119, #120, #122, #127 (f) and the `CLAUDE.md` N / N−1 marker reused or carried; PD-46 to PD-51) carries a recommended answer in `work/open-questions.md` ("M11"). Six user operations are added, all TS §6.2 routes. The agent changelog gets one pre-release entry (PD-50).
+
+Rules every M11 task follows:
+- **Testing by risk (user, 2026-10-25).** Full rigor per task (a plant for every security row, boundary and race the task names): the re-evaluate route, everything that decides which verdict or output a caller sees (results view, results repository and service, the read routes) and retention (it deletes data and extends the audit chain). Tested and reviewed per wave (batched): the UI screens (TASK-239, 246 to 251), the docs (TASK-252, 253) and the workflow (TASK-254, which also gets the lead's second look). Planted faults outside the high-risk tasks only for their security rows (the mutation table).
+- **Time-skewing (user, 2026-10-26):** clock control only; races driven by barriers and two sessions, never sleeps.
+- `api → services → repositories`; route modules import no repository; parameterised SQL only (ruff S608); RE2 only (ruff bans `re`). Python tests run on Linux only (WSL), with pytest-xdist and one PostgreSQL container per worker; targeted tests per task, the full suite per wave and at the gate.
+- **Reuse, don't change (frozen):** M8 `score.py`, `scores.py`, `reevaluate.py`, `repositories/results.py`, `repositories/reeval.py`; M9 `services/jobs/*`, `repositories/scan_progress.py`, `api/user/scans.py`, `api/user/scan_schedules.py`; M5 `services/packages/csv_export.py`; M1 `services/audit/chain.py` and `verify.py`; M2 `auth/*`. A task that finds it must change one stops and goes to the lead (an open item, not a fix). No M11 task edits `bm/auth/`.
+- Nothing in M11 writes `scan_result` or `scan_result_reeval` except M8's `reevaluate_scan` (through TASK-243 only) and retention's whole-scan delete. No log line, exception message, problem detail or audit detail carries stdout, stderr, `execute`, an expected value or a token. Viewers never receive stdout or stderr.
+- Implementers check `work/reviews/builder-checklist.md` before every hand-off. Planted violations are made in throwaway copies, never left in the tree.
+
+### M11 design notes (for the tasks with real design risk)
+
+Written out in three plans, each with interfaces, edge cases and spec quotes:
+- **D1 API contract, `work/plans/TASK-232.md`** (TASK-232, and every route fill: TASK-243, 244; the web client TASK-239). The six operations with their final query parameters, auth dependencies and response models (the #144 to #147 answers), declared in W1 so `openapi.json` and the client are fixed before any consumer; handlers answer 501 until filled (PD-48). Read routes in one module, `bm/api/user/scan_views.py` (viewer), the sensitive one alone in `bm/api/user/reevaluate.py` (`require_totp_session()`).
+- **D2 results read SQL, `work/plans/TASK-235.md`** (TASK-233, 235, 241). One statement per page: M8's `results._EFFECTIVE` composed unchanged (PD-46), then the planned plugins of each original job `WITH ORDINALITY`, left-joined to the effective rows, joined back to `scan_result` on `(job_id, plugin_uuid, job_created_at)` for the columns, and to `agent` for the hostname; filters on the effective code and `agent_id`; keyset `(agent_id, ordinal)`. The viewer rule lives in the pure `results_view.include_output(role)` and in two response models (with and without `stdout`/`stderr`), so the keys are absent, not null.
+- **D3 retention, `work/plans/TASK-242.md`** (TASK-236, 237, 238, 242, 245). A run: clock check against the database → scans (chunks of 100, `FOR UPDATE SKIP LOCKED`, the re-evaluation lock tried per scan, one `DELETE FROM scan` per chunk so the cascades remove jobs, results and re-evaluations together) → inventory jobs → snapshots → decided requests → expired tokens → audit prefix (checkpoint then delete, ≤ 10,000 per transaction, capped at the shipper's cursor) → unreferenced packages. Each step its own transactions on the `bitscan_retention` pool; a step failure is logged and the next step runs.
+- **D4 nightly end-to-end** (TASK-254, tester TP-M11-18 to 20; #152, #153). A scheduled workflow on a hosted `ubuntu-24.04` runner: the manager host in a systemd container installed by the runbook, two QEMU/KVM guests from the official Ubuntu 22.04 and 24.04 cloud images (the stand-in VM form the user accepted for G76, decisions 2026-11-03 (4)), M6's Transit and sink doubles, the SR §1.1 canonical example; one row per step and host; the N / N−1 rows reuse the same guests with the v0.1.0 `.deb`. The harness is the tester's (`e2e/m11/`), the workflow impl-deploy's. If a safety check refuses writing or running it, that row is NOT RUN and goes to the user (PD-49); nothing is reworded or re-delegated.
+
+### M11 tasks
+
+| TASK | Title | REQ links | Area | Owner | Risk | Files expected | Depends on | Est. LOC | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TASK-232 | API contract (interface): the six M11 operations declared with their final parameters, auth dependencies and response models; routers registered; handlers answer 501 `about:blank` until filled (PD-48); `openapi.json` re-exported (plan TASK-232) | REQ-264, REQ-265, REQ-266, REQ-267, REQ-268, REQ-269, REQ-270, REQ-273 | manager | impl-manager-a | **high** (lead's second look, PD-47) | `bm/api/user/scan_views.py`, `bm/api/user/reevaluate.py`, `bm/api/user/__init__.py`, `manager/openapi.json` | none (M2 auth, M8, M9); #144–#147, PD-48 | 190 (+1 generated) | G6 is green and the exported document holds exactly the plan TASK-232 operations, parameters, schemas and auth markers, and each handler answers 501 only after its auth dependency ran (a viewer on re-evaluate gets 403, no token gets 401). |
+| TASK-233 | Results view (interface, pure): `Status` filter parse, `include_output(role)`, row → item mapping for both item models, the CSV header and rows through `csv_export.write_csv`, the 100,000-row cap constant (plan TASK-235 §2) | REQ-267, REQ-268, REQ-269 | manager | impl-manager-a | **high** (second look, PD-47) | `bm/services/jobs/results_view.py` | none (M5 `csv_export`); #144, #146 | 140 | Unit: given rows as values, viewer items have no `stdout`/`stderr` key and viewer CSV no such columns, operator and admin items and CSV have them, every CSV cell goes through `escape_cell`, and an unknown status raises `InvalidResultQuery`. |
+| TASK-234 | Scan reads repository: scan page with the REQ-264 filters and keyset, one scan with policy name and target, a scan's jobs with hostnames, an agent's scan page; anchor-gone detection (plan TASK-232 §4) | REQ-264, REQ-265, REQ-266, REQ-272 | manager | impl-manager-a | medium | `bm/repositories/scan_reads.py` | none (M1 schema); #89, #145 | 170 | PostgreSQL as `bitscan_app` with owner-written scans and jobs: each filter and the keyset return the expected rows in order, the target containment test uses a parameter, a deleted anchor raises `AnchorGone`, a spy sees SELECT only, and G1 is red on a planted f-string. |
+| TASK-235 | Result reads repository: one-statement results page composing `results._EFFECTIVE` (PD-46) with planned plugins `WITH ORDINALITY`, full result columns, hostname, filters and keyset; the CSV read with the cap; `read_only_snapshot()` (plan TASK-235 §3) | REQ-267, REQ-269, REQ-272 | manager | impl-manager-a | **high** (second look, PD-47) | `bm/repositories/result_reads.py` | none (M8 `results.py`, frozen); #119, #144, PD-46 | 180 | PostgreSQL as `bitscan_app`: REQ-267 (1), (2), (4), (6) hold at repository level, a not-run row takes its name from `eval_spec`, `results.py` is byte-unchanged, and `EXPLAIN` shows `scan_result_reeval` read once per page. |
+| TASK-236 | Retention rules (interface, pure): the six cutoffs, the audit prefix with the shipped-cursor cap, the clock-doubt and future-row decisions, chunk constants (plan TASK-242 §2) | REQ-274, REQ-276, REQ-278 | manager | impl-manager-b | **high** (second look, PD-47) | `bm/services/retention/__init__.py`, `bm/services/retention/rules.py` | none; #150 (a)–(e), (i), (j) | 110 | Unit: REQ-274 (1)–(4) hold and the clock-doubt decision is true at 5 min 1 s of skew and false at 5 min. |
+| TASK-237 | Retention repository: chunked deletes for scans (with the per-scan re-evaluation lock tried), inventory jobs, snapshots, decided requests, expired tokens and unreferenced packages; future-row probes; the database clock (plan TASK-242 §3) | REQ-275, REQ-278 | manager | impl-manager-b | **high** (second look, PD-47) | `bm/repositories/retention.py` | none; #150 (f), (g), (k) | 180 | PostgreSQL as `bitscan_retention`: each delete removes exactly the rows past the cutoff it is given, at most one chunk per call, a scan whose lock another session holds is skipped, and as `bitscan_app` every delete is refused by the grants. |
+| TASK-238 | Audit retention repository: the oldest-prefix read (ids and ages), the row hash of a given id, the prefix delete (plan TASK-242 §3) | REQ-276 | manager | impl-manager-b | **high** (second look, PD-47) | `bm/repositories/retention_audit.py` | none (M1 `audit_log`); #39, #150 (d) | 80 | PostgreSQL as `bitscan_retention`: the prefix read returns ids in order with their ages, the delete removes exactly ids ≤ N, and as `bitscan_app` the delete is refused. |
+| TASK-239 | Web: regenerate `schema.d.ts` from the TASK-232 document; shared pieces: `Score` (percent per #149, "n/a", errors beside), `ResultBadge` (PASS, FAIL, ERROR, Not run; original beside when re-evaluated), a generic client CSV download, the score formatter | REQ-273, REQ-280, REQ-281, REQ-284 | web | impl-web | low (batched) | `wb/api/schema.d.ts`, `wb/components/Score.tsx`, `wb/components/ResultBadge.tsx`, `wb/app/download.ts`, `wb/format.ts` | TASK-232; #149 | 140 (+1 generated) | G16 is green, `npm run typecheck` passes, and component tests show REQ-280 (1) for `Score` and REQ-281 (1) for `ResultBadge`, and the CSV download calls the generated client with `parseAs: "blob"`. |
+| TASK-240 | Scan views service: `list_scans`, `scan_detail` (scan, jobs and `results.host_counts` with `score.host_score` in one read-only snapshot), `agent_scans`; `ScanNotFound`, `AgentNotFound` (plan TASK-232 §5) | REQ-264, REQ-265, REQ-266 | manager | impl-manager-a | medium | `bm/services/jobs/scan_views.py` | TASK-234; #120, #145 | 140 | PostgreSQL service-level: REQ-265 (1), (2), (4), (5) and REQ-266 (1), (3) hold, and the scan state returned equals `scan.state` even when a derivation would differ. |
+| TASK-241 | Results service: `results_page` and `results_csv` (read-only snapshot, cap check before any byte, role from the caller) on TASK-233 and TASK-235 | REQ-267, REQ-268, REQ-269 | manager | impl-manager-a | **high** (second look, PD-47) | `bm/services/jobs/results_read.py` | TASK-233, 235; #144, #146 | 110 | PostgreSQL service-level: REQ-267 (1)–(4), REQ-268 (1), (2) and REQ-269 (2), (3) hold with the canary. |
+| TASK-242 | Retention service `run_retention()` per design note D3: steps in order, each failing on its own, checkpoint and audit delete in one transaction per chunk, clock and future-row guards, counts-only logs (plan TASK-242 §4) | REQ-274, REQ-275, REQ-276, REQ-278 | manager | impl-manager-b | **high** (second look, PD-47) | `bm/services/retention/task.py` | TASK-236, 237, 238; #150, #151 | 170 | Clock control on PostgreSQL with the retention pool: REQ-275 (1)–(6), REQ-276 (1)–(6) and REQ-278 (1), (2), (4) hold. |
+| TASK-243 | Re-evaluate route: fill `POST /scans/{id}/reevaluate` on `require_totp_session()`, M8's `reevaluate_scan` with the shipper's wake, the 404 and 409 mapping (plan TASK-232 §6) | REQ-270, REQ-271 | manager | impl-manager-b | **high** (full rigor; second look, PD-47) | `bm/api/user/reevaluate.py` | TASK-232; #118, #147 | 60 | Through the API on PostgreSQL: REQ-270 (1)–(5) and REQ-271 (1), (3) hold, each refusal row leaving no `scan_result_reeval` row and no audit entry. |
+| TASK-244 | Read routes: fill the five handlers of `scan_views.py` (cursor scopes, problem mapping, CSV response with `Content-Disposition`) on TASK-240 and TASK-241 | REQ-264, REQ-265, REQ-266, REQ-267, REQ-268, REQ-269, REQ-272 | manager | impl-manager-a | **high** (second look, PD-47) | `bm/api/user/scan_views.py` | TASK-232, 240, 241 | 150 | Through the API on PostgreSQL: REQ-264 (1)–(5), REQ-265 (3), (6), REQ-266 (2), (4), REQ-267 (3), (5), REQ-268 (1)–(4), REQ-269 (2)–(4) and REQ-272 (2) hold, and `openapi.json` is unchanged (G6). |
+| TASK-245 | Retention wiring: a `bitscan_retention` pool from `retention_dsn` in `serve` (opened and closed by the lifecycle); the fourth scheduler job on the `retention` row's interval behind the stop flag; the shipper's read-only `shipped_through()`; the pool's name parameter | REQ-275, REQ-277 | manager | impl-manager-b | **high** (second look, PD-47) | `bm/services/scheduler/runner.py`, `bm/cli/serve.py`, `bm/services/audit/shipper.py`, `bm/db/pool.py` | TASK-242; #150 (h), PD-51 | 90 | REQ-277 (1)–(4) hold with a clock-controlled scheduler and a real `serve` in WSL, and the M3 and M9 scheduler suites pass except the PD-51 job-set rows. |
+| TASK-246 | Scans screen and Run scan form | REQ-279, REQ-284 | web | impl-web | low (batched) | `wb/screens/Scans.tsx`, `wb/screens/RunScan.tsx` | TASK-239; #154 | 190 | UI tests with the mocked client: REQ-279 (1)–(3) hold. |
+| TASK-247 | Scan detail screen: summary, per-host table with `Score`, Cancel and Re-evaluate with confirm and the TOTP prompt | REQ-280, REQ-284 | web | impl-web | low (batched; its security rows planted) | `wb/screens/ScanDetail.tsx` | TASK-239; #149 | 180 | UI tests with the mocked client: REQ-280 (1)–(3) hold. |
+| TASK-248 | Results screen: filters, paging, `ResultBadge`, output only when present, CSV export | REQ-281, REQ-284 | web | impl-web | low (batched; its security rows planted) | `wb/screens/ScanResults.tsx` | TASK-239 | 180 | UI tests with the mocked client: REQ-281 (1)–(3) hold. |
+| TASK-249 | Schedules screens: list, create, edit, delete | REQ-282, REQ-284 | web | impl-web | low (batched) | `wb/screens/Schedules.tsx`, `wb/screens/ScheduleForm.tsx` | TASK-239 | 190 | UI tests with the mocked client: REQ-282 (1), (2) hold. |
+| TASK-250 | Host page scan history | REQ-283, REQ-284 | web | impl-web | low (batched) | `wb/screens/HostScans.tsx`, `wb/screens/HostDetail.tsx` | TASK-239 | 90 | UI tests with the mocked client: REQ-283 (1) holds and the existing HostDetail tests still pass. |
+| TASK-251 | Routing and navigation: `scans`, `scan`, `scan-results`, `run-scan`, `schedules` hash routes, role gating (schedules and run scan operator), nav entries and icons; Run scan on the profile page | REQ-279, REQ-280, REQ-281, REQ-282, REQ-283 | web | impl-web | low (batched) | `wb/app/router.ts`, `wb/app/routes.tsx`, `wb/components/Icon.tsx`, `wb/screens/ProfileDetail.tsx` | TASK-246, 247, 248, 249, 250 | 130 | Router unit tests parse and format every new hash (malformed ids fall back to the host list), a viewer is offered neither schedules nor run scan and those screens never mount for it, and the profile page links to Run scan with the profile chosen. |
+| TASK-252 | README: scans and results, CSV, score, re-evaluation, retention, nightly run; the Scheduler line fix; remove the "not part of this version" lines | REQ-289 | manager | impl-manager-a | low (docs) | `README.md` | TASK-243, 244, 245 | 140 (docs) | The tester follows each new README section against a WSL manager and each step behaves as written; the Scheduler line reads "partial, failed or completed"; no secret or process note. |
+| TASK-253 | Deploy docs and version: manager-operations runbook (retention operations, upgrade order with agents N−1, the release checklist of PD-50); changelog `0.2.0~pre2-1` | REQ-289, REQ-290 | deploy | impl-deploy | low (docs) | `deploy/runbooks/manager-operations.md`, `deploy/debian/changelog` | TASK-245; PD-50 | 110 (docs) | The tester follows the new runbook steps against a WSL manager, `dpkg-parsechangelog` gives `0.2.0~pre2-1`, CHK-M10-318 and -319 stay green, and no secret appears. |
+| TASK-254 | Nightly end-to-end workflow: cron and dispatch, build `.deb` and wheel, run the tester's `e2e/m11` harness (chain, N / N−1 rows), upload the row report, fail on a FAIL or missing row | REQ-285, REQ-286, REQ-287, REQ-288 | deploy | impl-deploy | medium (lead's second look, PD-47) | `.github/workflows/e2e.yml` | TASK-243, 244, 245; tester TP-M11-18, 19; #152, #153, PD-49 | 150 | A dispatch run on the M11 branch is green with every row PASS, and the job turns red on a planted FAIL row and on a removed row in a throwaway branch. |
+| TASK-256 | Shared scan components (split from TASK-246, decisions 2026-11-08): `ScanTable`, `ScanStateBadge`, the `ScanLinks` type; `TargetPicker` (all / tags / chosen hosts with a paged host chooser, the #68 tag check, `toTarget`/`fromTarget`/`describeTarget`) | REQ-279, REQ-282 | web | impl-web | low (UI) | `wb/components/ScanTable.tsx`, `wb/components/TargetPicker.tsx` | TASK-239; #154, #68 | 300 | UI tests with the mocked client: CHK-M11-273 to -275 hold, and the relaxed-tag plant CHK-M11-379 turns the tag rows red. |
+
+Totals: 29 REQ (REQ-264 to REQ-292), 23 TASK (TASK-232 to TASK-254), 25 test-plan items (TP-M11-00 to TP-M11-24), 4 waves (W1 to W4) plus the gate, 8 new gates (G80 to G87). 14 tasks are high or medium risk, 9 low (UI, docs). Every task is within 5 files and about 200 hand-written lines; TASK-232, 235 and 246 to 249 are the largest (if one grows: TASK-232 moves the read models into `bm/api/user/scan_models.py`, one task id, before W2; TASK-235 moves the CSV read into `bm/repositories/result_export.py`; a screen moves its table into a component file; one task id each, as in M7).
+
+REQ to TASK: REQ-264 TASK-232, 234, 240, 244; REQ-265 TASK-232, 234, 240, 244; REQ-266 TASK-232, 234, 240, 244; REQ-267 TASK-232, 233, 235, 241, 244; REQ-268 TASK-232, 233, 241, 244; REQ-269 TASK-232, 233, 235, 241, 244; REQ-270 TASK-232, 243; REQ-271 TASK-243 (and the tester's security rows: test requirement for "no other writer"); REQ-272 TASK-234, 235, 244 (and every manager task); REQ-273 TASK-232, 239; REQ-274 TASK-236, 242; REQ-275 TASK-237, 242, 245; REQ-276 TASK-236, 238, 242; REQ-277 TASK-245; REQ-278 TASK-236, 237, 242; REQ-279 TASK-246, 251; REQ-280 TASK-239, 247, 251; REQ-281 TASK-239, 248, 251; REQ-282 TASK-249, 251; REQ-283 TASK-250, 251; REQ-284 TASK-239, 246 to 250; REQ-285 TASK-254 and tester TP-M11-18; REQ-286 TASK-254; REQ-287 TASK-254 and tester TP-M11-19; REQ-288 TASK-254 and tester TP-M11-19 (test requirement; built only on a "yes"); REQ-289 TASK-252, 253; REQ-290 TASK-253; REQ-291 tester TP-M11-17 (test requirement); REQ-292 every M11 task (test requirement, proven by the tester). Every M11 REQ has at least one TASK or is a named test requirement, and every TASK has at least one REQ.
+
+### M11 owner and review notes
+
+- **Owners:** impl-manager-a (reads, results, contract, README): TASK-232, 233, 234, 235, 240, 241, 244, 252. impl-manager-b (retention and the re-evaluate route): TASK-236, 237, 238, 242, 243, 245. impl-web: TASK-239, 246 to 251. impl-deploy: TASK-253, 254. No impl-agent or impl-bits task (no agent, runner or sample change). The tester owns every test file and fixture: `manager/tests/`, `wb/**/*.test.ts(x)`, `e2e/`, `deploy/tests/`, `tests/m11/`. Suggested three testers: tester-m11 (manager unit and PostgreSQL, per task), tester-m11w (web, per wave), tester-m11e (the end-to-end and N / N−1 harness from W1, the gate).
+- **Approvals (TS §8.2 L1270, PD-47):** no M11 task edits importer, auth, agent or runner code, so TS §8.2 asks one approval per task. Recommended on top, under the user's pre-authorisation on a clean TEST PASS and "APPROVED, no open blocking or should-fix findings": the user's second look at TASK-243 (a sensitive action), TASK-233, 235, 241, 244 (which verdict and which output each role sees) and TASK-236, 237, 238, 242, 245 (data deletion and the audit chain); the lead's second look at TASK-232 (the contract every later task builds on) and TASK-254 (it gates the nightly run). If any task turns out to need a change under `bm/auth/`, it stops, goes to the lead, and gets the TS §8.2 second approval.
+- **Shared files (never in one wave):** `bm/api/user/scan_views.py` (TASK-232 in W1 declares, TASK-244 in W3 fills the handler bodies only) and `bm/api/user/reevaluate.py` (TASK-232 W1, TASK-243 W2); `manager/openapi.json` (TASK-232 only; any later change reopens TASK-232); `wb/screens/HostDetail.tsx` (TASK-250 only); `wb/screens/ProfileDetail.tsx` (TASK-251 only). Every other file has exactly one task.
+- **Frozen interfaces once W1 passes:** the TASK-232 contract, the `results_view` items and CSV header (TASK-233), the repository signatures of TASK-234, 235, 237, 238 (the plans' §3), the retention rules (TASK-236).
+- **Earlier tests replaced by requirement (PD-51):** the scheduler job-set and stop-record checks (REQ-277) and the README walk sentence about M11 (REQ-289); the tester lists each old CHK id with its replacement in `tests/m11/report.md`, and keeps every other assertion.
+- **Carry-overs, not planned into a wave:** TASK-146 (the BIT102 review, its TS §8.2 second approval and r2; r1 TEST PASS in the product, never reviewed; r2 saved outside the tree in `Documents\m7-deferred\task146-r2\`; not rescheduled since decisions 2026-10-30 (3)). The deploy follow-up on the coverage floor (pytest-cov prints 84.99 % as 85.00 %, status 2026-10-30) and the M6 runbook placeholder that trips `check_runbook_text.py` (status 2026-11-01) are post-M10 follow-ups outside the M11 brief; the lead may add either as a one-file deploy task.
+
+### M11 test-plan items (tester)
+
+Drafted from the acceptance criteria at phase start (`tests/m11/test-plan.md`, check ids `CHK-M11-###`; suggested ranges: 001–079 pure modules (results view, CSV, retention rules), 080–099 property suites, 100–199 PostgreSQL (repositories, services, retention, wiring), 200–259 API and security, 260–289 web, 290–309 end to end and N / N−1, 310–319 gate rows, 320 onwards the mutation table). PostgreSQL items run in WSL with `CI=true` and pytest-xdist; on the Windows box they are NOT RUN.
+
+| TP | What | REQ | Runs in | Files (tester) | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| TP-M11-00 | Phase test plan and the M11 index row | all M11 | phase start; report at the gate | `tests/m11/test-plan.md`, `tests/test-plan.md` | none |
+| TP-M11-01 | Fixtures: owner-written scans (originals, retries, every job state, results in two partitions, re-evaluation rows, intake ERRORs, not-run plugins), hosts with `<script>` hostnames, users and tokens of every role (session, API token, restricted admin), a clock double, the canary; aged retention rows on both sides of every cutoff and an old audit chain | REQ-264 to REQ-278 | W1 (before TASK-234 TEST) | `manager/tests/m11_pg_fixtures.py` | none |
+| TP-M11-02 | Results view and CSV units | REQ-267 to REQ-269 | TASK-233 TEST | `manager/tests/test_results_view.py` | TASK-233 IMPL |
+| TP-M11-03 | Scan reads repository | REQ-264 to REQ-266 | TASK-234 TEST | `manager/tests/test_scan_reads_pg.py` | TP-M11-01 |
+| TP-M11-04 | Result reads repository; the property agreement with M8's `effective()` and `host_counts` (200 random scans) | REQ-267, REQ-269 | TASK-235 TEST | `manager/tests/test_result_reads_pg.py`, `manager/tests/test_results_property_pg.py` | TP-M11-01 |
+| TP-M11-05 | Retention rules units, boundaries and the prefix property | REQ-274, REQ-278 | TASK-236 TEST | `manager/tests/test_retention_rules.py` | TASK-236 IMPL |
+| TP-M11-06 | Retention repositories as `bitscan_retention` and refused as `bitscan_app` | REQ-275, REQ-276, REQ-278 | TASK-237, 238 TEST | `manager/tests/test_retention_repo_pg.py` | TP-M11-01 |
+| TP-M11-07 | Web client regeneration and the shared components | REQ-273, REQ-280, REQ-281 | TASK-239 TEST (W2 batch) | `wb/components/Score.test.tsx`, `wb/components/ResultBadge.test.tsx`, `wb/app/download.test.ts` | TASK-239 IMPL |
+| TP-M11-08 | Scan views service | REQ-264 to REQ-266 | TASK-240 TEST | `manager/tests/test_scan_views_pg.py` | TP-M11-03 |
+| TP-M11-09 | Results service with the canary | REQ-267 to REQ-269 | TASK-241 TEST | `manager/tests/test_results_read_pg.py` | TP-M11-02, 04 |
+| TP-M11-10 | Retention service with clock control: every step, chunks, faults, the checkpoint chain across chunks, concurrent audit writers, the re-evaluation lock, clock and future-row guards | REQ-274 to REQ-278 | TASK-242 TEST | `manager/tests/test_retention_pg.py`, `manager/tests/test_retention_race_pg.py` | TP-M11-05, 06 |
+| TP-M11-11 | Re-evaluate route: every refusal row (API token, operator, viewer, restricted admin, no token, `bsa_`, 15-minute sink outage), 404, 409, concurrency, audit entry, no alert | REQ-270, REQ-271 | TASK-243 TEST | `manager/tests/test_reevaluate_api_pg.py` | TP-M11-01 |
+| TP-M11-12 | Read routes: bodies, filters, cursors, RBAC, token groups, CSV headers, viewer output | REQ-264 to REQ-269, REQ-272 | TASK-244 TEST | `manager/tests/test_scan_views_api_pg.py`, `manager/tests/test_results_api_pg.py` | TP-M11-08, 09 |
+| TP-M11-13 | Retention wiring: the job set, interval, stop, the retention pool in `serve` | REQ-277 | TASK-245 TEST | `manager/tests/test_retention_wiring.py`, `manager/tests/test_serve_retention_linux.py` | TP-M11-10 |
+| TP-M11-14 | M11 UI suites: every new screen, plain-text rendering (`<script>` names, an `onerror` stdout), output only when present, n/a and errors, both verdicts, Not run, the TOTP prompt, CSV through the client, role gating | REQ-279 to REQ-284 | W3 and W4 batches | `wb/screens/{Scans,RunScan,ScanDetail,ScanResults,Schedules,HostScans}.test.tsx`, `wb/app/router.test.ts` (extend) | TP-M11-07 |
+| TP-M11-15 | M11 security suite: canary across the M11 suites, viewer output, route walk, token groups, the one re-evaluation writer, retention role limits, import graph, frozen-file diff, S608 and `re` plants | REQ-268, REQ-271 to REQ-273, REQ-275, REQ-278 | each M11 TEST that touches a row; whole at the gate | `manager/tests/test_security_m11.py` | TP-M11-02 to 13 |
+| TP-M11-16 | README and runbook walks | REQ-289, REQ-290 | TASK-252, 253 TEST (W4 batch) | none in the tree (evidence) | TASK-252, 253 IMPL |
+| TP-M11-17 | Harness carries: `e2e/m6/manager_walk.py` brought up to the current install runbook; the `BITSCAN_BITS_DIR` set-up and start check | REQ-291 | W1 | `e2e/m6/manager_walk.py` | none |
+| TP-M11-18 | Nightly end-to-end harness: the manager container by the runbook, two QEMU/KVM guests, the doubles, the SR §1.1 example, one row per step and host, the plants | REQ-285 | from W1 (harness first); runs from W3 | `e2e/m11/nightly.py`, `e2e/m11/guests.sh`, `e2e/m11/README.md` | TP-M11-17 |
+| TP-M11-19 | N / N−1 rows: agent 0.1.0 with manager N; the upgrade walk 0.1.0 → N; agent N with manager 0.1.0 if the marker is answered yes | REQ-287, REQ-288 | W4; whole at the gate | `e2e/m11/compat.py` | TP-M11-18 |
+| TP-M11-20 | Workflow plants (TASK-254) | REQ-286 | TASK-254 TEST | none in the tree (evidence) | TASK-254 IMPL |
+| TP-M11-21 | Earlier checks replaced by requirement (PD-51), old → new CHK list | REQ-277, REQ-289 | TASK-245, 252 TEST | the affected M3 and M9 test files; `tests/m11/report.md` | TP-M11-13 |
+| TP-M11-22 | Grant probes on a freshly migrated database for `bitscan_retention` (TS §8.3 L1280), including a newly created partition | REQ-278 | TASK-237 TEST; gate | `manager/tests/test_retention_grants_pg.py` | TP-M11-01 |
+| TP-M11-23 | Coverage, lint and the full suite at each wave end | REQ-292 | each wave end | `tests/m11/report.md` | all above |
+| TP-M11-24 | M11 gate and the mutation table | all M11 | M11 gate | `tests/m11/report.md` | all above |
+
+### M11 waves and dependency spine
+
+Spine: `TASK-232 → TASK-243`; `TASK-232 → TASK-239 → TASK-246, 247, 248, 249, 250 → TASK-251`; `TASK-234 → TASK-240 → TASK-244`; `TASK-233, 235 → TASK-241 → TASK-244`; `TASK-232 → TASK-244`; `TASK-236, 237, 238 → TASK-242 → TASK-245 → TASK-253`; `TASK-243, 244, 245 → TASK-252`; `TASK-243, 244, 245` and tester TP-M11-18, 19 `→ TASK-254`. The graph is acyclic; the longest path is `TASK-232 → 239 → 246 → 251` (four waves), equal to `TASK-236 → 242 → 245 → 253`.
+
+Interface first: W1 fixes the API contract and the client's source document (TASK-232), the pure results view (TASK-233), every repository signature (TASK-234, 235, 237, 238) and the retention rules (TASK-236) before any service, route or screen uses them.
+
+| Wave | Tasks (parallel) | Files touched (disjoint within the wave) |
+| --- | --- | --- |
+| W1 | TASK-232, 233, 234, 235, 236, 237, 238; tester TP-M11-00, 01, 17, 18 (harness) | `bm/api/user/{scan_views,reevaluate,__init__}.py`, `manager/openapi.json` · `bm/services/jobs/results_view.py` · `bm/repositories/scan_reads.py` · `bm/repositories/result_reads.py` · `bm/services/retention/{__init__,rules}.py` · `bm/repositories/retention.py` · `bm/repositories/retention_audit.py` · tester files |
+| W2 | TASK-239, 240, 241, 242, 243 | `wb/api/schema.d.ts`, `wb/components/{Score,ResultBadge}.tsx`, `wb/app/download.ts`, `wb/format.ts` · `bm/services/jobs/scan_views.py` · `bm/services/jobs/results_read.py` · `bm/services/retention/task.py` · `bm/api/user/reevaluate.py` |
+| W3 | TASK-244, 245, 246, 247, 248, 249, 250 | `bm/api/user/scan_views.py` · `bm/services/scheduler/runner.py`, `bm/cli/serve.py`, `bm/services/audit/shipper.py`, `bm/db/pool.py` · `wb/screens/{Scans,RunScan}.tsx` · `wb/screens/ScanDetail.tsx` · `wb/screens/ScanResults.tsx` · `wb/screens/{Schedules,ScheduleForm}.tsx` · `wb/screens/{HostScans,HostDetail}.tsx` |
+| W4 | TASK-251, 252, 253, 254 | `wb/app/{router,routes}.ts(x)`, `wb/components/Icon.tsx`, `wb/screens/ProfileDetail.tsx` · `README.md` · `deploy/runbooks/manager-operations.md`, `deploy/debian/changelog` · `.github/workflows/e2e.yml` |
+| Gate | tester TP-M11-15 (whole), 19 (whole), 22, 23, 24; reviewer's M11 closing review | tester files only |
+
+G16 is red from TASK-232 (W1) until TASK-239 (W2) regenerates the client, as in M9 (TASK-204 to 207); the W1 wave-end full run therefore checks G16 after TASK-239 lands, and G6 at the end of W1. Every other gate is green at each wave end. impl-manager-a carries the read path (W1: 232, 233, 234, 235; W2: 240, 241; W3: 244; W4: 252); impl-manager-b carries retention and the re-evaluate route (W1: 236, 237, 238; W2: 242, 243; W3: 245). The UI tasks are built in W2 to W4 and tested and reviewed per wave.
+
+### M11 gate
+
+On a clean tree every command is green, and each gate turns red on its planted violation. G7 to G11, G17 and G35, G36 (agent, units, agent contract half) are not re-run beyond CI: M11 changes no agent or unit file. G37 to G40 are re-run because the changelog changes.
+
+| Gate | Command (summary) | Planted violation that must turn it red | Where |
+| --- | --- | --- | --- |
+| G1–G4 | ruff (S608, the `re` ban), ruff format, `mypy --strict`, hashed locks | CHK-M11-344, -345; an untyped function in `results_read.py` | local; CI |
+| G5 | services coverage ≥ 85 % (now including `services/retention` and the new `services/jobs` modules), Linux run | an untested function in `bm/services/retention/task.py` sized from the clean report | WSL; CI |
+| G6 | OpenAPI export byte-identical | a route parameter added in TASK-244 without re-export | local; CI |
+| G12–G15 | web lint, typecheck, Prettier, tests (with the M11 screens) | CHK-M11-360 to -364 | local; CI |
+| G16 | web client regenerated with no diff | a hand edit to `schema.d.ts` | local; CI |
+| G18 | full manager suite, 0 skipped, `-n auto` | any of G80 to G83 | WSL; CI |
+| G19 | schema diff (no migration) | a throwaway migration adding `ix_reeval_job` | WSL; CI |
+| G30, G33 | agent contract suite unchanged; M3 sweep and inventory suites | `stdout` added to a heartbeat schema; CHK-M11-341 | local; WSL; CI |
+| G34 | route walk with the six M11 operations | CHK-M11-346 | local; CI |
+| G37–G40 | lintian; maintainer scripts `0.1.0-1` → `0.2.0~pre2-1`; reproducible double build; SBOM | the M4 rows | WSL; CI |
+| G41 | `e2e/agent_manager.sh` inventory chain against the real manager in WSL (regression: `serve` wiring changed) | the reverse-order `list_sha256` `.deb` | WSL |
+| G80 | M11 unit suite: `test_results_view.py`, `test_retention_rules.py` | the G80 rows | local; WSL; CI |
+| G81 | M11 PostgreSQL integration: TP-M11-03 to 06, 08 to 10, 13, 22 | the G81 rows | WSL; CI |
+| G82 | M11 API suites: `test_scan_views_api_pg.py`, `test_results_api_pg.py`, `test_reevaluate_api_pg.py` | the G82 rows | WSL; CI |
+| G83 | M11 security suite: `test_security_m11.py` | the rows marked S | WSL; CI |
+| G84 | M11 web suites (inside G15, listed for the plants) | CHK-M11-360 to -366 | local; CI |
+| G85 | nightly end-to-end chain on three VMs (`e2e/m11/nightly.py`, through `e2e.yml` dispatch) | CHK-M11-370, -371 | CI (hosted runner); local VMs only with the user's approval |
+| G86 | N / N−1 rows (`e2e/m11/compat.py`) | CHK-M11-372 | CI (hosted runner) |
+| G87 | `e2e.yml` itself: scheduled, report artifact, fails on FAIL or missing rows | CHK-M11-373, -374 | CI |
+
+**No gate is lowered.** NOT RUN at the M11 gate, with reasons: load tests (deferred by the user); Debian 12 and arm64 rows of TS §8.3 (not supported, decisions 2026-10-24); REQ-288 if the user answers the `CLAUDE.md` marker "no". A row refused by a safety check is NOT RUN with its reason and its lower-level cover (G85 rows: the PostgreSQL route suites G81, G82 and G41; G86 rows: TP-M9-16's `runner_unavailable` intake rows and G41), and M11 does not merge with such a row until the user decides whether it is a gate exception (the M10 rule, decisions 2026-10-30 (2)).
+
+### M11 mutation table (tester; CHK-M11-320 onwards)
+
+Each row is planted in a throwaway copy and must turn the named gate red. S = security row (targeted mini-run). E2E = also planted in a throwaway branch through `e2e.yml`.
+
+| CHK | Plant | Red in | Target | S / E2E |
+| --- | --- | --- | --- | --- |
+| CHK-M11-320 | `include_output` true for viewer | G80, G82, G83 | TASK-233 | S |
+| CHK-M11-321 | A viewer with an API token gets stdout (role check reads the token kind instead of the role) | G82, G83 | TASK-233, 244 | S |
+| CHK-M11-322 | Viewer items carry `stdout: null` instead of no key | G80, G82 | TASK-233 | S |
+| CHK-M11-323 | Viewer CSV keeps the stdout and stderr columns (empty) | G80, G82 | TASK-233 | S |
+| CHK-M11-324 | Results CSV writes cells without `escape_cell` (the `csv` module used) | G80, G82 | TASK-233 | S |
+| CHK-M11-325 | `escape_cell` skipped for the stdout column only | G80 | TASK-233 | S |
+| CHK-M11-326 | Results use the original verdict instead of the latest re-evaluation | G81, G82 | TASK-235 | S |
+| CHK-M11-327 | The latest re-evaluation picked by `reevaluated_at` instead of `reeval_id` | G81 | TASK-235 | S |
+| CHK-M11-328 | `original_result` filled from the effective verdict | G81, G82 | TASK-233, 235 | S |
+| CHK-M11-329 | Not-run plugins left out of the results | G81 | TASK-235 | |
+| CHK-M11-330 | A not-run item named from the current catalog instead of `eval_spec` | G81 | TASK-235 | |
+| CHK-M11-331 | The results query drops the scan filter in the back-join (another scan's rows appear) | G81, G83 | TASK-235 | S |
+| CHK-M11-332 | Score counts ERROR as FAIL | G81 | TASK-240 | |
+| CHK-M11-333 | Scan detail re-derives the state instead of reading `scan.state` | G81 | TASK-240 | |
+| CHK-M11-334 | CSV cap removed (100,001 rows exported) | G82 | TASK-241 | |
+| CHK-M11-335 | Re-evaluate route on `require_role("admin")` (API tokens accepted) | G82, G83 | TASK-243 | S |
+| CHK-M11-336 | Re-evaluate route with `sink_gate=False` | G82, G83 | TASK-243 | S |
+| CHK-M11-337 | Re-evaluate route minimum role operator | G82, G83 | TASK-243 | S |
+| CHK-M11-338 | Re-evaluate route without the shipper's wake (entry reaches the sink only at the next cycle; the immediate-delivery row fails) | G82 | TASK-243 | |
+| CHK-M11-339 | A second caller of `reevaluate_scan` (from the results route) | G83 | TASK-244 | S |
+| CHK-M11-340 | An alert raised on re-evaluation | G82 | TASK-243 | |
+| CHK-M11-341 | Retention deletes `agent_package` or `os_info` rows (G2 data) | G81, G83, G33 | TASK-237 | S |
+| CHK-M11-342 | Retention through the app pool (`bitscan_app`) | G81, G83 | TASK-245 | S |
+| CHK-M11-343 | Audit rows deleted without a checkpoint | G81 | TASK-242 | S |
+| CHK-M11-344 | f-string SQL in `result_reads.py` | G1, G83 | TASK-235 | S |
+| CHK-M11-345 | f-string SQL in `retention.py` | G1, G83 | TASK-237 | S |
+| CHK-M11-346 | A planted `POST /scans/{id}/rerun` with an `execute` body | G34, G83 | TASK-232 | S |
+| CHK-M11-347 | Checkpoint written in its own transaction after the delete | G81 | TASK-242 | S |
+| CHK-M11-348 | Audit delete by `at` only (a hole in the chain) | G81 | TASK-236, 238 | S |
+| CHK-M11-349 | Audit rows above the shipper's cursor deleted | G81 | TASK-236, 242 | S |
+| CHK-M11-350 | Pending enrolment requests deleted | G81 | TASK-237 | S |
+| CHK-M11-351 | A scan deleted at 399 days | G80, G81 | TASK-236 | |
+| CHK-M11-352 | User tokens deleted at expiry (no 90 days) | G80, G81 | TASK-236 | |
+| CHK-M11-353 | Clock guard removed (a manager clock 1 h ahead deletes) | G81 | TASK-242 | S |
+| CHK-M11-354 | A scan's jobs deleted without the scan (not together) | G81 | TASK-237 | |
+| CHK-M11-355 | The re-evaluation lock not tried (retention deletes a scan under re-evaluation) | G81 | TASK-237 | |
+| CHK-M11-356 | Retention not scheduled | G81 (TP-M11-13) | TASK-245 | |
+| CHK-M11-357 | Retention logs a deleted row's content | G83 | TASK-242 | S |
+| CHK-M11-358 | Results route logs stdout at debug level | G83 | TASK-244 | S |
+| CHK-M11-359 | Route module imports a repository | G83 | TASK-244 | |
+| CHK-M11-360 | `dangerouslySetInnerHTML` for stdout in `ScanResults.tsx` | G12, G84 | TASK-248 | S |
+| CHK-M11-361 | A `fetch(` in `ScanDetail.tsx` | G12 | TASK-247 | S |
+| CHK-M11-362 | Re-evaluate falls back to an API token, or stores the token in `sessionStorage` | G12, G84 | TASK-247 | S |
+| CHK-M11-363 | `Score` shows 0 % for a null score | G84 | TASK-239 | |
+| CHK-M11-364 | `Score` rounds 0.9996 to "100.0 %" | G84 | TASK-239 | |
+| CHK-M11-365 | Results screen hides `original_result` | G84 | TASK-248 | |
+| CHK-M11-366 | A viewer offered Run scan or Schedules | G84 | TASK-251 | |
+| CHK-M11-367 | Frozen file edited (`repositories/results.py` changed) | G83 | TASK-235 | S |
+| CHK-M11-368 | Results query reads `scan_result_reeval` per result (a correlated subquery) | G81 (`EXPLAIN` row) | TASK-235 | |
+| CHK-M11-369 | Retention runs DDL (drops a partition) | G83 | TASK-237 | S |
+| CHK-M11-370 | Agent `.deb` whose runner returns no results | G85 | harness | E2E |
+| CHK-M11-371 | Manager tree whose results route leaves out a host | G85 | harness | E2E |
+| CHK-M11-372 | Manager tree that refuses the 0.1.0 heartbeat body | G86 | harness | E2E |
+| CHK-M11-373 | A FAIL row in the report | G87 | TASK-254 | E2E |
+| CHK-M11-374 | An expected row removed from the report | G87 | TASK-254 | E2E |
+
+### Open items for M11
+
+All are in `work/open-questions.md` ("M11"), each with a recommended answer. "Needed by" is the start of the wave whose task or test cannot finish without it.
+
+| Item | Blocks | Needed by |
+| --- | --- | --- |
+| #144 (new): results item, output omission, Not run, filters, order | TASK-232, 233, 235 | W1 |
+| #145 (new): scan item, detail, host history, cursors, no cross-policy score | TASK-232, 234 | W1 |
+| #146 (new): results CSV columns, cap, name | TASK-232, 233 | W1 |
+| #147 (new): re-evaluate in the request, body, answer | TASK-232, 243 | W1 |
+| #148 (new): no alert on re-evaluation | TASK-243 | W2 |
+| #149 (new): score display | TASK-239 | W2 |
+| #150 (new): retention rules and safeguards | TASK-236, 237, 238 | W1 |
+| #151 (new, owner): retention cost without indexes | none (informs the owner; TASK-242 records the measured cost) | before release |
+| #152 (new): nightly environment | TP-M11-18, TASK-254 | W1 (harness) |
+| #153 (new): N / N−1 versions and expectations | TP-M11-19, TASK-254 | W3 |
+| #154 (new): Run scan form details | TASK-246, 251 | W3 |
+| `CLAUDE.md` N / N−1 marker (carried, user) | REQ-288, TP-M11-19 | W4 |
+| #111 (carried, user): CIS control numbers | nothing in M11 (the nightly uses SR §1.1 until it is answered) | before the samples are used by the nightly |
+| PD-46 (new): reuse of the frozen `results.py` | TASK-235 | W1 |
+| PD-47 (new): approvals and second looks | each task's REVIEW | W1 |
+| PD-48 (new): contract first, 501 until filled | TASK-232 | W1 |
+| PD-49 (new): who writes and runs the VM harness | TP-M11-18 | W1 |
+| PD-50 (new): version and release readiness | TASK-253 | W4 |
+| PD-51 (new): earlier tests replaced by requirement | TASK-245, 252 TEST | W3 |
+| #3, #9, #12, #28, #74, #84, #89, #93, #118, #119, #120, #122, #127 (f) (agreed or approved, reused) | TASK-232 to 254 | W1 |
+
+### Coverage matrix (M11)
+
+| Spec section | Covered by | Status in M11 |
+| --- | --- | --- |
+| TS §1.1 G6 (results of manual and scheduled scans per host, tag, fleet) | REQ-264 to REQ-269, REQ-279 to REQ-282 | Covered (views and screens; queueing was M9) |
+| TS §1.1 G1, G2 (agent, mandatory inventory) | REQ-285, REQ-287, REQ-275 (6) | Covered end to end; inventory data never deleted by retention |
+| TS §2.1 L101 (UI scans and results), L103 (scheduler retention), L105 (scores) | REQ-279 to REQ-283, REQ-277, REQ-265 | Covered |
+| TS §2.2 L114 (immutable results, re-evaluation adds rows) | REQ-270, REQ-271 | Covered |
+| TS §2.3 step 7 L138 (user views results; raw output only for operator and admin) | REQ-267, REQ-268, REQ-281 | Covered |
+| TS §4.3 L552, L553 (deleted policies' results readable; display names in order) | REQ-265 (4), REQ-267 | Covered |
+| TS §4.4 L557–L561 (targets, manual, scheduled, refused) in the UI | REQ-279, REQ-282 | Covered (UI on the M9 routes) |
+| TS §4.4 L579–L585 (retry, late results, scan state, Not run) in the views | REQ-265, REQ-267 | Covered |
+| TS §4.5 L603 (re-evaluation route, latest row in views, CSV and scores, `result` and `original_result`) | REQ-265, REQ-267, REQ-269, REQ-270 | Covered |
+| TS §4.5 L604 (score, errors beside, "n/a") | REQ-265, REQ-280 | Covered (#149 for the display) |
+| TS §5.2 (DDL, grants) | no migration; REQ-272 (5), REQ-278 (3) | Unchanged; probes only |
+| TS §5.3 L1049 (retention), L1051 (roles), L1053 (audit integrity, checkpoint), L1054 (no results in logs) | REQ-274 to REQ-278, REQ-272 | Covered |
+| TS §6.2 L1086 (sensitive actions), L1113, L1120, L1122, L1123, L1125, L1126 (UI), L1131 | REQ-264 to REQ-270, REQ-273, REQ-282 | Covered |
+| TS §6.3 L1135–L1136, L1141–L1144 (problems, pagination, timestamps, headers, plain text, CSV) | REQ-264, REQ-269, REQ-284 | Covered |
+| TS §8.1 L1245, L1251, L1254–L1256, L1258 | REQ-268, REQ-270, REQ-271, REQ-272, REQ-284 | Covered |
+| TS §8.2 L1268 (TypeScript, generated client), L1269 (N / N−1), L1270 (reviews) | REQ-273, REQ-287, REQ-288, PD-47 | Covered; agent N with manager N−1 waits on the user (marker) |
+| TS §8.3 L1277 (CSV unit), L1280 (all endpoints; retention grant probe), L1285 (security) | REQ-292, REQ-278 (3), TP-M11-15 | Covered |
+| TS §8.3 L1283 (end to end, nightly, 3 VMs) | REQ-285, REQ-286 | Covered (#152 environment) |
+| TS §8.3 L1284 (load) | none | **Deferred by the user** |
+| TS §8.3 L1281–L1282 Debian 12 and arm64 rows | none | **Not supported** (decisions 2026-10-24) |
+| TS §8.4 L1289 (logs), L1292–L1293 (alerts) | REQ-272 (4), REQ-277 (4), REQ-271 (3) | Covered; no alert added (#148) |
+| TS §8.5 L1300 (CIS control numbers) | none | **Open for the user** (#111) |
+| TS §8.6 L1309 (`BITSCAN_RETENTION_DSN_FILE`) | REQ-275, REQ-277 | Covered |
+| TS §8.7 L1348, L1350 (upgrade order; agents N−1) | REQ-287, REQ-289 | Covered |
+| SR §1.1 (canonical example) | REQ-285 | Covered (the nightly's policy) |
+| SR §2.4 (operators) | none | Unchanged (M8) |
+| CLAUDE.md out of scope and owner decisions | none | Nothing planned: no signing, approval workflow, ad-hoc command, push channel, remediation, OIDC, client certificates or policy editor; no route or setting that disables inventory |

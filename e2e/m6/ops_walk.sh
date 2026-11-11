@@ -106,8 +106,10 @@ EOF")
 		out4=$(adm "$(blk 2 | sed 's/mgr\.example/bitscan-mgr.test/g')"; echo "rc=$?")
 		p1=$(x 'systemctl show -p MainPID --value bitscan-manager')
 		head=$(x 'sudo -u postgres psql -X -At -d bitscan -c "select version_num from alembic_version"')
+		# The head of the walked tree's migrations, as manager_walk.py derives it (m0005 to M10, m0006 from TASK-261).
+		want_head=$(sed -n 's/^revision: str = "\(m[0-9]*\)"$/\1/p' "$W"/tree/manager/bitscan_manager/db/migrations/versions/m*.py | sort | tail -1)
 		grep -q 'rc=0' <<<"$out2" && grep -q 'Successfully installed bitscan-manager-0.1.0' <<<"$out2" && grep -q 'rc=0' <<<"$out3" &&
-			grep -q '{"status":"ok"}rc=0$' <<<"$out4" && [ "$p0" != "$p1" ] && [ "$head" = m0005 ]
+			grep -q '{"status":"ok"}rc=0$' <<<"$out4" && [ "$p0" != "$p1" ] && [ -n "$want_head" ] && [ "$head" = "$want_head" ]
 		res CHK-M6-080 $? "§1 steps 2-4 as written (stop, pip, units, migrate, start, readyz loop)" "step2 $(tail -1 <<<"$out2"); step3 $(tail -1 <<<"$out3"); step4 [$(tail -6 <<<"$out4" | tr '\n' ' ')]; PID $p0 -> $p1; head $head"
 		;;
 	n4)

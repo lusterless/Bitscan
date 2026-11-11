@@ -4,13 +4,16 @@ work/plans/TASK-045.md).
 One process: HTTPS only (TLS 1.2+), SIGHUP reloads the certificate on the
 same socket, proxy headers ignored, no uvicorn access log or log config
 (RequestLog and the JSON handler log instead). The lifecycle opens the app
-pool, starts the audit shipper, the failed-check flusher, the scheduler
-(inventory runs and offline_sweep, REQ-080) and the catalog (its start-up
-sequence, then the folder watcher, and the rebuild worker; #102 (d)), and on
-SIGTERM first stops the catalog (a bounded wait), then the scheduler (waiting
-for a running job, so none starts after the pool closed), then flushes the
-failed-check counts, stops the shipper (the queue stays on disk) and closes
-the vault client and the pool. BITSCAN_MIGRATE_DSN_FILE is never read.
+pool and the retention pool (bitscan_retention, used only by the scheduler's
+retention job), starts the audit shipper, the failed-check flusher, the
+scheduler (inventory runs, offline_sweep, scan schedules and retention,
+REQ-080, REQ-277) and the catalog (its start-up sequence, then the folder
+watcher, and the rebuild worker; #102 (d)), and on SIGTERM first stops the
+catalog (a bounded wait), then the scheduler (waiting for a running job, so
+none starts after the pools closed), closes the retention pool, then flushes
+the failed-check counts, stops the shipper (the queue stays on disk) and
+closes the vault client and the app pool. BITSCAN_MIGRATE_DSN_FILE is never
+read.
 """
 
 import asyncio
@@ -160,6 +163,8 @@ class ServeLifecycle:
         tls: tuple[ssl.SSLContext, Path, Path],
         scheduler: SchedulerRunner | None = None,
         catalog: CatalogService | None = None,
+        *,
+        retention_db: AppDatabase | None = None,
     ) -> None:
         self._db, self._shipper, self._flusher, self._cipher = (
             db,
@@ -170,9 +175,12 @@ class ServeLifecycle:
         self._tls = tls
         self._scheduler = scheduler
         self._catalog = catalog
+        self._retention_db = retention_db
 
     async def start(self) -> None:
         self._db.open()  # does not wait for the database
+        if self._retention_db is not None:
+            self._retention_db.open()  # nor does this one
         self._shipper.start()
         self._flusher.start()
         if self._scheduler is not None:
@@ -190,7 +198,9 @@ class ServeLifecycle:
         if self._catalog is not None:
             self._catalog.stop()  # bounded; before the pool closes
         if self._scheduler is not None:
-            self._scheduler.stop()  # before the pool closes (REQ-080 (3))
+            self._scheduler.stop()  # before the pools close (REQ-080 (3))
+        if self._retention_db is not None:
+            self._retention_db.close()  # only the scheduler uses it
         self._flusher.stop()
         self._shipper.stop()
         self._cipher.close()
@@ -206,7 +216,21 @@ def build_runtime(config: ServeConfig, tls: ssl.SSLContext, queue_dir: Path) -> 
     cipher = VaultCipher(config.vault_addr, config.totp_key_ref, config.vault_token)
     limits = RateLimiter(clock)
     flusher = FailedCheckFlusher(limits, db, shipper)
-    scheduler = SchedulerRunner(db, clock, shipper.wake)
+    # Retention connects only as bitscan_retention, through its own pool
+    # (BITSCAN_RETENTION_DSN_FILE; TS §5.3 L1051, §8.6 L1309); one run at a time.
+    retention_db = AppDatabase(
+        bounded_dsn(config.retention_dsn),
+        min_size=0,
+        max_size=1,
+        name="bitscan_retention",
+    )
+    scheduler = SchedulerRunner(
+        db,
+        clock,
+        shipper.wake,
+        retention_db=retention_db,
+        shipped_through=shipper.shipped_through,
+    )
     catalog = CatalogService(db, clock, config.bits_dir, wake=shipper.wake)
     lifecycle = ServeLifecycle(
         db,
@@ -216,6 +240,7 @@ def build_runtime(config: ServeConfig, tls: ssl.SSLContext, queue_dir: Path) -> 
         (tls, config.tls_cert_file, config.tls_key_file),
         scheduler,
         catalog,
+        retention_db=retention_db,
     )
     return Runtime(clock, db, cipher, shipper, limits, lifecycle, catalog=catalog)
 

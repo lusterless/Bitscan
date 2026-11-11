@@ -96,5 +96,8 @@ branch = false
 
 [tool.coverage.report]
 fail_under = 85
-precision = 2
+# fail_under is checked against the total rounded to `precision` digits. Under
+# 85 % with N statements the total is at least 5/N below 85, so 4 digits never
+# round it up to 85 while N < 100,000 (at 2, 84.9955 % passed: TASK-255).
+precision = 4
 show_missing = true

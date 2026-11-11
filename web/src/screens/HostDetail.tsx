@@ -7,8 +7,10 @@ import { formatHash, type Route } from "../app/router";
 import { Pager, useCursorPages } from "../components/Pager";
 import { ProblemBanner } from "../components/ProblemBanner";
 import { Icon } from "../components/Icon";
+import type { ScanLinks } from "../components/ScanTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatTime } from "../format";
+import { HostScans } from "./HostScans";
 
 type Detail = components["schemas"]["AgentDetailItem"];
 type OsInfo = components["schemas"]["OsInfoItem"];
@@ -18,6 +20,8 @@ type Page = components["schemas"]["Page_AgentPackageItem_"];
 export interface HostDetailProps {
   readonly agentId: string;
   readonly navigate: (route: Route) => void;
+  /** REQ-283: the scan links; the scan history shows only when given. */
+  readonly scanLinks?: ScanLinks;
 }
 
 const PAGE_SIZE = 50;
@@ -99,7 +103,7 @@ function OsSection({ os }: { os: OsInfo | null }) {
 }
 
 /** REQ-128. Mount it with `key={agentId}` so a new host starts on page 1. */
-export function HostDetail({ agentId, navigate }: HostDetailProps) {
+export function HostDetail({ agentId, navigate, scanLinks }: HostDetailProps) {
   const [detail, setDetail] = useState<Load<Detail>>({ kind: "loading" });
   const pages = useCursorPages();
   const [packages, setPackages] = useState<Load<Page>>({ kind: "loading" });
@@ -245,6 +249,9 @@ export function HostDetail({ agentId, navigate }: HostDetailProps) {
             <Lines title="Removed" lines={snapshot.removed} />
           </div>
         </section>
+      )}
+      {scanLinks !== undefined && (
+        <HostScans key={agentId} agentId={agentId} links={scanLinks} />
       )}
       <section className="card card-flush" aria-labelledby="host-packages">
         <h2 id="host-packages" className="card-title">

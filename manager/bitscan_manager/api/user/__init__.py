@@ -35,7 +35,9 @@ def build_user_router() -> APIRouter:
         policies,
         policy_import,
         rebuild,
+        reevaluate,
         scan_schedules,
+        scan_views,
         scans,
         settings,
         users,
@@ -56,5 +58,7 @@ def build_user_router() -> APIRouter:
     router.include_router(rebuild.router)
     router.include_router(imports.router)
     router.include_router(scans.router)
+    router.include_router(scan_views.router)
+    router.include_router(reevaluate.router)
     router.include_router(scan_schedules.router)
     return router

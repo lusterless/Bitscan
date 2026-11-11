@@ -200,7 +200,10 @@ def make(
 def test_start_adds_both_jobs_from_system_schedule_running_now(calls: Calls) -> None:
     """REQ-080 (1), (2), #67: intervals read from system_schedule; both jobs
     run at once (an inventory run at start-up) and are limited to one
-    instance each; no other job (retention is M11)."""
+    instance each. M11 (PD-51): this runner is built without the retention
+    pool, so it still has no other job; serve's four-job set (REQ-277 (1),
+    CHK-M11-196) is in test_retention_wiring.py and
+    test_serve_retention_linux.py."""
     Intervals.values = {"inventory": 7_200, "offline_sweep": 90}
     fake = FakeScheduler()
     runner, _, clock, _ = make(fake)
