@@ -1,10 +1,55 @@
 # M11 gate REVIEW: M11 as a whole
 
-Reviewer: reviewer-m11. Round 2 (gate r1, TASK-261), 2026-11-11. Round 1 was on 2026-11-09. This file supersedes `work/reviews/M11-closing.md`.
+Reviewer: reviewer-m11. Round 3, 2026-11-11 (the CHK-M11-387 r1 re-measurement). Round 2 was the gate r1 (TASK-261), and round 1 was on 2026-11-09. This file supersedes `work/reviews/M11-closing.md`.
 
-Verdict: CHANGES_REQUESTED. Only one condition is left: tester-m11t's CHK-M11-387 re-measurement on the real `m0006` migration with `SCAN_CHUNK = 12`. I will turn this verdict to APPROVED as soon as that re-measurement shows every retention chunk inside the 300 s `statement_timeout` at fleet size. Everything else in the gate is approved, and no code change is requested.
+Verdict: APPROVED. M11 may merge once every CI check on the PR is green. That includes the `package.yml` "Double build is byte-identical" job, which the user accepted as G39's evidence on 2026-11-11 (2). No open blocking or should-fix finding is left in the tree. Finding 3 (no full suite at the wave ends) remains a process should-fix for M12.
 
-## Round 2 (gate r1, TASK-261)
+## Round 3 (CHK-M11-387 r1, `SCAN_CHUNK` = 2)
+
+**Reports read:** `work/reports/CHK-M11-387-test.md`, section "r1" (tester-m11t), and `work/reports/M11-gate-test.md`, section "r1b" (tester-m11g).
+
+**The fleet-size measurements, on the real `m0006` migration and `SCAN_CHUNK` = 2 (the value of `24a1126`):** this satisfies the round 2 condition.
+- `pg_indexes` after a real `db migrate` shows exactly the three TS §5.2 indexes, with no hand-made ones.
+- **Chunks:**
+  - The worst backlog chunk (2 fleet-wide scans, about 20,400 jobs and 4.0 M results) took 28 to 44 s, 15 % of the 300 s limit.
+  - A 1,000-job inventory chunk took 0.75 to 2.74 s.
+  - The other steps took under 2 s.
+- **Full `run_retention` passes:**
+  - one night: 35.6 s (B) and 50.1 s (A);
+  - seven nights: 150.4 s (B, 7 fleet scans) and 186.7 s (A).
+
+  Every pass caught up completely, with no step failed. The longest single transaction was 27.7 s. Only the audit entries beyond the shipper cursor remain, by design (#150 (d)).
+- **The plant is red, as required:** a chunk of 12 fleet scans is cancelled at 300 s on the real `m0006` database.
+- **REQ-275 now holds at fleet size, and REQ-290's "every M11 gate green" is met,** except G39. G39's accepted evidence is the PR's CI double-build job.
+
+**The 300.01 s cancel at B:** I accept the tester's explanation. It is test-only churn, not a product fault.
+- **What happened:** one first B chunk of a single fleet scan was cancelled. The measurements had inserted and deleted over 80 M rows in one `scan_result` partition within about 3 hours, leaving its primary-key index at 2,073.6 MB for 2.05 M live rows. That is about 20 times its compacted 115 MB, because a B-tree does not shrink after deletes.
+- **After a `REINDEX`** on the test database, the same scan deleted in 8.3 s. Every later chunk took 15 to 31 s.
+- **Why a real night can't reproduce it:** in normal operation a monthly partition is written once, during its month. Retention empties it once, 400 days later, and `db maintain` then drops it. So the insert and delete churn that caused this doesn't occur.
+- **Why 2 is the right value:** the 12, 6 and 3 rows were measured on the same churned partition, so they are pessimistic. That makes 2 a conservative choice, not a marginal one.
+
+**The residual risk the tester names:** a production partition's indexes can be larger than the database host's memory (about 30 fleet scans a month on B, an index of about 3 GB). That was not reproduced at full size.
+- On an under-memoried host, a single fleet-scan chunk could approach 300 s, and `SCAN_CHUNK` can't go below 1.
+- A cancelled chunk rolls back and is logged by step and exception type (REQ-277). Nothing is lost, but the scans step would stall on that scan.
+- This is a sizing and monitoring matter, not a defect in the M11 tree. See finding 6.
+
+**The final tree's G18 and G5** (`0f53917` plus r1, `SCAN_CHUNK` = 2; tester-m11g, r1b):
+- G18: 11,909/11,909, 0 skipped. Two M7 timing bounds failed under the shared load. They are in code TASK-261 doesn't touch, and both passed re-run alone, 2/2.
+- G83: 46/46.
+- G5: 98.5920 %.
+
+**TASK-261 r1** (the chunk value 2 and the CHK-M11-197 test change) is approved in `work/reviews/TASK-261.md`, round 2.
+
+### Finding added in round 3
+
+6. **nit (owner follow-up, not a merge condition): retention at fleet size depends on the database host's memory for the current `scan_result` partition indexes.**
+   - **The risk:** CHK-M11-387 r1, "The 300 s cancel at B". If a fleet-scan chunk ever exceeds the 300 s `statement_timeout` on an under-memoried host, the scans step stops on that scan every night, logged as `retention step failed` (step `scans`, `QueryCanceled`).
+   - **Suggested follow-up, after M11:**
+     - a line in `deploy/runbooks/manager-operations.md` §8 Known limits, on sizing the database host's memory for the current month's `scan_result` indexes;
+     - an alert, or an operator check, on a retention step that fails on consecutive nights. The runbook's §6 `QueryCanceled` line already tells operators what it means.
+   - No change is needed for M11.
+
+## Round 2 (gate r1, TASK-261): CHANGES_REQUESTED, one condition
 
 The user decided on 2026-11-11: (1) add the three #151 indexes, as an owner-approved TS §5.2 change (`68d3881`) with migration `m0006` and `SCAN_CHUNK` 12; (2) accept the PR's CI `package.yml` "Double build is byte-identical" job as G39's evidence.
 
