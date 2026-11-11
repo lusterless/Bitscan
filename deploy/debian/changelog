@@ -1,3 +1,34 @@
+bitscan-agent (0.2.0-1) unstable; urgency=medium
+
+  * Release 0.2.0 of the Bitscan agent, with manager 0.2.0: compliance
+    scans, their results and retention.
+  * bitscan-runner runs the checks of compliance jobs in its sandbox as
+    the unprivileged bitscan-runner user and returns their output
+    redacted on the host. bitscan-agent keeps the results in its on-disk
+    spool until the manager has answered them. Inventory runs as before.
+  * Manager 0.2.0 runs scans of one compliance profile on a host, a tag
+    or the whole fleet, by hand or on a schedule. It shows each host's
+    results and score, exports them as CSV and re-evaluates them. Its
+    retention job deletes old scans, inventory and other data.
+  * Known limit: the manager importer's command check (BIT102) is a
+    safety net, and the runner sandbox is the real control. In this
+    release the importer does not check command strings passed to su,
+    runuser or flock with -c, trap, brace expansion in bash -c scripts,
+    commands behind the wrappers time, nsenter, unshare, flock, setpriv,
+    taskset, chrt, runuser and su, long options given as abbreviations
+    to the wrappers it does check (for example sudo --us), the output
+    files that time -o or --output and flock open, or a command word
+    that is not literal, such as one taken from a variable.
+  * The sample policies in bits/samples/ are not part of this package or
+    the manager release. Their CIS control numbers are not yet confirmed
+    against the CIS benchmark.
+  * Supported with manager 0.2.0 and manager 0.1.0. Manager 0.1.0 has no
+    scans, so it sends this agent no compliance job.
+  * Upgrades 0.1.0-1 and the 0.2.0~pre1-1 and 0.2.0~pre2-1 pre-releases
+    in place and keeps their configuration, agent token and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Wed, 11 Nov 2026 00:00:00 +0000
+
 bitscan-agent (0.2.0~pre2-1) unstable; urgency=medium
 
   * Pre-release: results and end to end. Not a supported release.

@@ -40,15 +40,16 @@ This runbook covers a manager installed with `manager-install.md`: the venv `/op
    The migration must return without an error, and its log ends with the new head revision id. The manager starts listening a moment after `systemctl start` returns, so the loop tries `curl` up to 10 times, a second apart. `curl` must print `{"status":"ok"}`; a 503 with `migrations` means the migration did not run. Agents keep their tokens: while the manager is down they retry with back-off, and they need no re-enrolment.
 5. Upgrade the agents with `agent-install.md` section 6.
 
-**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. So between step 4 and the end of step 5, hosts still on the previous agent version keep enrolling, sending heartbeats and uploading inventory as before.
+**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. For release 0.2.0 (manager `0.2.0`, agent package `0.2.0-1`, git tag `v0.2.0`): manager 0.2.0 supports agents `0.2.0-1` and `0.1.0-1`, and agent `0.2.0-1` supports managers 0.2.0 and 0.1.0. So between step 4 and the end of step 5, hosts still on the previous agent version keep enrolling, sending heartbeats and uploading inventory as before.
 - The 0.1.0-1 agent runs no compliance checks. Under a newer manager, every check of its compliance jobs is stored as ERROR `runner_unavailable`, so its hosts show the score `n/a` until their agent is upgraded.
+- Manager 0.1.0 has no scans, so it sends a `0.2.0-1` agent no compliance job.
 - An agent more than one version behind the new manager is not supported by it. Before step 2, list the agent versions in the fleet (on the database host), and upgrade any such host to at least the version before the new one first:
 
   ```sh
   sudo -u postgres psql -X -d bitscan -c "SELECT agent_version, count(*) FROM agent WHERE status <> 'decommissioned' GROUP BY agent_version ORDER BY count(*) DESC"
   ```
 
-- Pre-release agent builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade them to a release.
+- Pre-release agent builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade them to a release (`0.2.0-1`, `agent-install.md` section 6).
 
 ## 2. Replace the TLS certificate
 
@@ -214,7 +215,7 @@ sudo tar -C /etc/bitscan -cf - manager.env secrets |
    It must print the same head revision id as the live database's last migration (`sudo journalctl -u bitscan-manager-migrate`), and a second run must change nothing.
 4. Clean up: `sudo -u postgres dropdb bitscan_restore`, `sudo rm -rf /var/lib/postgresql/restore-test /root/bitscan-restore.dsn`, remove the `bitscan_restore` line from `pg_hba.conf` and `sudo systemctl reload postgresql`.
 
-If only the policy catalog is damaged, it is rebuilt from the policy folder, not restored from a backup. 0.1.0 holds no policies, so this doesn't apply to it yet.
+If only the policy catalog is damaged, it is rebuilt from the policy folder (`sudo bitscan-manager bits rebuild`), not restored from a backup.
 
 ## 5. Remove the manager
 
