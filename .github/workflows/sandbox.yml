@@ -100,6 +100,10 @@ jobs:
 
       - name: Run the sandbox suite on this throwaway runner
         run: |
+          # Public resolvers, as before each apt-get above: run_vm.sh installs packages
+          # on this runner and the runners' Azure DNS failed for *.ubuntu.com on 2026-11-11.
+          sudo resolvectl dns "$(ip -o route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
+          sudo resolvectl flush-caches
           deb=$(ls "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb)
           sudo bash agent/test/sandbox/run_vm.sh "$deb" "$RUNNER_TEMP/report" \
             --with-nft ${{ matrix.extra }} --samples bits/samples --label "G77 ${{ matrix.os }}"
@@ -194,6 +198,10 @@ jobs:
         env:
           EXPECT: ${{ matrix.expect || 'red' }}
         run: |
+          # Public resolvers, as before each apt-get above: run_vm.sh installs packages
+          # on this runner and the runners' Azure DNS failed for *.ubuntu.com on 2026-11-11.
+          sudo resolvectl dns "$(ip -o route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
+          sudo resolvectl flush-caches
           deb=$(ls "$RUNNER_TEMP"/out/bitscan-agent_*_amd64.deb)
           if [ "$EXPECT" = not-red ]; then
             echo "Plant ${{ matrix.plant }} is expected not red on a host; its unit-level plant (G72) is the gate."
