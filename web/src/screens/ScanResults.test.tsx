@@ -334,7 +334,8 @@ describe("CHK-M11-268 Export CSV (REQ-281 (3))", () => {
     await settle();
     const call = at(callsTo(CSV), 0);
     expect(queryOf(call)).toEqual({ status: "ERROR", agent_id: uuid(1) });
-    expect(call.authorization).toBe("Bearer " + bsu("O"));
+    expect(call.authorization).toBeNull();
+    expect(call.csrf).toBe("1");
     expect(saved.names).toEqual(["scan-" + SCAN + "-results.csv"]);
     expect(saved.blobs).toHaveLength(1);
   });

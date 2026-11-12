@@ -4,10 +4,11 @@ import { api } from "../api/client";
 import type { components } from "../api/schema";
 
 type LoginResponse = components["schemas"]["LoginResponse"];
+type CurrentSession = components["schemas"]["CurrentSession"];
 
 export type Role = "viewer" | "operator" | "admin";
 
-/** What screens may read. The token is deliberately not part of it. */
+/** What screens may read. The UI never holds the session token. */
 export interface SessionView {
   readonly role: Role;
   readonly totpEnrolled: boolean;
@@ -17,16 +18,23 @@ export interface SessionView {
 
 export type NextScreen = "totp-required" | "totp-offer" | "hosts";
 
-interface Session {
-  readonly token: string;
-  readonly view: SessionView;
-}
+/** "restoring" while the start-up check of the session cookie runs. */
+export type SessionStatus = "restoring" | "ready";
 
-// The only place the bsu_ token lives: module memory, never storage, a
-// cookie, the URL or the console (TS §6.2, §8.1). A page reload loses it and
-// starts signed out (#85 (c)); there is no restore path.
-let current: Session | null = null;
+// The bsu_ token lives only in the __Host-bitscan_session cookie, which is
+// HttpOnly: no script, this one included, can read it (TS §6.2, §8.1). The
+// browser sends it with every same-origin request. This module keeps only
+// the token-free view, so a reload restores the view from GET /auth/session.
+let current: SessionView | null = null;
+let status: SessionStatus = "ready";
+// Bumped whenever the session changes, so a late 401 for a request sent
+// under an earlier session (before a sign-in or a TOTP confirm) is ignored.
+let generation = 0;
+const sentUnder = new WeakMap<Request, number>();
 const listeners = new Set<() => void>();
+
+/** TS §6.3: every cookie-authenticated request carries this header. */
+export const CSRF_HEADER = "X-Bitscan-Request";
 
 function notify(): void {
   for (const listener of listeners) {
@@ -46,28 +54,42 @@ export function toRole(value: string): Role {
   }
 }
 
-/** Sign-in and the TOTP confirm both answer a LoginResponse; it replaces any old session. */
-export function setSession(response: LoginResponse): void {
-  const view: SessionView = Object.freeze({
+function replace(view: SessionView | null): void {
+  current = view;
+  generation += 1;
+  notify();
+}
+
+function viewOf(response: LoginResponse | CurrentSession): SessionView {
+  return Object.freeze({
     role: toRole(response.role),
     totpEnrolled: response.totp_enrolled,
     totpVerified: response.totp_verified,
     expiresAt: response.expires_at,
   });
-  current = { token: response.token, view };
-  notify();
+}
+
+/**
+ * Sign-in and the TOTP confirm both answer a LoginResponse and set the
+ * cookie; the view replaces any old session. The body's token is ignored.
+ */
+export function setSession(response: LoginResponse): void {
+  replace(viewOf(response));
 }
 
 export function clearSession(): void {
   if (current === null) {
     return;
   }
-  current = null;
-  notify();
+  replace(null);
 }
 
 export function currentSession(): SessionView | null {
-  return current === null ? null : current.view;
+  return current;
+}
+
+export function sessionStatus(): SessionStatus {
+  return status;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -79,6 +101,50 @@ function subscribe(listener: () => void): () => void {
 
 export function useSession(): SessionView | null {
   return useSyncExternalStore(subscribe, currentSession, currentSession);
+}
+
+export function useSessionStatus(): SessionStatus {
+  return useSyncExternalStore(subscribe, sessionStatus, sessionStatus);
+}
+
+/**
+ * Start-up (and reload): asks the manager whether the cookie still holds a
+ * session. 200 restores the view; 403 totp_enrolment_required is an admin
+ * session that must enrol TOTP first (TS §6.2), shown as such; anything else,
+ * a network failure included, starts signed out.
+ */
+export async function restoreSession(): Promise<void> {
+  status = "restoring";
+  notify();
+  const before = generation;
+  try {
+    const { data, error, response } = await api.GET("/api/v1/auth/session");
+    if (generation !== before) {
+      return; // signed in or out meanwhile: that wins
+    }
+    if (data !== undefined) {
+      replace(viewOf(data));
+    } else if (
+      response.status === 403 &&
+      typeof error === "object" &&
+      error !== null &&
+      (error as { type?: unknown }).type === "totp_enrolment_required"
+    ) {
+      replace(
+        Object.freeze({
+          role: "admin" as const,
+          totpEnrolled: false,
+          totpVerified: false,
+          expiresAt: "",
+        }),
+      );
+    }
+  } catch {
+    // Unreachable manager: start signed out; nothing is logged.
+  } finally {
+    status = "ready";
+    notify();
+  }
 }
 
 /** #85 (a): admins must enrol TOTP; others are offered it after every sign-in. */
@@ -100,24 +166,19 @@ export async function signOut(): Promise<void> {
   }
 }
 
-function bearer(session: Session): string {
-  return "Bearer " + session.token;
-}
-
 api.use({
   onRequest({ request }) {
-    if (current !== null) {
-      request.headers.set("Authorization", bearer(current));
-    }
+    request.headers.set(CSRF_HEADER, "1");
+    sentUnder.set(request, generation);
     return request;
   },
   onResponse({ request, response }) {
-    // Only a 401 for the token in use ends the session: a late 401 for a
-    // request sent before a TOTP confirm swapped the token must not.
+    // Only a 401 for the session in use ends it: a late 401 for a request
+    // sent before a sign-in or a TOTP confirm replaced the session must not.
     if (
       response.status === 401 &&
       current !== null &&
-      request.headers.get("Authorization") === bearer(current)
+      sentUnder.get(request) === generation
     ) {
       clearSession();
     }

@@ -147,7 +147,8 @@ describe("CHK-M7-312 (a) the list renders the fixture", () => {
     await mount();
     expect(callsTo(LIST)).toHaveLength(1);
     expect(queryOf(callsTo(LIST)[0] as Call)).toEqual({ limit: "50" });
-    expect(callsTo(LIST)[0]?.authorization).toBe("Bearer " + TOKEN);
+    expect(callsTo(LIST)[0]?.authorization).toBeNull();
+    expect(callsTo(LIST)[0]?.csrf).toBe("1");
     expect(
       within(screen.getByRole("table"))
         .getAllByRole("columnheader")

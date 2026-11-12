@@ -12,6 +12,7 @@ Spec: TS §2.3 (tokens), §6.2 (auth rules and route table) and §8.1 (controls)
 ## Tokens
 
 - `bsu_` session: issued by `POST /auth/login` (username, password and, for admins, a TOTP code); ended by `POST /auth/logout`; 8 h idle, 24 h maximum.
+- **Decided** (owner, 2026-11-12; TS §6.2, §6.3, §8.1): sign-in and the TOTP confirm also set `__Host-bitscan_session` (`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, no `Max-Age`); logout, a password change and ending the current session on `/auth/sessions` clear it. User routes read the cookie only when there is no `Authorization` header; agent routes never. A cookie request needs `X-Bitscan-Request: 1` and, when present, the manager's own `Origin`, else 403 `csrf_required`. `GET /auth/session`, `GET /auth/sessions` and `DELETE /auth/sessions/{id}` are session only, own sessions only (no admin view); a restricted admin session is refused like any route other than TOTP enrolment and logout.
 - `bsk_` API token: default 90 days, maximum 365, revocable; acts with the owner's current role at each request; never allowed for sensitive actions. Created only from a web session (TOTP-verified for admins) with `POST /api-tokens`, or on the server with `bitscan-manager users create-api-token <user>`; shown once. Creating one alerts.
 - All tokens are 256 random bits, base64url, prefixed; store only the SHA-256 hash. API tokens are never `totp_verified`.
 

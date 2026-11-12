@@ -14,6 +14,7 @@ export type Route =
   | { readonly name: "enrolment-tokens" }
   | { readonly name: "totp" }
   | { readonly name: "password" }
+  | { readonly name: "sessions" }
   | { readonly name: "scans" }
   | { readonly name: "scan"; readonly scanId: string }
   | { readonly name: "scan-results"; readonly scanId: string }
@@ -32,6 +33,7 @@ const ENROLMENT_REQUESTS: Route = Object.freeze({ name: "enrolment-requests" });
 const ENROLMENT_TOKENS: Route = Object.freeze({ name: "enrolment-tokens" });
 const TOTP: Route = Object.freeze({ name: "totp" });
 const PASSWORD: Route = Object.freeze({ name: "password" });
+const SESSIONS: Route = Object.freeze({ name: "sessions" });
 const SCANS: Route = Object.freeze({ name: "scans" });
 const RUN_SCAN: Route = Object.freeze({ name: "run-scan", policyId: null });
 const SCHEDULES: Route = Object.freeze({ name: "schedules" });
@@ -107,6 +109,8 @@ export function parseHash(hash: string): Route {
       return TOTP;
     case "/account/password":
       return PASSWORD;
+    case "/account/sessions":
+      return SESSIONS;
     case "/scans":
       return SCANS;
     case "/scans/run":
@@ -170,6 +174,8 @@ export function formatHash(route: Route): string {
       return "#/account/totp";
     case "password":
       return "#/account/password";
+    case "sessions":
+      return "#/account/sessions";
     case "scans":
       return "#/scans";
     case "scan":

@@ -284,7 +284,8 @@ describe("CHK-M5-204 503 and success", () => {
       expect(currentSession()?.role).toBe(role);
       answer(() => json(200, { items: [], next_cursor: null }));
       await api.GET("/api/v1/agents");
-      expect(calls.at(-1)?.authorization).toBe("Bearer " + TOKEN);
+      expect(calls.at(-1)?.authorization).toBeNull();
+      expect(calls.at(-1)?.csrf).toBe("1");
       expect(document.body.innerHTML).not.toContain(TOKEN);
     },
   );

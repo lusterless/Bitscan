@@ -156,7 +156,8 @@ describe("CHK-M7-313 (a) the profile and its plugins (REQ-181 (1))", () => {
     detailServer(() => detail());
     await mount("viewer");
     expect(calls.map((c) => c.method + " " + c.path)).toEqual(["GET " + PATH]);
-    expect(calls[0]?.authorization).toBe("Bearer " + TOKEN);
+    expect(calls[0]?.authorization).toBeNull();
+    expect(calls[0]?.csrf).toBe("1");
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "CIS Ubuntu 24.04 Level 1 - Server",
     );
@@ -352,7 +353,8 @@ describe("CHK-M7-313 (c) admin status actions send exactly the REQ-168 bodies (R
       const call = mutations()[0] as Call;
       expect(JSON.parse(call.body)).toStrictEqual(body);
       expect(call.contentType).toBe("application/json");
-      expect(call.authorization).toBe("Bearer " + TOKEN);
+      expect(call.authorization).toBeNull();
+      expect(call.csrf).toBe("1");
       expect(screen.getByRole("status").textContent).toBe(done);
       // and the profile is read again
       expect(callsTo(PATH)).toHaveLength(2);
@@ -425,7 +427,8 @@ describe("CHK-M7-313 (d) delete (REQ-182 (2))", () => {
       "DELETE " + PATH,
     ]);
     expect(mutations()[0]?.body).toBe("");
-    expect(mutations()[0]?.authorization).toBe("Bearer " + TOKEN);
+    expect(mutations()[0]?.authorization).toBeNull();
+    expect(mutations()[0]?.csrf).toBe("1");
     expect(screen.getByRole("status").textContent).toBe("Profile deleted.");
     // reloaded: now Deleted, no actions
     expect(callsTo(PATH)).toHaveLength(2);
@@ -472,7 +475,7 @@ describe("CHK-M7-313 (d) delete (REQ-182 (2))", () => {
     );
     // one DELETE, no retry with another credential
     expect(mutations()).toHaveLength(1);
-    expect(calls.every((c) => c.authorization === "Bearer " + TOKEN)).toBe(
+    expect(calls.every((c) => c.authorization === null && c.csrf === "1")).toBe(
       true,
     );
   });

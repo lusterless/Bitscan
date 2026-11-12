@@ -3,10 +3,18 @@ REQ-047; #48; plan work/plans/TASK-037.md).
 
 Refusals: 401 unauthorized (one body for every failed token check), or 429
 rate_limited once the source IP is over the failed-check limit; 403
-totp_enrolment_required, forbidden, session_required or
-totp_session_required; 503 audit_sink_unavailable while the sink gate
-refuses. Each factory marks the callable it returns with an AuthMarker, so
-a route walk can list what every route requires.
+totp_enrolment_required, forbidden, session_required,
+totp_session_required or csrf_required; 503 audit_sink_unavailable while the
+sink gate refuses.
+
+The token is the Authorization bearer, or, only when there is no
+Authorization header, the session cookie (TS §6.2, owner decision 2026-11-12).
+A cookie request must pass the CSRF check (TS §6.3) before its token is
+looked at; a cookie whose token fails the check gets the same 401, counted
+the same way, and the response clears the cookie.
+
+Each factory marks the callable it returns with an AuthMarker, so a route
+walk can list what every route requires.
 """
 
 import logging
@@ -19,6 +27,7 @@ from fastapi import Depends, Request
 
 from bitscan_manager.api.peer import peer_key
 from bitscan_manager.api.problems import Problem
+from bitscan_manager.auth import session_cookie
 from bitscan_manager.auth.principal import ROLE_ORDER, Principal, resolve
 from bitscan_manager.auth.tokens import TokenKind
 from bitscan_manager.repositories.user_tokens import UserTokenRepo
@@ -57,7 +66,15 @@ def current_principal(
     request: Request, runtime: Annotated[Runtime, Depends(get_runtime)]
 ) -> Principal:
     ip = peer_key(request)  # zone dropped, IPv4-mapped as IPv4 (api.peer)
-    raw = _bearer(request)
+    via_cookie = not session_cookie.has_authorization(request)
+    if via_cookie:
+        raw = session_cookie.cookie_token(request)
+        if raw is not None and not session_cookie.csrf_ok(request):
+            raise Problem(
+                403, "csrf_required", "This request must come from the web UI."
+            )
+    else:
+        raw = _bearer(request)
     now = runtime.clock.now()
     principal: Principal | None = None
     with runtime.db.transaction() as tx:
@@ -78,7 +95,14 @@ def current_principal(
                 "Too many failed token checks.",
                 _retry_after(runtime),
             )
-        raise Problem(401, "unauthorized", UNAUTHORIZED_DETAIL)
+        presented_cookie = via_cookie and raw is not None
+        clear = {"Set-Cookie": session_cookie.clear_cookie_header()}
+        raise Problem(
+            401,
+            "unauthorized",
+            UNAUTHORIZED_DETAIL,
+            clear if presented_cookie else None,
+        )
     if principal.admin_api_without_totp:
         raise Problem(
             403,

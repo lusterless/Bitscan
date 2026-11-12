@@ -1,5 +1,9 @@
 """POST /api/v1/auth/login, /auth/logout, /auth/totp/enrol and /auth/password
-(TS §6.2 L1080, L1085, L1096, L1097; #47, #48, #49 (b), #53 (a), #55)."""
+(TS §6.2 L1080, L1085, L1096, L1097; #47, #48, #49 (b), #53 (a), #55).
+
+Sign-in and the TOTP confirm also set the session cookie; logout and a
+password change clear it (TS §6.2, owner decision 2026-11-12). The token stays
+in the sign-in body for scripts; the web UI ignores it."""
 
 from typing import Annotated
 
@@ -11,7 +15,7 @@ from bitscan_manager.api.problems import Problem
 from bitscan_manager.api.timestamps import UtcDatetime
 from bitscan_manager.api.user import problem_responses
 from bitscan_manager.auth import login as login_service
-from bitscan_manager.auth import password_change, totp_enrol
+from bitscan_manager.auth import password_change, session_cookie, totp_enrol
 from bitscan_manager.auth.dependencies import UNAUTHORIZED_DETAIL, require_session
 from bitscan_manager.auth.passwords import PasswordRejected
 from bitscan_manager.auth.principal import Principal
@@ -45,7 +49,9 @@ _sign_in = APIRouter(route_class=limit_first(_login_limit))
 
 @_sign_in.post("/login", responses=problem_responses((401, 429, 503)))
 def login(
-    body: LoginRequest, runtime: Annotated[Runtime, Depends(get_runtime)]
+    body: LoginRequest,
+    response: Response,
+    runtime: Annotated[Runtime, Depends(get_runtime)],
 ) -> LoginResponse:
     try:
         result = login_service.login(
@@ -56,6 +62,9 @@ def login(
         )
     except login_service.LoginFailed:
         raise Problem(401, "unauthorized", UNAUTHORIZED_DETAIL) from None
+    response.headers.append(
+        "Set-Cookie", session_cookie.set_cookie_header(result.token)
+    )
     return LoginResponse(
         token=result.token,
         expires_at=result.expires_at,
@@ -80,7 +89,12 @@ def logout(
         runtime, user_id=principal.user_id, token_id=principal.token_id
     )
     _pending(request).drop(principal.token_id)
-    return Response(status_code=204)
+    return _cleared(Response(status_code=204))
+
+
+def _cleared(response: Response) -> Response:
+    response.headers.append("Set-Cookie", session_cookie.clear_cookie_header())
+    return response
 
 
 def _pending(request: Request) -> totp_enrol.PendingEnrolments:
@@ -108,6 +122,7 @@ class EnrolStartResponse(BaseModel):
 @router.post("/totp/enrol", responses=problem_responses((401, 403, 409, 429, 503)))
 def totp_enrol_route(
     request: Request,
+    response: Response,
     body: TotpEnrolRequest,
     principal: Annotated[Principal, Depends(require_session(allow_restricted=True))],
     runtime: Annotated[Runtime, Depends(get_runtime)],
@@ -132,6 +147,7 @@ def totp_enrol_route(
         raise Problem(403, "forbidden", "The password or code is not valid.") from None
     except totp_enrol.NoPendingEnrolment:
         raise Problem(409, "conflict", "No TOTP enrolment is in progress.") from None
+    response.headers.append("Set-Cookie", session_cookie.set_cookie_header(done.token))
     return LoginResponse(
         token=done.token,
         expires_at=done.expires_at,
@@ -167,4 +183,4 @@ def change_password(
         raise Problem(400, "invalid_request", str(exc)) from None
     except password_change.PasswordChangeRefused:
         raise Problem(403, "forbidden", "The current password is not valid.") from None
-    return Response(status_code=204)
+    return _cleared(Response(status_code=204))

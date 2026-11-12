@@ -15,6 +15,7 @@ import {
   nextScreen,
   signOut,
   useSession,
+  useSessionStatus,
   type Role,
   type SessionView,
 } from "./session";
@@ -280,19 +281,31 @@ function Shell({
 }
 
 /**
- * The app shell (REQ-133, REQ-120, REQ-122). The session token stays in
- * session.ts; this component reads only the token-free SessionView.
+ * The app shell (REQ-133, REQ-120, REQ-122). The session token stays in its
+ * HttpOnly cookie; this component reads only the token-free SessionView.
  */
 export function App() {
   const session = useSession();
+  const status = useSessionStatus();
   const route = useRoute();
   const [passwordChanged, setPasswordChanged] = useState(false);
   // The offer is shown once per signed-in session (a new view per sign-in).
   const [offerSkipped, setOfferSkipped] = useState<SessionView | null>(null);
 
+  if (session === null && status === "restoring") {
+    // A reload: the session cookie is being checked (TS §6.2).
+    return (
+      <AuthLayout>
+        <p role="status" className="page-subtitle">
+          Loading…
+        </p>
+      </AuthLayout>
+    );
+  }
+
   if (session === null) {
-    // No session (never signed in, signed out, a 401 or a reload): sign-in,
-    // whatever the hash says.
+    // No session (never signed in, signed out, a 401, or a reload whose
+    // cookie no longer holds one): sign-in, whatever the hash says.
     const noticeProps = passwordChanged
       ? { notice: "password-changed" as const }
       : {};

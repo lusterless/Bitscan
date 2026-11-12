@@ -63,6 +63,10 @@ USER_OPS = {
         ("POST", "/auth/logout"),
         ("POST", "/auth/totp/enrol"),
         ("POST", "/auth/password"),
+        # TS §6.2, owner decision 2026-11-12 (session cookie, own sessions)
+        ("GET", "/auth/session"),
+        ("GET", "/auth/sessions"),
+        ("DELETE", "/auth/sessions/{}"),
         ("POST", "/api-tokens"),
         ("GET", "/api-tokens"),
         ("DELETE", "/api-tokens"),

@@ -264,7 +264,8 @@ describe("CHK-M11-273 the picker", () => {
     fireEvent.click(screen.getByRole("radio", { name: "These hosts" }));
     await settle();
     const first = callsTo(AGENTS)[0];
-    expect(first?.authorization).toBe("Bearer " + bsu("O"));
+    expect(first?.authorization).toBeNull();
+    expect(first?.csrf).toBe("1");
     expect(queryOf(at(callsTo(AGENTS), 0))).toEqual({ limit: "50" });
     expect(body()).toBe("Choose at least one host.");
 

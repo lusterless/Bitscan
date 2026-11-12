@@ -1,9 +1,12 @@
-// TASK-116 TEST (TP-M5-09): CHK-M5-180 to CHK-M5-184.
-// Expected values: TS §6.2 L1076 (every call sends Authorization: Bearer),
-// L1080 (bsu_ held in memory, never in localStorage), L1089 (admins must
-// enrol TOTP, others are offered it), §8.1 (stolen web session); REQ-120
-// (1)-(4); #85 (a), (c); PD-29 (role is a plain string, unknown = least
-// privilege); plan TASK-116 rules 1-7.
+// TASK-116 TEST (TP-M5-09): CHK-M5-180 to CHK-M5-184, revised for the
+// session cookie (owner decision 2026-11-12).
+// Expected values: TS §6.2 (the bsu_ token lives in the HttpOnly
+// __Host-bitscan_session cookie, never readable by page scripts and never in
+// localStorage or sessionStorage; the web UI restores itself from
+// GET /auth/session; a restricted admin session may call only TOTP enrolment
+// and logout), TS §6.3 (every cookie request sends X-Bitscan-Request: 1),
+// L1089 (admins must enrol TOTP, others are offered it), §8.1; REQ-120
+// (1)-(4); #85 (a); PD-29 (role is a plain string, unknown = least privilege).
 import {
   answer,
   bsu,
@@ -26,16 +29,25 @@ import {
   clearSession,
   currentSession,
   nextScreen,
+  restoreSession,
+  sessionStatus,
   setSession,
   signOut,
   toRole,
   useSession,
+  useSessionStatus,
   type SessionView,
 } from "./session";
 
 const A = bsu("A");
 const B = bsu("B");
 const PAGE = { items: [], next_cursor: null };
+const CURRENT = {
+  role: "operator",
+  totp_enrolled: true,
+  totp_verified: true,
+  expires_at: "2026-10-25T20:00:00.000000Z",
+};
 
 let watch: Watch;
 
@@ -69,23 +81,18 @@ async function anyCalls(): Promise<void> {
   await api.GET("/api/v1/packages/search", { params: { query: { q: "ssl" } } });
 }
 
-describe("CHK-M5-180 the bearer header", () => {
-  it("is absent before setSession", async () => {
+describe("CHK-M5-180 requests: no bearer, always the CSRF header", () => {
+  it("before setSession: no Authorization, X-Bitscan-Request: 1", async () => {
     await anyCalls();
     await api.POST("/api/v1/auth/login", {
       body: { username: "u", password: "p".repeat(12), totp_code: null },
     });
     expect(calls).toHaveLength(5);
-    expect(calls.map((c) => c.authorization)).toEqual([
-      null,
-      null,
-      null,
-      null,
-      null,
-    ]);
+    expect(calls.map((c) => c.authorization)).toEqual(Array(5).fill(null));
+    expect(calls.map((c) => c.csrf)).toEqual(Array(5).fill("1"));
   });
 
-  it("is on every request after setSession, any method and path", async () => {
+  it("after setSession: the same on every method and path", async () => {
     setSession(loginResponse("viewer", true, A));
     await anyCalls();
     expect(calls.map((c) => c.method)).toEqual([
@@ -94,42 +101,32 @@ describe("CHK-M5-180 the bearer header", () => {
       "DELETE",
       "GET",
     ]);
-    expect(calls.map((c) => c.authorization)).toEqual(
-      Array(4).fill("Bearer " + A),
-    );
+    expect(calls.map((c) => c.authorization)).toEqual(Array(4).fill(null));
+    expect(calls.map((c) => c.csrf)).toEqual(Array(4).fill("1"));
   });
 
-  it("is swapped by a second setSession for the next request", async () => {
+  it("the token in a sign-in body is never sent back", async () => {
     setSession(loginResponse("viewer", true, A));
     await api.GET("/api/v1/agents");
     setSession(loginResponse("admin", true, B));
     await api.GET("/api/v1/agents");
-    expect(calls.map((c) => c.authorization)).toEqual([
-      "Bearer " + A,
-      "Bearer " + B,
-    ]);
-  });
-
-  it("is gone after clearSession", async () => {
-    setSession(loginResponse("viewer", true, A));
-    clearSession();
-    await api.GET("/api/v1/agents");
-    expect(calls[0]?.authorization).toBeNull();
+    for (const call of calls) {
+      expect(call.authorization).toBeNull();
+      expect(call.url).not.toContain(A);
+      expect(call.body).not.toContain(B);
+    }
   });
 });
 
-describe("CHK-M5-181 a 401 ends only the session it was sent with", () => {
-  it("clears the session when the 401 carried the current token", async () => {
+describe("CHK-M5-181 a 401 ends only the session it was sent under", () => {
+  it("clears the session on a 401", async () => {
     setSession(loginResponse("viewer", true, A));
     answer(() => problem(401, "unauthorized"));
     await api.GET("/api/v1/agents");
     expect(currentSession()).toBeNull();
-    answer(() => json(200, PAGE));
-    await api.GET("/api/v1/agents");
-    expect(calls[1]?.authorization).toBeNull();
   });
 
-  it("keeps the new session when a 401 for an older token arrives late", async () => {
+  it("keeps the new session when a 401 from before it arrives late", async () => {
     setSession(loginResponse("viewer", false, A));
     const late = deferred();
     answer(() => late.promise);
@@ -140,11 +137,7 @@ describe("CHK-M5-181 a 401 ends only the session it was sent with", () => {
       new Response(JSON.stringify({ type: "unauthorized" }), { status: 401 }),
     );
     await inFlight;
-    expect(calls[0]?.authorization).toBe("Bearer " + A);
     expect(currentSession()?.totpEnrolled).toBe(true);
-    answer(() => json(200, PAGE));
-    await api.GET("/api/v1/agents");
-    expect(calls[1]?.authorization).toBe("Bearer " + B);
   });
 
   it("changes nothing for a 401 with no session (sign-in refused)", async () => {
@@ -170,9 +163,6 @@ describe("CHK-M5-181 a 401 ends only the session it was sent with", () => {
       answer(() => problem(status, "forbidden"));
       await api.GET("/api/v1/agents");
       expect(currentSession()?.role).toBe("operator");
-      answer(() => json(200, PAGE));
-      await api.GET("/api/v1/agents");
-      expect(calls[1]?.authorization).toBe("Bearer " + A);
     },
   );
 });
@@ -194,11 +184,9 @@ describe("CHK-M5-182 signOut always ends the session", () => {
     expect(calls[0]).toMatchObject({
       method: "POST",
       path: "/api/v1/auth/logout",
-      authorization: "Bearer " + A,
+      authorization: null,
+      csrf: "1",
     });
-    answer(() => json(200, PAGE));
-    await api.GET("/api/v1/agents");
-    expect(calls[1]?.authorization).toBeNull();
   });
 });
 
@@ -212,7 +200,7 @@ describe("CHK-M5-183 the token reaches no storage, cookie, console or URL", () =
     setSession(loginResponse("viewer", true, A));
     answer(() => Promise.reject(new TypeError("down " + A)));
     await signOut();
-    // The afterEach checks every recorded write and the URL for A and B.
+    // The afterEach checks every recorded write, document.cookie and the URL.
     expect(calls.length).toBeGreaterThanOrEqual(6);
   });
 
@@ -244,15 +232,66 @@ describe("CHK-M5-183 the token reaches no storage, cookie, console or URL", () =
     act(() => clearSession());
     expect(result.current).toBeNull();
   });
+});
 
-  it("a reload (fresh modules) starts signed out", async () => {
-    setSession(loginResponse("admin", true, A));
-    vi.resetModules();
-    const fresh = await import("./session");
-    expect(fresh.currentSession()).toBeNull();
-    const client = await import("../api/client");
-    await client.api.GET("/api/v1/agents");
-    expect(calls.at(-1)?.authorization).toBeNull();
+describe("restoreSession: a reload keeps the session (TS §6.2)", () => {
+  it("200 from GET /auth/session restores the view", async () => {
+    answer(() => json(200, CURRENT));
+    const { result } = renderHook(() => useSessionStatus());
+    const done = restoreSession();
+    expect(sessionStatus()).toBe("restoring");
+    await act(() => done);
+    expect(result.current).toBe("ready");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: "GET",
+      path: "/api/v1/auth/session",
+      authorization: null,
+      csrf: "1",
+    });
+    expect(currentSession()).toEqual({
+      role: "operator",
+      totpEnrolled: true,
+      totpVerified: true,
+      expiresAt: CURRENT.expires_at,
+    });
+  });
+
+  it("401 starts signed out", async () => {
+    answer(() => problem(401, "unauthorized"));
+    await restoreSession();
+    expect(currentSession()).toBeNull();
+    expect(sessionStatus()).toBe("ready");
+  });
+
+  it("403 totp_enrolment_required is an admin who must enrol TOTP", async () => {
+    answer(() => problem(403, "totp_enrolment_required"));
+    await restoreSession();
+    const view = currentSession() as SessionView;
+    expect(view.role).toBe("admin");
+    expect(nextScreen(view)).toBe("totp-required");
+  });
+
+  it.each([
+    ["another 403", () => problem(403, "forbidden")],
+    ["a 500", () => problem(500, "about:blank")],
+    ["a network error", () => Promise.reject(new TypeError("network down"))],
+  ] as const)("%s starts signed out", async (_name, reply) => {
+    answer(reply);
+    await restoreSession();
+    expect(currentSession()).toBeNull();
+    expect(sessionStatus()).toBe("ready");
+  });
+
+  it("a sign-in while restoring wins over a late answer", async () => {
+    const late = deferred();
+    answer(() => late.promise);
+    const done = restoreSession();
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    setSession(loginResponse("viewer", true, A));
+    late.resolve(json(200, { ...CURRENT, role: "admin" }));
+    await done;
+    expect(currentSession()?.role).toBe("viewer");
   });
 });
 

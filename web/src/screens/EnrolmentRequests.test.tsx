@@ -338,9 +338,8 @@ describe("CHK-M5-233 approve and reject", () => {
       );
       await settle();
       expect(decisionPosts()).toEqual([LIST + "/8/" + button.toLowerCase()]);
-      expect(calls.find((c) => c.method === "POST")?.authorization).toBe(
-        "Bearer " + bsu("A"),
-      );
+      expect(calls.find((c) => c.method === "POST")?.authorization).toBeNull();
+      expect(calls.find((c) => c.method === "POST")?.csrf).toBe("1");
       expect(callsTo(LIST)).toHaveLength(2);
       expect(queryOf(callsTo(LIST)[1] as Call)).toEqual({
         state: "pending",

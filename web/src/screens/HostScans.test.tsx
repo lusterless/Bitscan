@@ -68,7 +68,8 @@ describe("CHK-M11-270 host scan history (REQ-283 (1))", () => {
   it("rows from GET /agents/{id}/scans, each linking to its scan detail", async () => {
     server([scanItem(1), scanItem(2, { state: "partial" })]);
     await mount();
-    expect(at(callsTo(PATH), 0).authorization).toBe("Bearer " + bsu("V"));
+    expect(at(callsTo(PATH), 0).authorization).toBeNull();
+    expect(at(callsTo(PATH), 0).csrf).toBe("1");
     const rows = section().getAllByRole("row").slice(1);
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.querySelector("a")?.getAttribute("href"))).toEqual(

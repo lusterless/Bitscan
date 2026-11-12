@@ -285,7 +285,8 @@ describe("CHK-M11-267 confirm, then act (REQ-280 (3))", () => {
     expect(sent()).toEqual(["GET " + GET, "POST " + REEVAL, "GET " + GET]);
     const post = at(calls, 1);
     expect(post.body).toBe("");
-    expect(post.authorization).toBe("Bearer " + bsu("A"));
+    expect(post.authorization).toBeNull();
+    expect(post.csrf).toBe("1");
     expect(screen.getByRole("status").textContent).toBe(
       "Re-evaluated against version 4: 17 verdicts added.",
     );
