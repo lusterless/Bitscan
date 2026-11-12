@@ -2,7 +2,7 @@
 
 Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported agent hosts are Ubuntu 22.04 and Ubuntu 24.04 (amd64, cgroup v2). The manager host is Ubuntu 24.04 on amd64.
 
-**Status:** release 0.2.0 is the current release: manager `0.2.0` and agent package `0.2.0-1` (git tag `v0.2.0`). It adds compliance scans, their results and scores, and [retention](#retention) to release 0.1.0 (manager `0.1.0`, agent package `0.1.0-1`, git tag `v0.1.0`). 0.1.0 covers enrolment and approval, heartbeat, the mandatory inventory (`os_info` and the full `dpkg` package list), the host pages and fleet-wide package search; its runner and `bitscan-capread` helper are idle, and its agent answers every check of a compliance job with `runner_unavailable`. The pre-release agent builds (`0.1.0~preN-1` and `0.2.0~preN-1`) are not supported. Upgrade them to `0.2.0-1` as described in [Installing a release](#installing-a-release).
+**Status:** release 0.3.0 is the current release: manager `0.3.0` and agent package `0.3.0-1` (git tag `v0.3.0`). It keeps web UI users signed in across a page reload (an `HttpOnly` session cookie) and adds the **My sessions** page; the agent code is unchanged from 0.2.0. Release 0.2.0 (manager `0.2.0`, agent package `0.2.0-1`, git tag `v0.2.0`) added compliance scans, their results and scores, and [retention](#retention) to release 0.1.0 (manager `0.1.0`, agent package `0.1.0-1`, git tag `v0.1.0`). 0.1.0 covers enrolment and approval, heartbeat, the mandatory inventory (`os_info` and the full `dpkg` package list), the host pages and fleet-wide package search; its runner and `bitscan-capread` helper are idle, and its agent answers every check of a compliance job with `runner_unavailable`. The pre-release agent builds (`0.1.0~preN-1` and `0.2.0~preN-1`) are not supported. Upgrade them to `0.3.0-1` as described in [Installing a release](#installing-a-release).
 
 The manager runs:
 
@@ -13,7 +13,7 @@ The manager runs:
 
 The agent package (`bitscan-agent`) installs the `bitscan-agent` and `bitscan-runner` services. The agent enrols, sends a heartbeat every 5 minutes, pulls its jobs and uploads the inventory.
 
-**Compliance scans and results (release 0.2.0).** Hosts on agent `0.2.0-1` run compliance jobs:
+**Compliance scans and results (from release 0.2.0).** Hosts on agent `0.2.0-1` or later run compliance jobs:
 
 - The agent hands each job to `bitscan-runner`. The runner runs every check in its sandbox as the `bitscan-runner` user: it can read every file, but it cannot write outside its private `/tmp` or open IP connections.
 - The runner redacts the output on the host and returns it.
@@ -34,10 +34,10 @@ Production installs follow the runbooks in `deploy/runbooks/`:
 | [`manager-operations.md`](deploy/runbooks/manager-operations.md) | Upgrades, replacing the TLS certificate and the OpenBao token, backups and the monthly restore test, and removal |
 | [`agent-install.md`](deploy/runbooks/agent-install.md) | Installing, checking, upgrading, re-enrolling and removing the agent on each host |
 
-**Release files.** Each release is published on the project's GitHub release page. For 0.2.0 it holds:
+**Release files.** Each release is published on the project's GitHub release page. For 0.3.0 it holds:
 
-- Manager: `bitscan_manager-0.2.0-py3-none-any.whl` (the built web UI is inside), `bitscan-manager-0.2.0-requirements.txt` (the hashed runtime dependencies), and the unit files `bitscan-manager.service`, `bitscan-manager-migrate.service`, `bitscan-manager-maintain.service` and `bitscan-manager-maintain.timer`.
-- Agent: `bitscan-agent_0.2.0-1_amd64.deb`.
+- Manager: `bitscan_manager-0.3.0-py3-none-any.whl` (the built web UI is inside), `bitscan-manager-0.3.0-requirements.txt` (the hashed runtime dependencies), and the unit files `bitscan-manager.service`, `bitscan-manager-migrate.service`, `bitscan-manager-maintain.service` and `bitscan-manager-maintain.timer`.
+- Agent: `bitscan-agent_0.3.0-1_amd64.deb`.
 - CycloneDX SBOMs.
 - `SHA256SUMS`, which lists every file above.
 
@@ -51,8 +51,8 @@ Each file you downloaded must show `OK`. Stop if any line says `FAILED`, if a do
 
 **Versions and compatibility.**
 
-- The manager and the agent use semantic versioning. The agent package version adds a Debian revision, for example `0.2.0-1`.
-- A manager supports agents of its own version and the one before. An agent supports a manager of its own version and the one before. So manager 0.2.0 supports agents `0.2.0-1` and `0.1.0-1`, and agent `0.2.0-1` supports managers 0.2.0 and 0.1.0. Under manager 0.2.0, a host still on `0.1.0-1` reports every check as ERROR `runner_unavailable` until its agent is upgraded. Pre-release builds (`X.Y.Z~preN-1`) are not supported by any manager.
+- The manager and the agent use semantic versioning. The agent package version adds a Debian revision, for example `0.3.0-1`.
+- A manager supports agents of its own version and the one before. An agent supports a manager of its own version and the one before. So manager 0.3.0 supports agents `0.3.0-1` and `0.2.0-1`, and agent `0.3.0-1` supports managers 0.3.0 and 0.2.0. A host still on `0.1.0-1` is not supported by manager 0.3.0: upgrade it to `0.2.0-1` or later before upgrading the manager. Pre-release builds (`X.Y.Z~preN-1`) are not supported by any manager.
 - Upgrade order: the manager first (migrate, then restart), then the agents. See [`manager-operations.md`](deploy/runbooks/manager-operations.md) section 1 and [`agent-install.md`](deploy/runbooks/agent-install.md) section 6.
 
 ## Prerequisites
@@ -731,8 +731,8 @@ The workflow `.github/workflows/e2e.yml` runs every night at 01:40 UTC and can a
 
 **Compatibility:** two more runs, in parallel, each on its own runner with its own guest and manager host:
 
-- `compat-a`: this manager with the 0.1.0 agent, whose checks all come back as ERROR `runner_unavailable`;
-- `compat-b`: this agent with the 0.1.0 manager.
+- `compat-a`: this manager with the previous release's agent (0.2.0);
+- `compat-b`: this agent with the previous release's manager (0.2.0).
 
 **Report and result:**
 - Each step is one row per host, PASS, FAIL or NOT RUN with its reason.

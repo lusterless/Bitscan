@@ -2,7 +2,7 @@
 
 The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-runner`, and the optional `bitscan-capread` helper (installed but disabled). The agent opens every connection to the manager; the host needs no inbound port.
 
-**Release 0.2.0** (package `0.2.0-1`, git tag `v0.2.0`) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list) work as in 0.1.0. Sections 9 to 11 cover the runner, the optional helper and the spool.
+**Release 0.3.0** (package `0.3.0-1`, git tag `v0.3.0`) has the same agent code as 0.2.0; it is versioned with manager 0.3.0, which keeps web UI users signed in across a reload. **Release 0.2.0** (package `0.2.0-1`, git tag `v0.2.0`) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list) work as in 0.1.0. Sections 9 to 11 cover the runner, the optional helper and the spool.
 
 **Release 0.1.0** (package `0.1.0-1`) was the first supported release: enrolment, heartbeat, job pull and the mandatory inventory, with no compliance scans. Its runner and helper are installed but idle, no check command runs, and it reports every check of a compliance job as `runner_unavailable`. The pre-release builds (`0.1.0~preN-1` and `0.2.0~preN-1`) are not supported; upgrade them as in section 6.
 
@@ -42,7 +42,7 @@ The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-
 
 ## 2. Check the package
 
-Download `bitscan-agent_<version>_amd64.deb` (for 0.2.0, `bitscan-agent_0.2.0-1_amd64.deb`). The release page, which is served from a different origin than the download, shows the release's `SHA256SUMS` text in its notes. Copy that text from the release page into a file named `SHA256SUMS` next to the package. Never use a checksum file fetched from the same host as the package, including the `SHA256SUMS` file attached to the release.
+Download `bitscan-agent_<version>_amd64.deb` (for 0.3.0, `bitscan-agent_0.3.0-1_amd64.deb`). The release page, which is served from a different origin than the download, shows the release's `SHA256SUMS` text in its notes. Copy that text from the release page into a file named `SHA256SUMS` next to the package. Never use a checksum file fetched from the same host as the package, including the `SHA256SUMS` file attached to the release.
 
 `SHA256SUMS` lists every file of the release, so check only the files you downloaded:
 
@@ -167,7 +167,7 @@ For the interactive route, `dpkg --configure` asks again for a required answer t
 
 **Order:** upgrade the manager first (migrate, then restart, as the manager operations runbook `manager-operations.md` describes), then the agents.
 
-**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. So manager 0.2.0 supports agents `0.2.0-1` and `0.1.0-1`, and agent `0.2.0-1` supports managers 0.2.0 and 0.1.0. Under manager 0.2.0, a host still on `0.1.0-1` reports every check as ERROR `runner_unavailable` until it is upgraded. Manager 0.1.0 has no scans, so it sends a `0.2.0-1` agent no compliance job. The pre-release builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade every such host to `0.2.0-1`.
+**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. So manager 0.3.0 supports agents `0.3.0-1` and `0.2.0-1`, and agent `0.3.0-1` supports managers 0.3.0 and 0.2.0. Manager 0.3.0 does not support `0.1.0-1`: upgrade such a host to `0.2.0-1` or later before the manager is upgraded. The pre-release builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade every such host to `0.3.0-1`.
 
 Check the new package as in section 2, then:
 
@@ -175,7 +175,7 @@ Check the new package as in section 2, then:
 sudo apt install ./bitscan-agent_<new version>_amd64.deb
 ```
 
-An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A `0.1.0-1`, `0.2.0~pre1-1` or `0.2.0~pre2-1` host upgrades to `0.2.0-1` in place the same way, since `0.2.0-1` sorts above all three.
+An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A `0.1.0-1`, `0.2.0~pre1-1`, `0.2.0~pre2-1` or `0.2.0-1` host upgrades to `0.3.0-1` in place the same way, since `0.3.0-1` sorts above all four.
 
 Check the result:
 
