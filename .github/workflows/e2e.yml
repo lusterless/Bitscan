@@ -6,14 +6,14 @@ name: e2e
 # - nightly:  manager N (systemd container installed by manager-install.md)
 #             with agent N on Ubuntu 22.04 and 24.04 QEMU/KVM guests: enrol,
 #             approve, heartbeat, inventory, import, scan, results;
-# - compat-a: manager N with agent 0.1.0 (v0.1.0 release);
-# - compat-b: agent N with manager 0.1.0 (v0.1.0 release).
+# - compat-a: manager N with the previous release's agent (N-1 = v0.2.0);
+# - compat-b: agent N with the previous release's manager (N-1 = v0.2.0).
 # The upgrade walk (compat.py --phase upgrade) runs at milestone gates only.
 # Each run uploads its row report; the job fails when a row is FAIL or an
 # expected row is missing (nightly.py --check-report).
 #
 # The token is read-only and is given only to the step that downloads the
-# v0.1.0 release. The workflow holds no secret, and commits, tags, publishes
+# previous release. The workflow holds no secret, and commits, tags, publishes
 # and releases nothing. The harness keeps its run log in the root-only work
 # folder: only the masked report reaches the job log and the artifacts.
 #
@@ -186,15 +186,15 @@ jobs:
 
       # Read-only token, this step only. The files go into an empty folder of
       # their own; the sums come from the release page, a different origin.
-      - name: Download the v0.1.0 release and its published sums
+      - name: Download the previous release (v0.2.0) and its published sums
         if: matrix.run != 'nightly'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          mkdir "$RUNNER_TEMP/v010"
-          gh release download v0.1.0 --dir "$RUNNER_TEMP/v010"
-          gh release view v0.1.0 --json body -q .body >"$RUNNER_TEMP/v010-notes.txt"
+          mkdir "$RUNNER_TEMP/prev"
+          gh release download v0.2.0 --dir "$RUNNER_TEMP/prev"
+          gh release view v0.2.0 --json body -q .body >"$RUNNER_TEMP/prev-notes.txt"
 
       - name: Run the harness (${{ matrix.run }})
         run: |
@@ -209,9 +209,9 @@ jobs:
                 "$GITHUB_WORKSPACE" "$RUNNER_TEMP/rel" "$deb" "$RUNNER_TEMP/img" "$w" ;;
             compat-a | compat-b)
               sudo sh -c 'python3 -I e2e/m11/compat.py --phase "$1" --tree "$2" --rel "$3" --deb-n "$4" \
-                --v010 "$5" --v010-sums "$6" --images "$7" --work "$8" --log "$8.log" >"$8.log" 2>&1' sh \
-                "${RUN#compat-}" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/rel" "$deb" "$RUNNER_TEMP/v010" \
-                "$RUNNER_TEMP/v010-notes.txt" "$RUNNER_TEMP/img" "$w" ;;
+                --prev "$5" --prev-sums "$6" --images "$7" --work "$8" --log "$8.log" >"$8.log" 2>&1' sh \
+                "${RUN#compat-}" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/rel" "$deb" "$RUNNER_TEMP/prev" \
+                "$RUNNER_TEMP/prev-notes.txt" "$RUNNER_TEMP/img" "$w" ;;
           esac
 
       # The work folder is root-only (0700): copy out just the two report files.

@@ -1,14 +1,14 @@
 """M11 N / N−1 rows (TP-M11-19, REQ-287, REQ-288; #153; CHK-M11-304..309, plant -372).
 
 N = the tree under test (manager wheel and agent .deb built from it); N−1 = the
-v0.1.0 release (`bitscan-agent_0.1.0-1_amd64.deb` and the manager files),
-each file checked against the SHA256SUMS text of the release page (#153 (a)).
-Same machines and helpers as nightly.py (the manager host by the install
-walk, QEMU/KVM guests); one phase per run, so at most one manager and one or
-two guests are up at a time:
+previous release (`--prev`: since 0.3.0 the v0.2.0 release,
+`bitscan-agent_0.2.0-1_amd64.deb` and the manager files), each file checked
+against the SHA256SUMS text of the release page (#153 (a)). Same machines and
+helpers as nightly.py (the manager host by the install walk, QEMU/KVM guests);
+one phase per run, so at most one manager and one or two guests are up at a time:
 
   python3 -I e2e/m11/compat.py --phase a|b|upgrade --tree TREE --rel REL_N --deb-n FILE.deb
-      --v010 DIR --v010-sums FILE --images IMGDIR --work WORK [--guest-mem 1024] [--keep]
+      --prev DIR --prev-sums FILE --images IMGDIR --work WORK [--guest-mem 1024] [--keep]
       [--plant-rel REL_PLANT --expect-red CHK]
 
 A plant of a manager tree (CHK-M11-372) is not installed by the walk: the
@@ -17,16 +17,19 @@ from --rel, then --plant-rel is deployed onto it by manager-operations.md §1
 (rows `plant:*`), and the phase runs against the planted manager.
   python3 -I e2e/m11/nightly.py --check-report WORK/report.json
 
-  a        manager N, agent 0.1.0 (u2204): enrol, approve, heartbeat, inventory
-           (CHK-M11-305); a scan stores every plugin as ERROR runner_unavailable,
-           score null, errors = plugins (CHK-M11-306; #74, #28)
-  b        manager 0.1.0, agent N (u2404): enrol, approve, heartbeat, inventory
-           (CHK-M11-308); no compliance job is ever sent (CHK-M11-309; 0.1.0 has
-           no scan route, the runner never starts)
-  upgrade  once at the gate (#153 (d)), CHK-M11-307: manager 0.1.0 with agent
-           0.1.0 enrolled -> manager-operations.md §1 to N (files checked, stop,
+  a        manager N, agent N−1 (u2204): enrol, approve, heartbeat, inventory
+           (CHK-M11-305); a scan of the SR §1.1 example completes: PASS, exit 0,
+           score 1.0, no errors (CHK-M11-306)
+  b        manager N−1, agent N (u2404): enrol, approve, heartbeat, inventory
+           (CHK-M11-308); a scan completes the same way (CHK-M11-309)
+  upgrade  once at the gate (#153 (d)), CHK-M11-307: manager N−1 with agent
+           N−1 enrolled -> manager-operations.md §1 to N (files checked, stop,
            pip, units, migrate, start) -> heartbeats and inventory go on -> the
            agent upgraded to N (agent-install.md §6) -> a scan completes (PASS)
+
+Until 0.3.0, N−1 was v0.1.0, whose agent answered every check with
+runner_unavailable and whose manager had no scans; those expectations went
+with it (decisions 2026-11-12, release 0.3.0).
 
 Every phase starts with CHK-M11-304 (pre-check: the release files against the
 published sums, the N .deb against its .sha256, KVM, images, memory) and ends
@@ -55,16 +58,17 @@ import nightly as n  # noqa: E402
 SUMS_LINE = re.compile(r"^([0-9a-f]{64})  (\S+)$")
 MANAGER_FILES = ("bitscan-manager.service", "bitscan-manager-migrate.service", "bitscan-manager-maintain.service",
                  "bitscan-manager-maintain.timer")
-V010_DEB = "bitscan-agent_0.1.0-1_amd64.deb"
+PREV_DEB = "bitscan-agent_0.2.0-1_amd64.deb"
+PREV_VERSION = "0.2.0-1"
 
 EXPECTED = {
-    "a": [("CHK-M11-304", "runner")] + [("CHK-M11-305", f"agent010:{s}") for s in ("enrol", "approve", "heartbeat", "inventory")]
-         + [("CHK-M11-306", "agent010:scan"), ("CHK-M11-306", "agent010:results"), ("CHK-M11-309", "sweep:a")],
+    "a": [("CHK-M11-304", "runner")] + [("CHK-M11-305", f"agentPrev:{s}") for s in ("enrol", "approve", "heartbeat", "inventory")]
+         + [("CHK-M11-306", "agentPrev:scan"), ("CHK-M11-306", "agentPrev:results"), ("CHK-M11-309", "sweep:a")],
     "b": [("CHK-M11-304", "runner")] + [("CHK-M11-308", f"agentN:{s}") for s in ("enrol", "approve", "heartbeat", "inventory")]
-         + [("CHK-M11-309", "agentN:no-compliance-job"), ("CHK-M11-309", "sweep:b")],
+         + [("CHK-M11-309", "agentN:scan"), ("CHK-M11-309", "sweep:b")],
     "upgrade": [("CHK-M11-304", "runner")] + [("CHK-M11-307", f"base:{s}") for s in ("enrol", "approve", "heartbeat", "inventory")]
                + [("CHK-M11-307", s) for s in ("manager:files", "manager:stop-install", "manager:units", "manager:migrate-start",
-                                               "agent010:heartbeat-after", "agent010:inventory-after", "agent:upgrade-to-N", "scan:after")]
+                                               "agentPrev:heartbeat-after", "agentPrev:inventory-after", "agent:upgrade-to-N", "scan:after")]
                + [("CHK-M11-309", "sweep:upgrade")],
 }
 
@@ -81,11 +85,11 @@ def published_sums(path: Path) -> dict[str, str]:
 
 def precheck(a: argparse.Namespace, sums: dict[str, str]) -> bool:
     facts, ok = [], True
-    need = [V010_DEB] if a.phase in ("a", "upgrade") else []
+    need = [PREV_DEB] if a.phase in ("a", "upgrade") else []
     if a.phase in ("b", "upgrade"):
         need += [f for f in sums if f.startswith("bitscan_manager-") or f.endswith("-requirements.txt")] + list(MANAGER_FILES)
     for f in need:
-        got = n.sha256_file(a.v010 / f)
+        got = n.sha256_file(a.prev / f)
         good = bool(sums.get(f)) and got == sums.get(f)
         facts.append(f"{f} {'OK' if good else 'MISMATCH or missing'}")
         ok &= good
@@ -107,18 +111,18 @@ def precheck(a: argparse.Namespace, sums: dict[str, str]) -> bool:
     mem = int(next(ln.split()[1] for ln in Path("/proc/meminfo").read_text().split("\n") if ln.startswith("MemAvailable:"))) // 1024
     facts.append(f"MemAvailable {mem} MB (need {1200 + a.guest_mem})")
     ok &= mem >= 1200 + a.guest_mem
-    return n.row("CHK-M11-304", "runner", f"pre-check ({a.phase}): v0.1.0 files against the release page's sums, the N .deb, KVM, images, memory",
+    return n.row("CHK-M11-304", "runner", f"pre-check ({a.phase}): N−1 release files against the release page's sums, the N .deb, KVM, images, memory",
                  ok, "; ".join(facts))
 
 
-def rel010(a: argparse.Namespace, sums: dict[str, str]) -> Path:
-    """The release folder of manager 0.1.0 as manager-install.md §2 has it: the six files and the
+def rel_prev(a: argparse.Namespace, sums: dict[str, str]) -> Path:
+    """The release folder of manager N−1 as manager-install.md §2 has it: the six files and the
     SHA256SUMS text copied from the release page."""
-    d = n.WORK / "rel010"
+    d = n.WORK / "relprev"
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir()
     for f in [f for f in sums if f.startswith("bitscan_manager-") or f.endswith("-requirements.txt")] + list(MANAGER_FILES):
-        shutil.copy(a.v010 / f, d / f)
+        shutil.copy(a.prev / f, d / f)
     (d / "SHA256SUMS").write_text("".join(f"{h}  {f}\n" for f, h in sums.items()))
     return d
 
@@ -162,28 +166,47 @@ def scan_and_wait(api: n.Api, pid: int, aid: str, timeout: int = 900) -> tuple[s
     return sid, det, page.get("items", []) if isinstance(page, dict) else []
 
 
+def scan_passes(api: n.Api, tree: Path, aid: str, chk: str, label: str, what: str) -> None:
+    """Import the SR §1.1 example, scan the host and check the nightly pass condition: the scan
+    completes, its one result is PASS with exit code 0, and the host scores 1.0 with no errors."""
+    pid = n.import_sr(api, tree)
+    if not pid:
+        n.notrun(chk, f"{label}:scan", "scan", "the SR §1.1 example did not import")
+        return
+    sid, det, items = scan_and_wait(api, pid, aid)
+    host = next((x for x in det.get("hosts", []) if x.get("agent_id") == aid), {})
+    mine = [i for i in items if i.get("agent_id") == aid]
+    ok = (det.get("state") == "completed" and len(mine) == 1 and mine[0].get("result") == "PASS" and mine[0].get("exit_code") == 0
+          and host.get("errors") == 0 and host.get("score") == 1.0)
+    n.row(chk, f"{label}:scan", what, ok,
+          f"scan {sid or det}; state {det.get('state')}; host {json.dumps({k: host.get(k) for k in ('passed', 'failed', 'errors', 'not_run', 'score')})}; "
+          f"results {json.dumps([{k: i.get(k) for k in ('plugin_uuid', 'result', 'eval_detail', 'exit_code')} for i in mine])}")
+
+
 def phase_a(a: argparse.Namespace, api: n.Api, tok: dict[str, str]) -> None:
     up = n.boot_one(a, "u2204")
     if not up:
         for c, h in EXPECTED["a"][1:-1]:
             n.row(c, h, "chain", False, "guest u2204 did not boot")
         return
-    aid = n.chain_host(api, "u2204", with_deb(a, a.v010 / V010_DEB), tok["u2204"], "", "0.1.0-1", ids("CHK-M11-305"), "agent010")
-    pid = n.import_sr(api, a.tree) if aid else 0
-    if not (aid and pid):
-        n.notrun("CHK-M11-306", "agent010:scan", "scan", "no agent or no policy")
-        n.notrun("CHK-M11-306", "agent010:results", "results", "no agent or no policy")
+    aid = n.chain_host(api, "u2204", with_deb(a, a.prev / PREV_DEB), tok["u2204"], "", PREV_VERSION, ids("CHK-M11-305"), "agentPrev")
+    if not aid:
+        n.notrun("CHK-M11-306", "agentPrev:scan", "scan", "no agent (CHK-M11-305)")
+        n.notrun("CHK-M11-306", "agentPrev:results", "results", "no agent (CHK-M11-305)")
+        return
+    pid = n.import_sr(api, a.tree)
+    if not pid:
+        n.notrun("CHK-M11-306", "agentPrev:scan", "scan", "the SR §1.1 example did not import")
+        n.notrun("CHK-M11-306", "agentPrev:results", "results", "the SR §1.1 example did not import")
         return
     sid, det, items = scan_and_wait(api, pid, aid)
-    n.row("CHK-M11-306", "agent010:scan", "a scan of the 0.1.0 host ends (the job is answered)", bool(sid) and det.get("state") in ("completed", "partial", "failed"),
+    n.row("CHK-M11-306", "agentPrev:scan", f"a scan of the {PREV_VERSION} host under manager N completes", bool(sid) and det.get("state") == "completed",
           f"scan {sid or det}; state {det.get('state')}")
     host = next((x for x in det.get("hosts", []) if x.get("agent_id") == aid), {})
     mine = [i for i in items if i.get("agent_id") == aid]
-    ok = (host.get("errors") == len(mine) == 1 and host.get("score") is None and host.get("passed") == 0 and host.get("failed") == 0
-          and all(i.get("result") == "ERROR" and i.get("eval_detail") == "runner_unavailable" and i.get("exit_code") is None for i in mine))
-    # v0.1.0 agent/internal/agent/loops/jobs.go Unavailable.Handle: executes nothing, answers each plugin with
-    # error runner_unavailable and exit_code null; the manager's verdict is ERROR runner_unavailable (verdict.py)
-    n.row("CHK-M11-306", "agent010:results", "every plugin ERROR runner_unavailable, exit_code null; score null; errors = plugins (#74, #28)", ok,
+    ok = (len(mine) == 1 and mine[0].get("result") == "PASS" and mine[0].get("exit_code") == 0
+          and host.get("errors") == 0 and host.get("score") == 1.0)
+    n.row("CHK-M11-306", "agentPrev:results", "the check is PASS with exit code 0; score 1.0, no errors", ok,
           f"host {json.dumps({k: host.get(k) for k in ('passed', 'failed', 'errors', 'not_run', 'score')})}; "
           f"results {json.dumps([{k: i.get(k) for k in ('plugin_uuid', 'result', 'eval_detail', 'exit_code')} for i in mine])}")
 
@@ -197,19 +220,10 @@ def phase_b(a: argparse.Namespace, api: n.Api, tok: dict[str, str], n_version: s
     rc, pin = n.mgr_sh("openssl x509 -in /etc/bitscan/secrets/tls.crt -noout -pubkey | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1")
     aid = n.chain_host(api, "u2404", with_deb(a, a.deb_n), tok["u2404"], pin.strip(), n_version, ids("CHK-M11-308"), "agentN")
     if not aid:
-        n.notrun("CHK-M11-309", "agentN:no-compliance-job", "no job", "no agent (CHK-M11-308)")
+        n.notrun("CHK-M11-309", "agentN:scan", "scan", "no agent (CHK-M11-308)")
         return
-    # 0.1.0 has no scan route, so no compliance job can exist; watch two pull intervals after the inventory
-    st, _ = api.json("POST", f"{n.V1}/scans", {"policy_id": 1, "target": {"agents": [aid]}})
-    time.sleep(150)
-    rc, rj = n.on("u2404", "systemctl show -p ExecMainStartTimestampMonotonic --value bitscan-runner.service; "
-                           "sudo journalctl -u bitscan-runner -o cat --no-pager | grep -c 'runner: plugin done' || true; "
-                           "sudo journalctl -u bitscan-agent -o cat --no-pager | grep -ci 'compliance' || true")
-    vals = rj.strip().split("\n")
-    ok = st in (404, 405) and len(vals) >= 3 and vals[0] == "0" and vals[1] == "0"
-    n.row("CHK-M11-309", "agentN:no-compliance-job", "manager 0.1.0 sends agent N no compliance job (no scan route; the runner never starts)", ok,
-          f"POST /scans on 0.1.0: {st}; runner ExecMainStartTimestampMonotonic {vals[:1]}; 'plugin done' lines {vals[1:2]}; "
-          f"agent journal lines naming compliance {vals[2:3]}; agent {json.dumps({k: agent_of(api, aid).get(k) for k in ('status', 'agent_version')})}")
+    scan_passes(api, a.tree, aid, "CHK-M11-309", "agentN",
+                "manager N−1 scans agent N: the scan completes, PASS with exit code 0, score 1.0, no errors")
 
 
 def ops_blocks(tree: Path) -> dict[str, str]:
@@ -299,7 +313,7 @@ def upgrade_manager(a: argparse.Namespace, rel: Path, wheel_version: str, chk: s
                            "| grep -q '\"ok\"' && { echo \"ready after $i more s\"; break; }; sleep 1; done; systemctl is-active bitscan-manager; "
                            "journalctl -u bitscan-manager --no-pager -o cat | tail -n 15")
         out += "\n[after the block] " + late[-900:]
-    # both wheels are version 0.1.0 (PD-50), so the installed code is told apart by its files: every file the
+    # the installed code is told apart by its files (two wheels can share a version, PD-50): every file the
     # wheel's RECORD lists must be installed with that hash (pip rewrites the installed RECORD, so it is not compared)
     n.run(["docker", "exec", "-i", n.CT, "bash", "-c", "cat > /root/m11c-record.py"], stdin=RECORD_CHECK)
     _, rec = n.mgr_sh(f"python3.12 -I /root/m11c-record.py {d}/bitscan_manager-{wheel_version}-py3-none-any.whl "
@@ -317,10 +331,10 @@ def phase_upgrade(a: argparse.Namespace, api: n.Api, tok: dict[str, str], n_vers
         for c, h in EXPECTED["upgrade"][1:-1]:
             n.row(c, h, "chain", False, "guest u2204 did not boot")
         return
-    aid = n.chain_host(api, "u2204", with_deb(a, a.v010 / V010_DEB), tok["u2204"], "", "0.1.0-1", ids("CHK-M11-307"), "base")
+    aid = n.chain_host(api, "u2204", with_deb(a, a.prev / PREV_DEB), tok["u2204"], "", PREV_VERSION, ids("CHK-M11-307"), "base")
     if not aid:
         for c, h in EXPECTED["upgrade"][5:-1]:
-            n.notrun(c, h, "upgrade", "no enrolled 0.1.0 agent (base rows)")
+            n.notrun(c, h, "upgrade", f"no enrolled {PREV_VERSION} agent (base rows)")
         return
     before = agent_of(api, aid)
     upgrade_manager(a, a.rel, n_wheel_version, "CHK-M11-307", "manager", "the N")
@@ -328,7 +342,7 @@ def phase_upgrade(a: argparse.Namespace, api: n.Api, tok: dict[str, str], n_vers
     hb0 = before.get("last_heartbeat_at")
     got = n.wait(lambda: (lambda d: d if d.get("last_heartbeat_at") and d.get("last_heartbeat_at") != hb0 and d.get("status") == "online" else None)(agent_of(api, aid)), 420, 10)
     d = got or agent_of(api, aid)
-    n.row("CHK-M11-307", "agent010:heartbeat-after", "the 0.1.0 agent keeps heartbeating to manager N (no re-enrolment)", bool(got) and d.get("agent_version") == "0.1.0-1",
+    n.row("CHK-M11-307", "agentPrev:heartbeat-after", f"the {PREV_VERSION} agent keeps heartbeating to manager N (no re-enrolment)", bool(got) and d.get("agent_version") == PREV_VERSION,
           f"{time.time() - t_up:.0f} s after the start; last_heartbeat_at {hb0} -> {d.get('last_heartbeat_at')}; {d.get('status')} {d.get('agent_version')}")
     inv0 = d.get("last_inventory_at")
     probe = n.WORK / "probe"
@@ -341,7 +355,7 @@ def phase_upgrade(a: argparse.Namespace, api: n.Api, tok: dict[str, str], n_vers
     got = n.wait(lambda: (lambda x: x if x.get("last_inventory_at") != inv0 else None)(agent_of(api, aid)), 420, 10)
     st, pk = api.json("GET", f"{n.V1}/agents/{aid}/packages?limit=500")
     names = {p.get("name") for p in (pk or {}).get("items", [])} if isinstance(pk, dict) else set()
-    n.row("CHK-M11-307", "agent010:inventory-after", "inventory goes on: a dpkg change reaches manager N", bool(got) and "bitscan-m11-probe" in names,
+    n.row("CHK-M11-307", "agentPrev:inventory-after", "inventory goes on: a dpkg change reaches manager N", bool(got) and "bitscan-m11-probe" in names,
           f"last_inventory_at {inv0} -> {(got or {}).get('last_inventory_at')}; probe listed {'bitscan-m11-probe' in names}")
     n.guest(n.GUESTS["u2204"][0], "put", str(a.deb_n), f"/tmp/{a.deb_n.name}")
     rc, out = n.on("u2204", f"cd /tmp && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ./{shlex.quote(a.deb_n.name)} >/tmp/up.log 2>&1; echo rc=$?; "
@@ -360,7 +374,7 @@ def phase_upgrade(a: argparse.Namespace, api: n.Api, tok: dict[str, str], n_vers
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", required=True, choices=sorted(EXPECTED))
-    for k in ("--tree", "--rel", "--deb-n", "--v010", "--v010-sums", "--images", "--work"):
+    for k in ("--tree", "--rel", "--deb-n", "--prev", "--prev-sums", "--images", "--work"):
         ap.add_argument(k, required=True, type=Path)
     ap.add_argument("--log", type=Path)
     ap.add_argument("--guest-mem", type=int, default=1024)
@@ -369,7 +383,7 @@ def main() -> int:
                                                    "manager-operations.md §1 onto the walked manager N before the guests")
     ap.add_argument("--keep", action="store_true")
     a = ap.parse_args()
-    a.tree, a.rel, a.deb_n, a.v010, a.images = (p.resolve() for p in (a.tree, a.rel, a.deb_n, a.v010, a.images))
+    a.tree, a.rel, a.deb_n, a.prev, a.images = (p.resolve() for p in (a.tree, a.rel, a.deb_n, a.prev, a.images))
     n.WORK = a.work
     n.CT = f"m11c-{a.phase}"
     n.EXPECTED[:] = EXPECTED[a.phase]
@@ -378,7 +392,7 @@ def main() -> int:
     (a.work / "secrets").mkdir(mode=0o700, exist_ok=True)
     (a.work / "rows.jsonl").write_text("")
     os.environ.setdefault("GUESTS_DIR", str(a.work / "guests"))
-    sums = published_sums(a.v010_sums)
+    sums = published_sums(a.prev_sums)
     n_version = a.deb_n.name.split("_")[1]
     wheel = next(a.rel.glob("bitscan_manager-*-py3-none-any.whl"), None)
     n_wheel_version = wheel.name.split("-")[1] if wheel else "?"
@@ -387,11 +401,11 @@ def main() -> int:
             for c, h in EXPECTED[a.phase][1:]:
                 n.notrun(c, h, "chain", "the pre-check failed (CHK-M11-304)")
             return n.report(a.expect_red)
-        rel = rel010(a, sums) if a.phase in ("b", "upgrade") else a.rel
+        rel = rel_prev(a, sums) if a.phase in ("b", "upgrade") else a.rel
         api = manager_up(a, rel)
         if api is None:
             for c, h in EXPECTED[a.phase][1:]:
-                n.notrun(c, h, "chain", f"no manager host ({'0.1.0' if a.phase != 'a' else 'N'})")
+                n.notrun(c, h, "chain", f"no manager host ({'N−1' if a.phase != 'a' else 'N'})")
             return n.report(a.expect_red)
         if a.plant_rel:  # a planted manager tree, deployed onto the walked host the way an upgrade is
             if not upgrade_manager(a, a.plant_rel.resolve(), n_wheel_version, "CHK-M11-372", "plant", "the planted"):
