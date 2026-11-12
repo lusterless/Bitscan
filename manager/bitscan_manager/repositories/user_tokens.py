@@ -43,6 +43,15 @@ class ApiTokenRow:
     revoked_at: datetime | None
 
 
+@dataclass(frozen=True)
+class SessionRow:
+    token_id: int
+    created_at: datetime
+    last_used_at: datetime | None
+    expires_at: datetime
+    totp_verified: bool
+
+
 def _kinds(kinds: Collection[str]) -> list[str]:
     chosen = sorted(set(kinds))
     if not chosen or not KINDS.issuperset(chosen):
@@ -136,3 +145,33 @@ class UserTokenRepo:
             (user_id, after_id, after_id, limit),
         ).fetchall()
         return [ApiTokenRow(*r) for r in rows]
+
+    def list_active_sessions(
+        self,
+        user_id: int,
+        now: datetime,
+        idle_since: datetime,
+        limit: int,
+        after_id: int | None,
+    ) -> list[SessionRow]:
+        """The user's web sessions that still authenticate: not revoked, not
+        expired, and used (or created) after idle_since (TS §6.2, 8 h idle)."""
+        rows = self._conn.execute(
+            "SELECT token_id, created_at, last_used_at, expires_at, totp_verified"
+            " FROM user_token WHERE user_id = %s AND kind = 'session'"
+            " AND revoked_at IS NULL AND expires_at > %s"
+            " AND COALESCE(last_used_at, created_at) > %s"
+            " AND (%s::bigint IS NULL OR token_id > %s)"
+            " ORDER BY token_id LIMIT %s",
+            (user_id, now, idle_since, after_id, after_id, limit),
+        ).fetchall()
+        return [SessionRow(*r) for r in rows]
+
+    def revoke_own_session(self, user_id: int, token_id: int, now: datetime) -> bool:
+        """False alike for an unknown id, another user's token, an API token or
+        a session already revoked, so the caller cannot tell those apart."""
+        return 1 == self._update(
+            "UPDATE user_token SET revoked_at = %s WHERE token_id = %s"
+            " AND user_id = %s AND kind = 'session' AND revoked_at IS NULL",
+            (now, token_id, user_id),
+        )

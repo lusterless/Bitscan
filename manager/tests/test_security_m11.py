@@ -238,6 +238,22 @@ FROZEN = {
         "738fc8432756e3b7c8ef70f153e1a46f562254747ad66207e28438720007580d"
     ),
 }
+# Owner-approved changes after release 0.2.0, each re-pinned here on purpose:
+# the web session cookie and own-session routes (TS §6.2, §6.3, §8.1;
+# work/decisions.md 2026-11-12). The sha256 of the changed or added file.
+POST_M11_PINS = {
+    "auth/dependencies.py": (
+        "f025bb451df0f69c6bbd6b3c0e76687e67b0b9c4912b74e606ddbf60bcd0a193"
+    ),
+    "auth/session_cookie.py": (
+        "3eda101bd9e9b591f6b00e5e12101213bfc7c0d58db55d776dabc6dd93d57d72"
+    ),
+    "auth/sessions.py": (
+        "cdbedf47bb5dc1cad8fc00e34729458e145448171f848022f620c61bdd5be6c3"
+    ),
+}
+PINS = {**FROZEN, **POST_M11_PINS}
+
 # Folders frozen as a whole: no file added (the three M11 jobs modules aside).
 FROZEN_DIRS = ("auth", "services/jobs", "db/migrations/versions")
 M11_JOBS = {
@@ -551,9 +567,9 @@ def test_the_frozen_files_are_byte_unchanged() -> None:
     and every migration up to m0005, is byte-identical to 6efe0fb."""
     changed = {
         rel: hashlib.sha256((BM / rel).read_bytes()).hexdigest()
-        for rel in FROZEN
+        for rel in PINS
         if not (BM / rel).is_file()
-        or hashlib.sha256((BM / rel).read_bytes()).hexdigest() != FROZEN[rel]
+        or hashlib.sha256((BM / rel).read_bytes()).hexdigest() != PINS[rel]
     }
     assert changed == {}, sorted(changed)
 
@@ -565,7 +581,7 @@ def test_no_file_was_added_to_a_frozen_folder(folder: str) -> None:
     now = {
         p.relative_to(BM).as_posix() for p in (BM / folder).glob("*.py") if p.is_file()
     }
-    pinned = {r for r in FROZEN if r.startswith(folder + "/")}
+    pinned = {r for r in PINS if r.startswith(folder + "/")}
     allowed = {
         "services/jobs": M11_JOBS,
         "db/migrations/versions": {M11_MIGRATION},

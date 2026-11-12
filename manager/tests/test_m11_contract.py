@@ -57,6 +57,14 @@ M11_SCHEMAS = {
     "ScanResultItem",
     "ScanResultItemWithOutput",
 }
+# Owner-approved additions after release 0.2.0 (TS §6.2; work/decisions.md
+# 2026-11-12): the session routes and their models, outside the M11 pins.
+SESSION_OPS = {
+    ("get", "/api/v1/auth/session"),
+    ("get", "/api/v1/auth/sessions"),
+    ("delete", "/api/v1/auth/sessions/{session_id}"),
+}
+SESSION_SCHEMAS = {"CurrentSession", "Page_SessionItem_", "SessionItem"}
 UUID_RE = (
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
@@ -180,7 +188,8 @@ def test_exactly_the_six_operations_are_added(doc: dict[str, Any]) -> None:
     assert all(p.startswith(PREFIX + "/") for _, p in M11_OPS)
     rest: dict[str, dict[str, Any]] = {}
     for path, item in doc["paths"].items():
-        kept = {m: o for m, o in item.items() if (m, path) not in M11_OPS}
+        added = M11_OPS | SESSION_OPS
+        kept = {m: o for m, o in item.items() if (m, path) not in added}
         if kept:
             rest[path] = kept
     assert digest(rest) == BASE_PATHS
@@ -371,7 +380,8 @@ def test_earlier_components_are_byte_identical(doc: dict[str, Any]) -> None:
     """REQ-273 (3): every component schema present at 6efe0fb (the agent-route
     ones, ResultItem among them) is unchanged; M11 only adds."""
     schemas = doc["components"]["schemas"]
-    old = {k: v for k, v in schemas.items() if k not in M11_SCHEMAS}
+    added = M11_SCHEMAS | SESSION_SCHEMAS
+    old = {k: v for k, v in schemas.items() if k not in added}
     assert len(old) == BASE_SCHEMA_COUNT
     assert digest(old) == BASE_SCHEMAS
     assert set(schemas) & M11_SCHEMAS == M11_SCHEMAS
