@@ -161,7 +161,8 @@ describe("CHK-M7-389 (a) start after confirmation", () => {
     const posts = calls.filter((c) => c.method === "POST");
     expect(posts.map((c) => c.path)).toEqual([START]);
     expect(posts[0]?.body).toBe("");
-    expect(posts[0]?.authorization).toBe("Bearer " + TOKEN);
+    expect(posts[0]?.authorization).toBeNull();
+    expect(posts[0]?.csrf).toBe("1");
   });
 });
 
@@ -303,7 +304,7 @@ describe("CHK-M7-389 (c) refusals of the start", () => {
     expect(calls.map((c) => c.method + " " + c.path)).toEqual([
       "POST " + START,
     ]);
-    expect(calls.every((c) => c.authorization === "Bearer " + TOKEN)).toBe(
+    expect(calls.every((c) => c.authorization === null && c.csrf === "1")).toBe(
       true,
     );
     expect(screen.queryByRole("region", { name: "Rebuild task" })).toBeNull();

@@ -3,6 +3,7 @@ import { EnrolmentTokens } from "../screens/EnrolmentTokens";
 import { HostDetail } from "../screens/HostDetail";
 import { Hosts } from "../screens/Hosts";
 import { Imports } from "../screens/Imports";
+import { MySessions } from "../screens/MySessions";
 import { PackageSearch } from "../screens/PackageSearch";
 import { PasswordChange } from "../screens/PasswordChange";
 import { PolicyUpload } from "../screens/PolicyUpload";
@@ -47,6 +48,8 @@ export const ROUTE_ROLES: Readonly<Record<RouteName, readonly Role[]>> =
     "enrolment-tokens": ADMIN,
     totp: EVERYONE,
     password: EVERYONE,
+    // TS §6.2: every signed-in user lists and ends only their own sessions.
+    sessions: EVERYONE,
     // TS §6.2: the scan reads are viewer; POST /scans and every
     // /scan-schedules route are operator (#122 (i)).
     scans: EVERYONE,
@@ -139,6 +142,12 @@ const NAV: readonly NavEntry[] = Object.freeze([
     label: "Password",
     group: "Account",
     icon: "password",
+  },
+  {
+    route: { name: "sessions" },
+    label: "My sessions",
+    group: "Account",
+    icon: "sessions",
   },
 ]);
 
@@ -245,6 +254,8 @@ export function RouteView({ route, role, onPasswordChanged }: RouteViewProps) {
       );
     case "password":
       return <PasswordChange onChanged={onPasswordChanged} />;
+    case "sessions":
+      return <MySessions />;
     case "scans":
       return <Scans role={role} links={SCAN_LINKS} />;
     case "scan":

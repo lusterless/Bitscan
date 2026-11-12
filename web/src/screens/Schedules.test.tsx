@@ -133,7 +133,8 @@ describe("CHK-M11-269 the list", () => {
     ]);
     await mount();
     expect(queryOf(at(callsTo(LIST), 0))).toEqual({ limit: "50" });
-    expect(at(callsTo(LIST), 0).authorization).toBe("Bearer " + bsu("O"));
+    expect(at(callsTo(LIST), 0).authorization).toBeNull();
+    expect(at(callsTo(LIST), 0).csrf).toBe("1");
     const cells = (r: HTMLElement) =>
       Array.from(r.querySelectorAll("td"))
         .slice(0, 8)

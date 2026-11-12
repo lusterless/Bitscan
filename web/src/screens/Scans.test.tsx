@@ -84,7 +84,8 @@ describe("CHK-M11-265 the list and its query", () => {
     await mount();
     const first = at(callsTo(LIST), 0);
     expect(queryOf(first)).toEqual({ limit: "50" });
-    expect(first.authorization).toBe("Bearer " + bsu("V"));
+    expect(first.authorization).toBeNull();
+    expect(first.csrf).toBe("1");
     expect(names()).toEqual(["CIS Ubuntu 24.04 1"]);
   });
 

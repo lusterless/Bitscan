@@ -18,6 +18,8 @@ export interface Call {
   /** path plus query string, as sent */
   readonly url: string;
   readonly authorization: string | null;
+  /** TS §6.3: the X-Bitscan-Request header every UI call sends. */
+  readonly csrf: string | null;
   /** The Content-Type header as sent (M7: the multipart upload). */
   readonly contentType: string | null;
   /** Every request header as sent (M11: Idempotency-Key on POST /scans). */
@@ -84,6 +86,7 @@ async function fakeNetwork(input: Request | string | URL): Promise<Response> {
     query: url.searchParams,
     url: url.pathname + url.search,
     authorization: request.headers.get("Authorization"),
+    csrf: request.headers.get("X-Bitscan-Request"),
     contentType: request.headers.get("Content-Type"),
     headers: new Headers(request.headers),
     body: await request.clone().text(),

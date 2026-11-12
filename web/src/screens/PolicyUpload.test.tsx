@@ -148,7 +148,8 @@ describe("CHK-M7-314 (a) the request: one multipart part `file` with the file's 
       "POST " + IMPORT,
     ]);
     const call = callsTo(IMPORT, "POST")[0] as Call;
-    expect(call.authorization).toBe("Bearer " + TOKEN);
+    expect(call.authorization).toBeNull();
+    expect(call.csrf).toBe("1");
     // openapi-fetch set no JSON type: the multipart boundary is the runtime's.
     expect(call.contentType?.toLowerCase()).toMatch(
       /^multipart\/form-data; *boundary=/,

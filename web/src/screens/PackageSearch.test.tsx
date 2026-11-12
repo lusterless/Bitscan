@@ -175,7 +175,8 @@ describe("CHK-M5-260 the form sends exactly the filled parameters", () => {
     await search();
     expect(searches()).toHaveLength(1);
     expect(lastSearch()).toEqual({ group_by: "package", limit: "50" });
-    expect(searches()[0]?.authorization).toBe("Bearer " + bsu("V"));
+    expect(searches()[0]?.authorization).toBeNull();
+    expect(searches()[0]?.csrf).toBe("1");
   });
 
   it("every field filled, as typed", async () => {
@@ -626,7 +627,8 @@ describe("CHK-M5-274 Export CSV sends the visible search through the client", ()
       status: "any",
       group_by: "package",
     });
-    expect(csv[0]?.authorization).toBe("Bearer " + bsu("V"));
+    expect(csv[0]?.authorization).toBeNull();
+    expect(csv[0]?.csrf).toBe("1");
     expect(saved).toHaveLength(1);
   });
 

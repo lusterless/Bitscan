@@ -173,7 +173,8 @@ describe("CHK-M5-220 the create form", () => {
       "allowed_cidrs",
       "auto_approve",
     ]);
-    expect(callsTo(LIST, "POST")[0]?.authorization).toBe("Bearer " + bsu("A"));
+    expect(callsTo(LIST, "POST")[0]?.authorization).toBeNull();
+    expect(callsTo(LIST, "POST")[0]?.csrf).toBe("1");
   });
 
   it("filled, sends the values with the CIDRs as a list", async () => {

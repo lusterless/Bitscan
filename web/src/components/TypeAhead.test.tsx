@@ -118,7 +118,8 @@ describe("CHK-M5-270 debounce and request", () => {
       limit: "500",
     });
     expect(sent[0]?.url).toBe(SEARCH + "?q=opens&group_by=package&limit=500");
-    expect(sent[0]?.authorization).toBe("Bearer " + bsu("V"));
+    expect(sent[0]?.authorization).toBeNull();
+    expect(sent[0]?.csrf).toBe("1");
     await advance(5000);
     expect(callsTo(SEARCH)).toHaveLength(1);
   });

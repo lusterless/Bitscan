@@ -134,7 +134,8 @@ describe("CHK-M11-266 a submission", () => {
       policy_id: 7,
       target: { all: true },
     });
-    expect(call.authorization).toBe("Bearer " + bsu("O"));
+    expect(call.authorization).toBeNull();
+    expect(call.csrf).toBe("1");
     expect(keyOf(call)).toMatch(UUID_RE);
     expect(links.opened).toEqual([NEW_SCAN]);
   });

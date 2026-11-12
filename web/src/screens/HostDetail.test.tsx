@@ -431,7 +431,7 @@ describe("CHK-M5-255 the package list", () => {
     expect(new Set([...first, ...second].map((r) => r[0])).size).toBe(51);
     // The detail is not re-requested for a package page.
     expect(callsTo("/api/v1/agents/" + ID)).toHaveLength(1);
-    expect(calls.every((c) => c.authorization === "Bearer " + bsu("V"))).toBe(
+    expect(calls.every((c) => c.authorization === null && c.csrf === "1")).toBe(
       true,
     );
   });

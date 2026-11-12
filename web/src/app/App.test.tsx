@@ -368,7 +368,11 @@ describe("CHK-M5-280 navigation per role", () => {
     // role; REQ-282 Schedules for operators and admins only (#122 (i)).
     "Scans #/scans",
   ];
-  const account = ["TOTP #/account/totp", "Password #/account/password"];
+  const account = [
+    "TOTP #/account/totp",
+    "Password #/account/password",
+    "My sessions #/account/sessions",
+  ];
   it.each([
     ["viewer", [...common, ...account]],
     ["operator", [...common, "Schedules #/schedules", ...account]],
@@ -496,7 +500,8 @@ describe("CHK-M5-282 an admin without TOTP reaches only TOTP and sign-out", () =
     await settle();
     expect(screen.getByRole("navigation", { name: "Main" })).toBeTruthy();
     expect(window.location.hash).toBe("#/hosts");
-    expect(calls.at(-1)?.authorization).toBe("Bearer " + bsu("Y"));
+    expect(calls.at(-1)?.authorization).toBeNull();
+    expect(calls.at(-1)?.csrf).toBe("1");
   });
 });
 
@@ -652,7 +657,7 @@ describe("CHK-M5-286 sign-in, three screens, sign-out: the token goes nowhere", 
     expect(
       calls
         .filter((c) => c.path !== "/api/v1/auth/login")
-        .every((c) => c.authorization === "Bearer " + TOKEN),
+        .every((c) => c.authorization === null && c.csrf === "1"),
     ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await settle();
@@ -856,7 +861,9 @@ describe("CHK-M7-393 the token on the M7 screens: never in a URL or storage", ()
       expect(requested()).toContain(r);
     }
     const sent = calls.filter((c) => c.path !== "/api/v1/auth/login");
-    expect(sent.every((c) => c.authorization === "Bearer " + TOKEN)).toBe(true);
+    expect(sent.every((c) => c.authorization === null && c.csrf === "1")).toBe(
+      true,
+    );
     expect(sent.every((c) => !c.url.includes(TOKEN))).toBe(true);
     expect(sent.every((c) => !c.body.includes(TOKEN))).toBe(true);
     expect(container.innerHTML).not.toContain(TOKEN);

@@ -122,7 +122,8 @@ describe("CHK-M5-210 start shows the secret and URI as text", () => {
       expect(calls[0]).toMatchObject({
         method: "POST",
         path: ENROL,
-        authorization: "Bearer " + OLD,
+        authorization: null,
+        csrf: "1",
       });
       expect(bodyOf(calls[0])).toEqual({});
       const codes = Array.from(container.querySelectorAll("code")).map(
@@ -185,8 +186,8 @@ describe("CHK-M5-210 start shows the secret and URI as text", () => {
 
 // ------------------------------------------------------------ CHK-M5-211
 
-describe("CHK-M5-211 confirm swaps the token", () => {
-  it("posts {totp_code}; the next request carries the new token; onDone", async () => {
+describe("CHK-M5-211 confirm replaces the session", () => {
+  it("posts {totp_code}; the new view is set; no token is ever sent; onDone", async () => {
     setSession(loginResponse("admin", false, OLD, false));
     enrolServer(() => json(200, loginResponse("admin", true, NEW, true)));
     const onDone = vi.fn();
@@ -201,7 +202,8 @@ describe("CHK-M5-211 confirm swaps the token", () => {
     await submitVia("Confirm");
     expect(calls).toHaveLength(2);
     expect(bodyOf(calls[1])).toEqual({ totp_code: "654321" });
-    expect(calls[1]?.authorization).toBe("Bearer " + OLD);
+    expect(calls[1]?.authorization).toBeNull();
+    expect(calls[1]?.csrf).toBe("1");
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(currentSession()).toMatchObject({
       totpEnrolled: true,
@@ -209,7 +211,8 @@ describe("CHK-M5-211 confirm swaps the token", () => {
     });
     expect(secretShown()).toBe(false);
     await api.GET("/api/v1/agents");
-    expect(calls[2]?.authorization).toBe("Bearer " + NEW);
+    expect(calls[2]?.authorization).toBeNull();
+    expect(calls[2]?.url).not.toContain(NEW);
   });
 });
 
@@ -238,7 +241,7 @@ describe("CHK-M5-212 a refused confirm", () => {
     expect(onDone).not.toHaveBeenCalled();
     expect(currentSession()?.totpEnrolled).toBe(false);
     await api.GET("/api/v1/agents");
-    expect(calls.at(-1)?.authorization).toBe("Bearer " + OLD);
+    expect(calls.at(-1)?.authorization).toBeNull();
   });
 
   it("409: enrolment restarts (start step; Start posts {} again)", async () => {
@@ -427,7 +430,8 @@ describe("CHK-M5-216 password change", () => {
       expect(calls[0]).toMatchObject({
         method: "POST",
         path: "/api/v1/auth/password",
-        authorization: "Bearer " + OLD,
+        authorization: null,
+        csrf: "1",
       });
       expect(bodyOf(calls[0])).toEqual({
         current_password: CURRENT_PW,

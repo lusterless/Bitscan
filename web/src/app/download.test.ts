@@ -116,7 +116,8 @@ describe("CHK-M5-274 the export request", () => {
     const call = calls[0] as Call;
     expect(call.method).toBe("GET");
     expect(call.path).toBe(CSV);
-    expect(call.authorization).toBe("Bearer " + bsu("V"));
+    expect(call.authorization).toBeNull();
+    expect(call.csrf).toBe("1");
     expect(queryOf(call)).toEqual(query);
     expect(call.query.has("limit")).toBe(false);
     expect(call.query.has("cursor")).toBe(false);
@@ -238,7 +239,8 @@ describe("CHK-M11-263 the results export request", () => {
     const call = calls[0] as Call;
     expect(call.method).toBe("GET");
     expect(call.path).toBe(RESULTS_CSV);
-    expect(call.authorization).toBe("Bearer " + bsu("V"));
+    expect(call.authorization).toBeNull();
+    expect(call.csrf).toBe("1");
     expect(queryOf(call)).toEqual({ status: "FAIL", agent_id: AGENT });
   });
 
