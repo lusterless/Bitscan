@@ -160,10 +160,10 @@ It must print `Verification: OK`. In section 5, set `BITSCAN_AUDIT_SINK=syslog+t
 
 ## 2. Check the release files
 
-Download these files of the release into one folder (for 0.2.0):
+Download these files of the release into one folder (for 0.3.0):
 
-- `bitscan_manager-0.2.0-py3-none-any.whl`
-- `bitscan-manager-0.2.0-requirements.txt`
+- `bitscan_manager-0.3.0-py3-none-any.whl`
+- `bitscan-manager-0.3.0-requirements.txt`
 - `bitscan-manager.service`, `bitscan-manager-migrate.service`, `bitscan-manager-maintain.service`, `bitscan-manager-maintain.timer`
 
 The release page, which is served from a different origin than the download, shows the release's `SHA256SUMS` text in its notes. Copy that text from the release page into a file named `SHA256SUMS` in the same folder. Never use a checksum file fetched from the same host as the files, including the `SHA256SUMS` file attached to the release.
@@ -408,8 +408,8 @@ systemctl list-timers bitscan-openbao-renew.timer
 
 ```sh
 sudo python3.12 -m venv /opt/bitscan-manager
-sudo /opt/bitscan-manager/bin/pip install --require-hashes --only-binary :all: -r bitscan-manager-0.2.0-requirements.txt
-sudo /opt/bitscan-manager/bin/pip install --no-deps --no-index ./bitscan_manager-0.2.0-py3-none-any.whl
+sudo /opt/bitscan-manager/bin/pip install --require-hashes --only-binary :all: -r bitscan-manager-0.3.0-requirements.txt
+sudo /opt/bitscan-manager/bin/pip install --no-deps --no-index ./bitscan_manager-0.3.0-py3-none-any.whl
 sudo ln -sfn /opt/bitscan-manager/bin/bitscan-manager /usr/bin/bitscan-manager
 bitscan-manager --help
 sudo find /opt/bitscan-manager ! -type l -perm /022

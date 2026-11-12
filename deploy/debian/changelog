@@ -1,3 +1,22 @@
+bitscan-agent (0.3.0-1) unstable; urgency=medium
+
+  * Release 0.3.0 of the Bitscan agent, with manager 0.3.0. The agent
+    code is unchanged from 0.2.0-1; this package carries the new version
+    so that the agent and the manager are released together.
+  * Manager 0.3.0 keeps a web UI user signed in across a page reload: the
+    session token lives in an HttpOnly, Secure, SameSite=Strict cookie
+    that page scripts cannot read, with a required X-Bitscan-Request
+    header and an Origin check against cross-site requests. A new
+    "My sessions" page lists the user's own web sessions and ends any of
+    them. Agents and their tokens are not affected.
+  * Supported with manager 0.3.0 and manager 0.2.0. Manager 0.3.0
+    supports agents 0.3.0-1 and 0.2.0-1; hosts still on 0.1.0-1 must be
+    upgraded to 0.2.0-1 or later before the manager is upgraded.
+  * Upgrades 0.2.0-1 in place and keeps its configuration, agent token
+    and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Thu, 12 Nov 2026 00:00:00 +0000
+
 bitscan-agent (0.2.0-1) unstable; urgency=medium
 
   * Release 0.2.0 of the Bitscan agent, with manager 0.2.0: compliance
