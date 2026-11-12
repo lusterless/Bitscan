@@ -1,6 +1,6 @@
 # Proposal: stay signed in across a page refresh, and a "My sessions" page
 
-Status: **draft, waiting for owner approval of the spec wording (section 3)**. No code until the TS is amended in its own PR.
+Status: **spec wording approved by the owner (2026-11-12)**; the TS is amended in its own docs-only PR. Code follows in separate PRs.
 
 ## 1. Request and owner decisions (2026-11-12)
 

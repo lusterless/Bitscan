@@ -1078,11 +1078,11 @@ One versioned REST API at `/api/v1`, JSON over HTTPS (TLS 1.2+), described by an
 
 ### 6.2 User endpoints
 
-Users sign in with a local account and receive an opaque bearer token; every call sends `Authorization: Bearer <token>`.
+Users sign in with a local account and receive an opaque token. Scripts send it as `Authorization: Bearer <token>`; the web UI sends it in the session cookie described below.
 
 | Token | How it is issued | Lifetime | Use |
 | --- | --- | --- | --- |
-| Session (`bsu_…`) | `POST /auth/login` with username, password and, for admins, a TOTP code | 8 h idle, 24 h max; ended by `POST /auth/logout` | Web UI; held in memory, never in `localStorage` |
+| Session (`bsu_…`) | `POST /auth/login` with username, password and, for admins, a TOTP code | 8 h idle, 24 h max; ended by `POST /auth/logout` | Web UI; kept in the `__Host-bitscan_session` cookie (`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, no `Max-Age`), never readable by page scripts and never in `localStorage` or `sessionStorage`. A bearer header is also accepted. |
 | API (`bsk_…`) | Created only in the web UI (session token; TOTP-verified for admins) or directly on the server with `bitscan-manager users create-api-token <user>`, which writes to the database; shown once | Default 90 days, max 365; revocable | Scripts and integrations; the owner's current role at each request, but never for sensitive actions |
 
 - All tokens are 256 random bits, base64url, with a type prefix (`bsu_`, `bsk_`, `bsa_`, `bse_`). The manager stores only their SHA-256 hashes.
@@ -1094,12 +1094,17 @@ Users sign in with a local account and receive an opaque bearer token; every cal
 - First admin: `bitscan-manager users create-admin <name>` on the server. Every new user is offered TOTP enrolment at first sign-in; admins must complete it. Promoting a user to admin in the UI or API requires that user to have TOTP enrolled already. An admin with no TOTP yet (created or reset on the server with the CLI) signs in with a password only and gets a session that can call only `/auth/totp/enrol` and `/auth/logout`; after enrolling, the session is re-issued as TOTP-verified.
 - A lost TOTP device is reset by another admin or on the server with `bitscan-manager users reset-totp <user>`; both alert and are audit-logged. The last active admin cannot be disabled or demoted.
 - Admins can revoke any user's tokens; disabling a user revokes all of them at once.
+- Logout, password change and ending a session on `/auth/sessions` clear the cookie. A user can list and end only their own web sessions.
+- User routes read the session cookie only when there is no `Authorization` header. Agent routes never read it.
 
 | Method | Path | Purpose | Min role |
 | --- | --- | --- | --- |
 | POST | `/auth/login`, `/auth/logout` | Start / end a session | — |
 | POST | `/auth/totp/enrol` | Enrol or replace your own TOTP; session only; replacing needs the current password and code | any signed-in user |
 | POST | `/auth/password` | Change your own password (current password required); session only | any signed-in user |
+| GET | `/auth/session` | The current session's role, TOTP state and expiry, so the web UI can restore itself after a reload; session only | any signed-in user |
+| GET | `/auth/sessions` | List your own active web sessions (created, last used, expires, TOTP-verified, current); session only | any signed-in user |
+| DELETE | `/auth/sessions/{id}` | End one of your own web sessions; audit-logged; session only | any signed-in user |
 | POST | `/api-tokens` | Create an API token; web session only, refused for API tokens | viewer |
 | GET, DELETE | `/api-tokens` | List and revoke your own API tokens | viewer |
 | GET | `/policies` | List profiles (`?status=enabled`) | viewer |
@@ -1138,6 +1143,7 @@ There is deliberately **no** endpoint to disable inventory collection or to run 
 - Errors use RFC 9457 problem details: `{ type, title, status, detail, instance }`.
 - Lists use cursor pagination: `?limit=50&cursor=<opaque>`, max limit 500.
 - `POST /scans` accepts an `Idempotency-Key` header.
+- A request authenticated by the session cookie must send `X-Bitscan-Request: 1` and, when an `Origin` header is present, the manager's own origin; otherwise 403 `csrf_required`.
 - Rate limits: agent routes 30 req/min per agent; user routes 600 req/min per user; unauthenticated routes (`/auth/login`, `/agent/enroll`) 10 req/min per source IP. Failed token checks on any route are limited to 20 per minute per source IP (the limit counts and blocks only failed attempts; requests with valid tokens from the same address are never throttled) and written to `audit_log` as one aggregated entry per IP per minute. An agent that gets 429 retries with its normal back-off; results stay in the spool.
 - `/policies/import` takes `multipart/form-data` with one file field, `file`.
 - Size limits: inventory upload 10 MB gzip / 64 MB decompressed; result batch 1.5 MB after decompression; `.bit` 5 MB; other JSON bodies 1 MB. Larger bodies get 413.
@@ -1256,7 +1262,8 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | XML attacks (XXE, billion laughs) | `defusedxml`, no DTD, size and node limits |
 | SQL injection | ORM / parameterised queries only; no string-built SQL |
 | Privilege misuse | RBAC: viewer / operator / admin; TOTP for admins; sensitive actions need a TOTP session and never accept API tokens; every change in the hash-chained audit log |
-| Stolen web session (XSS) | All stored text rendered as plain text only; strict Content-Security-Policy; session token in memory only; no CORS (§6.3) |
+| Stolen web session (XSS) | All stored text rendered as plain text only; strict Content-Security-Policy; session token in an `HttpOnly` cookie that scripts cannot read; `SameSite=Strict` plus a required `X-Bitscan-Request` header and `Origin` check against CSRF; no CORS (§6.3). **Accepted risk:** a web session survives a page reload until it is idle for 8 h, reaches 24 h, is signed out or ended on `/auth/sessions`, or the browser closes. |
+| Cross-site request forgery | The session cookie is `SameSite=Strict`; every cookie-authenticated request must carry `X-Bitscan-Request: 1`, which another site cannot add without CORS, and a present `Origin` must be the manager's own; there is no CORS (§6.3) |
 | Local user on a host | Plugins must not execute, source or `cd` into user-writable paths (script rules; BIT102 rejects `source`, `eval`, `exec`, `xargs`, `find -exec`, `sh <file>`); the runner can execute only system binaries; the enrolment token is a debconf password field and is cleared after install; plugin output and tokens never go to journald |
 | Audit sink outage | Entries queue on disk, an alert fires at once, and sensitive actions are refused after 15 minutes of outage (§5.3) |
 | Flooding from one agent | Rate limits; at most one unscheduled inventory upload per 10 minutes; hard caps on every upload; unreferenced packages pruned; alert on bursts of new packages |
