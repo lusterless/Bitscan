@@ -13,7 +13,7 @@ Spec: TS §6 (routes, auth, conventions, agent wire contract) and §3.2 (enrolme
 
 ## Route groups
 
-- Agent routes live under `/api/v1/agent/` and accept only `bsa_` tokens, plus `bse_` on `POST /agent/enroll`. User routes accept only `bsu_` and `bsk_` tokens. Each group is its own router with its own token dependency.
+- Agent routes live under `/api/v1/agent/` and accept only `bsa_` tokens, plus `bse_` on `POST /agent/enroll`. User routes accept only `bsu_` and `bsk_` tokens, as a bearer or (only without an `Authorization` header) the `bsu_` in the session cookie (TS §6.2, §6.3). Each group is its own router with its own token dependency.
 - Agent endpoints are exactly the six in TS §6.1. On agent routes:
   - the `{id}` in the path must match the token's agent (otherwise 403);
   - an agent awaiting approval gets 403 `pending_approval`;

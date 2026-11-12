@@ -8,7 +8,8 @@ paths:
 Spec: TS §6.2 (routes and roles), §6.3 (conventions), §4.3 (profiles), §4.5 (results) and §7.3 (package search UI).
 
 - TypeScript strict mode, ESLint and Prettier. Call the API only through the client generated from the OpenAPI document; never hand-write fetch calls for API routes.
-- Keep the session token (`bsu_`) in memory only and send it as `Authorization: Bearer`. Never store it in `localStorage`, `sessionStorage` or any cookie.
+- **Decided** (owner, 2026-11-12; TS §6.2, §6.3, supersedes #85 (c)): the UI never holds the `bsu_` token. Sign-in and the TOTP confirm set the `HttpOnly` `__Host-bitscan_session` cookie; every API call sends `X-Bitscan-Request: 1` and no `Authorization` header. At start-up the UI restores the session from `GET /auth/session` (403 `totp_enrolment_required` = an admin who must enrol TOTP). Never store the token in `localStorage`, `sessionStorage` or a script-readable cookie.
+- "My sessions" (Account) lists `GET /auth/sessions` and ends sessions with `DELETE /auth/sessions/{id}`; ending the current one signs out.
 - Render every stored value as plain text: hostnames, stdout, package names, `.bit` names and descriptions, usernames and audit details. Never use `dangerouslySetInnerHTML`, `innerHTML` or a Markdown or HTML renderer on API data.
 - Do not load scripts, styles or fonts from other origins; the Content-Security-Policy allows only `'self'`. There is no CORS.
 - Show raw stdout and stderr only when the API returns them (operator and admin). Viewers see verdicts, `eval_detail` and scores.
