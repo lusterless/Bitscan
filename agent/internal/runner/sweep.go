@@ -13,10 +13,11 @@ import (
 
 // Sweep kills every process in the runner's subtree except the runner (TS
 // §3.5 L250, §3.7 L284; #138 (a)), after every job and at start-up:
-//   - other pids in the subtree root and in supervisor (the runner's
-//     ancestors, which cannot be killed whole) get SIGKILL through a pidfd;
-//   - every other cgroup, supervisor's children included, gets cgroup.kill,
-//     is waited empty and removed, children first.
+//   - other pids in the subtree root, in supervisor (the runner's ancestors,
+//     which cannot be killed whole) and in plugins (kept for its shared task
+//     limit) get SIGKILL through a pidfd;
+//   - every other cgroup, the children of supervisor and plugins included,
+//     gets cgroup.kill, is waited empty and removed, children first.
 //
 // Passes repeat until one finds nothing, so a process that moved between
 // cgroups during a pass is caught by the next; after 5 s the sweep fails and
@@ -44,7 +45,7 @@ func (c *Cgroups) sweepOnce(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	busy := false
-	for _, dir := range []string{".", supervisor} {
+	for _, dir := range []string{".", supervisor, pluginsDir} {
 		killed, err := c.killPids(dir)
 		if err != nil {
 			return false, err
@@ -55,7 +56,7 @@ func (c *Cgroups) sweepOnce(ctx context.Context) (bool, error) {
 		}
 		busy = busy || killed
 		for _, sub := range subs {
-			if dir == "." && sub == supervisor {
+			if dir == "." && (sub == supervisor || sub == pluginsDir) {
 				continue
 			}
 			if err := c.killTree(ctx, path.Join(dir, sub)); err != nil {

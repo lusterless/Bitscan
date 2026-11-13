@@ -239,7 +239,9 @@ jobs:
       # The runner's delegated cgroup tests (build tag delegated) need a
       # delegated cgroup v2 subtree, so go test ./... never runs them. They run
       # as bitscan-runner.service runs (TS §3.7): user bitscan-runner, only
-      # CAP_DAC_READ_SEARCH, no new privileges, Delegate=yes. systemd-run
+      # CAP_DAC_READ_SEARCH, no new privileges, Delegate=yes, CPUQuota=25% and
+      # TasksMax=64 (the plugin CPU and task limit rows check the plugin
+      # cgroups get those limits). systemd-run
       # --wait returns the test binary's exit code. Red on any failure and
       # when no TestDelegated test passed. The job rows need a private /tmp
       # (their /tmp row refuses to run without one), /var/lib/m10c-job, and
@@ -271,7 +273,7 @@ jobs:
           log="$RUNNER_TEMP/delegated.log"
           rc=0
           sudo systemd-run --wait --pipe --collect --quiet \
-            -p Delegate=yes -p User=bitscan-runner -p Group=bitscan-runner \
+            -p Delegate=yes -p CPUQuota=25% -p TasksMax=64 -p User=bitscan-runner -p Group=bitscan-runner \
             -p AmbientCapabilities=CAP_DAC_READ_SEARCH -p CapabilityBoundingSet=CAP_DAC_READ_SEARCH \
             -p NoNewPrivileges=yes \
             -p PrivateTmp=yes -p StateDirectory=m10c-job \

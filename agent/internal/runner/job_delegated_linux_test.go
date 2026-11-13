@@ -190,14 +190,16 @@ func assertNothingLeft(t *testing.T, e *JobExecutor, marker string) {
 	}
 	ents, _ := os.ReadDir(mountOf(e.CG))
 	for _, d := range ents {
-		if d.IsDir() && d.Name() != "supervisor" {
+		if d.IsDir() && d.Name() != "supervisor" && d.Name() != "plugins" {
 			t.Errorf("cgroup %s left in the subtree (REQ-238 (4))", d.Name())
 		}
 	}
-	sub, _ := os.ReadDir(filepath.Join(mountOf(e.CG), "supervisor"))
-	for _, d := range sub {
-		if d.IsDir() {
-			t.Errorf("cgroup supervisor/%s left", d.Name())
+	for _, keep := range []string{"supervisor", "plugins"} {
+		sub, _ := os.ReadDir(filepath.Join(mountOf(e.CG), keep))
+		for _, d := range sub {
+			if d.IsDir() {
+				t.Errorf("cgroup %s/%s left", keep, d.Name())
+			}
 		}
 	}
 	if got := ownCgroupPath(t); !strings.HasSuffix(got, "/supervisor") {
@@ -640,7 +642,7 @@ func TestDelegatedJobCleanupBeforeEmit(t *testing.T) {
 		} else if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("temp dir %s still there when its result is emitted", dir)
 		}
-		ents, _ := os.ReadDir(mountOf(e.CG))
+		ents, _ := os.ReadDir(filepath.Join(mountOf(e.CG), "plugins"))
 		for _, d := range ents {
 			if d.IsDir() && strings.HasPrefix(d.Name(), "p-") {
 				t.Errorf("cgroup %s still there when the result is emitted", d.Name())

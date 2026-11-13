@@ -21,8 +21,15 @@ import (
 
 const (
 	supervisor = "supervisor"
+	// plugins holds every plugin cgroup, so they can share one task limit.
+	pluginsDir = "plugins"
 	emptyWait  = 5 * time.Second
 	pollEvery  = 10 * time.Millisecond
+	// taskReserve is how many of the unit's tasks (TasksMax=64, TS §3.7)
+	// all plugins together can never take: the runner itself uses about 10
+	// (its Go runtime with GOMAXPROCS=2 from the unit's CPUQuota, plus
+	// threads blocked in system calls), so 16 leaves it room to make more.
+	taskReserve = 16
 )
 
 // CgroupFS is the runner's own cgroup directory: RootFS on the real one, or
@@ -74,14 +81,25 @@ type Cgroups struct {
 	d    CgroupDeps
 	mu   sync.Mutex
 	next uint64
+	// cpuMax is the runner's own cpu.max ("<quota> <period>"), copied into
+	// every plugin cgroup; nil when the runner's cgroup has no CPU limit or
+	// the cpu controller could not be enabled for its children.
+	cpuMax []byte
+	// tasksLimited is true when plugins/pids.max holds the shared limit, so
+	// plugins/pids.events counts the forks it refused.
+	tasksLimited bool
 }
 
 func NewCgroups(d CgroupDeps) *Cgroups { return &Cgroups{d: d} }
 
-// Plugin is one plugin's cgroup, "p-<n>".
+// Plugin is one plugin's cgroup, "plugins/p-<n>".
 type Plugin struct {
 	name string
 	c    *Cgroups
+	// limitHits is plugins/pids.events "max" just before the plugin
+	// started; watch is false when there is no shared task limit.
+	limitHits uint64
+	watch     bool
 }
 
 // parseSelfCgroup accepts exactly one "0::<path>" line (unified cgroup v2).
@@ -119,9 +137,116 @@ func (c *Cgroups) Setup() error {
 	if err := c.d.FS.Mkdir(supervisor); err != nil && !errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("runner: create supervisor cgroup: %w", err)
 	}
+	if err := c.d.FS.Mkdir(pluginsDir); err != nil && !errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("runner: create plugins cgroup: %w", err)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.ensureSupervisor()
+	if err := c.ensureSupervisor(); err != nil {
+		return err
+	}
+	c.limitTasks()
+	c.limitCPU()
+	return nil
+}
+
+// limitTasks gives all plugins together the runner's own task limit
+// (pids.max, from TasksMax=) less taskReserve, in plugins/pids.max. Every
+// thread and process counts as a task: without it, plugins could take all of
+// the unit's tasks, and the runner, unable to create a thread, would die and
+// report every remaining plugin runner_unavailable. With it, a plugin that
+// meets the limit fails to fork and the runner reports it as truncated
+// (ERROR, see HitTaskLimit). It guards against mistakes, not a hostile
+// plugin: plugins run as the runner's user and could rewrite the limit, as
+// they can already signal the runner (TS §3.7). When the runner's cgroup has
+// no numeric limit or the pids controller cannot be enabled, plugins run as
+// before and the runner still starts. Callers hold c.mu.
+func (c *Cgroups) limitTasks() {
+	b, err := c.d.FS.ReadFile("pids.max")
+	n, perr := strconv.Atoi(strings.TrimSpace(string(b)))
+	switch {
+	case err != nil || perr != nil:
+		c.warn("runner: own cgroup has no task limit; plugins get no shared limit")
+		return
+	case n <= taskReserve:
+		c.warn("runner: own task limit too small to share; plugins get no shared limit")
+		return
+	}
+	if err := c.d.FS.WriteFile("cgroup.subtree_control", []byte("+pids")); err != nil {
+		c.warn("runner: pids controller not enabled for plugins; they get no shared limit")
+		return
+	}
+	if err := c.d.FS.WriteFile(pluginsDir+"/pids.max", []byte(strconv.Itoa(n-taskReserve))); err != nil {
+		c.warn("runner: plugins task limit not set; plugins get no shared limit")
+		return
+	}
+	c.tasksLimited = true
+}
+
+// limitHitCount reads the "max" counter of plugins/pids.events: how many
+// forks the shared limit has refused since the runner started.
+func (c *Cgroups) limitHitCount() (uint64, bool) {
+	b, err := c.d.FS.ReadFile(pluginsDir + "/pids.events")
+	if err != nil {
+		return 0, false
+	}
+	for line := range bytes.Lines(b) {
+		if f := bytes.Fields(line); len(f) == 2 && string(f[0]) == "max" {
+			n, err := strconv.ParseUint(string(f[1]), 10, 64)
+			return n, err == nil
+		}
+	}
+	return 0, false
+}
+
+// limitCPU lets every plugin cgroup carry the runner's own CPU limit. The Go
+// runtime, and other runtimes that size themselves from cgroups, read only
+// the cgroup a process is in, not its parents. Without its own cpu.max, a Go
+// program a plugin runs (bitscan-capread among them) sizes GOMAXPROCS to
+// every CPU on the host. On a 256-CPU host its start-up garbage collection
+// then starts about 64 threads, which fills the runner's TasksMax=64 and
+// stops the runner creating threads. With the copied limit (25% from the
+// unit) such a program starts with GOMAXPROCS=2. The parent's limit already
+// caps the plugins, so the copy takes no CPU away from them.
+//
+// It needs the runner out of its own cgroup (it is in supervisor), plugins
+// empty of processes (it only holds the plugin cgroups) and the cpu controller
+// delegated, which CPUQuota= and Delegate= on the unit give.
+// When either is missing, plugins start without a CPU limit of their own, as
+// before; the runner still starts. Callers hold c.mu.
+func (c *Cgroups) limitCPU() {
+	b, err := c.d.FS.ReadFile("cpu.max")
+	if err != nil {
+		c.warn("runner: own cgroup has no cpu.max; plugin cgroups get no CPU limit")
+		return
+	}
+	f := bytes.Fields(b)
+	if len(f) != 2 || string(f[0]) == "max" || !digits(f[0]) || !digits(f[1]) {
+		c.warn("runner: own cgroup has no CPU limit; plugin cgroups get none")
+		return
+	}
+	for _, dir := range []string{".", pluginsDir} {
+		if err := c.d.FS.WriteFile(path.Join(dir, "cgroup.subtree_control"), []byte("+cpu")); err != nil {
+			c.warn("runner: cpu controller not enabled for plugin cgroups; they get no CPU limit")
+			return
+		}
+	}
+	c.cpuMax = bytes.Join(f, []byte(" "))
+}
+
+func digits(b []byte) bool {
+	for _, ch := range b {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return len(b) > 0
+}
+
+func (c *Cgroups) warn(msg string) {
+	if c.d.Log != nil {
+		c.d.Log.Warn(msg)
+	}
 }
 
 func hasEntry(entries []fs.DirEntry, name string) bool {
@@ -154,11 +279,33 @@ func (c *Cgroups) NewPlugin() (*Plugin, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.next++
-	p := &Plugin{name: "p-" + strconv.FormatUint(c.next, 10), c: c}
+	p := &Plugin{name: pluginsDir + "/p-" + strconv.FormatUint(c.next, 10), c: c}
 	if err := c.d.FS.Mkdir(p.name); err != nil {
 		return nil, fmt.Errorf("runner: create plugin cgroup: %w", err)
 	}
+	if c.cpuMax != nil {
+		if err := c.d.FS.WriteFile(p.name+"/cpu.max", c.cpuMax); err != nil {
+			return nil, errors.Join(fmt.Errorf("runner: limit plugin cgroup CPU: %w", err), p.Remove())
+		}
+	}
+	if c.tasksLimited {
+		p.limitHits, p.watch = c.limitHitCount()
+	}
 	return p, nil
+}
+
+// HitTaskLimit reports whether the shared plugin task limit refused a fork
+// while this plugin ran: any time from just before its start to now. A fork
+// the plugin needed may then have failed, and its output may be incomplete
+// (an "empty" check could even pass), so the caller reports it as truncated,
+// which the evaluator answers ERROR. A plugin running beside the one that
+// met the limit is reported too: only the shared counter exists.
+func (p *Plugin) HitTaskLimit() bool {
+	if !p.watch {
+		return false
+	}
+	now, ok := p.c.limitHitCount()
+	return ok && now > p.limitHits
 }
 
 // StartIn is the cgroup hop (#136 (a)): under the lock the runner moves into

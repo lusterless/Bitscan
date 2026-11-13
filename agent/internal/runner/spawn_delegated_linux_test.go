@@ -32,10 +32,28 @@ var (
 // cmd/bitscan-runner's init does (TASK-221 r2, decisions "keep the main OS
 // thread out of Spawn"). Without it Spawn's locked goroutine can run on m0,
 // which the Go runtime parks forever at niceness 10 instead of ending it.
+//
+// With goProbeEnv set, the binary is instead the Go program a plugin runs:
+// it prints the GOMAXPROCS the runtime chose and its thread count, then exits.
 func TestMain(m *testing.M) {
+	if os.Getenv(goProbeEnv) != "" {
+		b, _ := os.ReadFile("/proc/self/status")
+		th := "?"
+		for _, l := range strings.Split(string(b), "\n") {
+			if v, ok := strings.CutPrefix(l, "Threads:"); ok {
+				th = strings.TrimSpace(v)
+			}
+		}
+		fmt.Printf("gomaxprocs=%d threads=%s\n", runtime.GOMAXPROCS(0), th)
+		os.Exit(0)
+	}
 	runtime.LockOSThread()
 	os.Exit(m.Run())
 }
+
+// goProbeEnv is set only by the delegated CPU-limit row on the copy of this
+// binary it starts in a plugin cgroup.
+const goProbeEnv = "BITSCAN_RUNNER_TEST_GO_PROBE"
 
 // threadNiceness lists every thread of this process with its niceness
 // (field 19 of /proc/self/task/<tid>/stat), its state and whether it is m0.

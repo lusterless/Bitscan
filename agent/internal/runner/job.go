@@ -154,6 +154,13 @@ func (e *JobExecutor) plugin(ctx context.Context, job wire.UUID, set *redact.Set
 	if outErr != nil || errOutErr != nil {
 		out.Overflow = true
 	}
+	// The same for a plugin that ran while the shared task limit refused a
+	// fork: a process it needed may never have started.
+	if cg.HitTaskLimit() {
+		out.Overflow = true
+		e.Log.Warn("runner: the plugins task limit was hit while the plugin ran; reported truncated",
+			"job_id", string(job), "plugin_uuid", string(p.PluginUUID))
+	}
 	_ = RemoveTempDir(s.TempDir)
 	if ctx.Err() != nil {
 		return
