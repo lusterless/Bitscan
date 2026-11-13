@@ -146,7 +146,7 @@ jobs:
           }
           all='socket|bind|listen|accept|accept4|connect'
           refused='level=ERROR msg="start-up refused" reason='
-          usage='bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules'
+          usage='bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules|apparmor_profiles'
           expect "runner, full bounding set" 1 \
             "$refused\"runner: refusing to start: CapBnd holds capabilities beyond CAP_DAC_READ_SEARCH\"" \
             "$all" "${self[@]}" "$bins/bitscan-runner"

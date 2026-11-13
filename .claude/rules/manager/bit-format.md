@@ -55,7 +55,7 @@ Fixtures in `bits/tests/` (malformed, XXE, billion-laughs, oversize) break these
 
 - Read-only: no writes outside `/tmp`, no prompts, no changes to services or packages. Print only the observed value, not a sentence. Wrap `Execute` in CDATA.
 - Mount-option checks read the host view with `findmnt --task 1` or `/proc/1/mountinfo`, never plain `findmnt /tmp`.
-- Live firewall and audit rules: `bitscan-capread nft_ruleset` / `bitscan-capread audit_rules` where enabled, otherwise the rule files on disk (`/etc/nftables.conf`, `/etc/audit/rules.d/`). Commands that need uid 0 fail; read config files instead.
+- Live firewall and audit rules, and the loaded AppArmor profiles: `bitscan-capread nft_ruleset` / `bitscan-capread audit_rules` / `bitscan-capread apparmor_profiles` where enabled, otherwise the rule files on disk (`/etc/nftables.conf`, `/etc/audit/rules.d/`). Commands that need uid 0 fail; read config files instead.
 - Never execute, source or `cd` into files or directories that non-root users can write; read them only as data.
 - Rewrite CIS `xargs`/`find -exec` scripts with `find … -print` and a `while read` loop. Never compare text the redaction patterns would hide.
 - **Open spec question** (`work/open-questions.md` #111): the CIS control numbers in `bits/samples/` (for example `1.3.1.1`) are unconfirmed against the benchmark copy (TS §8.5), and each sample's `PolicyDescription` says so. Ask before changing them or presenting them as confirmed.

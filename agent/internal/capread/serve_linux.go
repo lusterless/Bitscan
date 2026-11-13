@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -34,29 +35,30 @@ const (
 var errUnknown = errors.New("capread: unknown request")
 
 // readRequest reads one request: a known name and LF, nothing else, at most
-// maxRequest bytes. errUnknown means the answer is "error unknown_request";
-// any other error means the connection is closed without an answer.
-func readRequest(r io.Reader) ([]string, error) {
+// maxRequest bytes, and returns the name. errUnknown means the answer is
+// "error unknown_request"; any other error means the connection is closed
+// without an answer.
+func readRequest(r io.Reader) (string, error) {
 	var buf [maxRequest + 1]byte
 	n := 0
 	for n < len(buf) {
 		m, err := r.Read(buf[n:])
 		n += m
 		if i := bytes.IndexByte(buf[:n], '\n'); i >= 0 {
-			argv, ok := commands[string(buf[:i])]
-			if !ok || i != n-1 { // not a name, or bytes after the LF
-				return nil, errUnknown
+			name := string(buf[:i])
+			if !Known(name) || i != n-1 { // not a name, or bytes after the LF
+				return "", errUnknown
 			}
-			return argv, nil
+			return name, nil
 		}
 		if errors.Is(err, io.EOF) {
-			return nil, errUnknown
+			return "", errUnknown
 		}
 		if err != nil {
-			return nil, fmt.Errorf("capread: read the request: %w", err)
+			return "", fmt.Errorf("capread: read the request: %w", err)
 		}
 	}
-	return nil, errUnknown // no LF within maxRequest bytes
+	return "", errUnknown // no LF within maxRequest bytes
 }
 
 // errorLine is the one-line refusal; the command's output never follows it.
@@ -90,7 +92,7 @@ func Serve(ctx context.Context, l Listener, log *slog.Logger) error {
 
 func serveOne(ctx context.Context, c *net.UnixConn, log *slog.Logger) {
 	_ = c.SetDeadline(time.Now().Add(readTimeout))
-	argv, err := readRequest(c)
+	name, err := readRequest(c)
 	if errors.Is(err, errUnknown) {
 		log.Warn("request refused", "result", wordUnknown)
 		_, _ = c.Write(errorLine(wordUnknown))
@@ -100,8 +102,14 @@ func serveOne(ctx context.Context, c *net.UnixConn, log *slog.Logger) {
 		log.Warn("request not read; closed")
 		return
 	}
-	out, word := run(ctx, argv)
-	log.Info("request answered", "command", argv[0], "result", word)
+	var out []byte
+	var word string
+	if argv, ok := commands[name]; ok {
+		out, word = run(ctx, argv)
+	} else {
+		out, word = readFile(ctx, files[name])
+	}
+	log.Info("request answered", "request", name, "result", word)
 	// The client waits at most 30 s; a client that stops reading is cut off
 	// so the next request is not held up.
 	_ = c.SetDeadline(time.Now().Add(runTimeout))
@@ -162,4 +170,46 @@ func run(ctx context.Context, argv []string) ([]byte, string) {
 		return nil, "failed 126"
 	}
 	return out.buf, "ok"
+}
+
+// readFile reads one table file itself, for at most runTimeout and at most
+// maxOutput bytes, with the same reply words as run: not_installed when the
+// file is missing, too_large over the cap, timeout, and "failed 1" when it
+// cannot be read (as cat would exit).
+func readFile(ctx context.Context, path string) ([]byte, string) {
+	type result struct {
+		out  []byte
+		word string
+	}
+	done := make(chan result, 1)
+	go func() {
+		// path comes only from the files table, never from a request.
+		f, err := os.Open(filepath.Clean(path))
+		if errors.Is(err, fs.ErrNotExist) {
+			done <- result{nil, wordNotInstalled}
+			return
+		}
+		if err != nil {
+			done <- result{nil, "failed 1"}
+			return
+		}
+		defer func() { _ = f.Close() }()
+		out, err := io.ReadAll(io.LimitReader(f, maxOutput+1))
+		switch {
+		case err != nil:
+			done <- result{nil, "failed 1"}
+		case len(out) > maxOutput:
+			done <- result{nil, wordTooLarge}
+		default:
+			done <- result{out, "ok"}
+		}
+	}()
+	cctx, cancel := context.WithTimeout(ctx, runTimeout)
+	defer cancel()
+	select {
+	case r := <-done:
+		return r.out, r.word
+	case <-cctx.Done():
+		return nil, wordTimeout
+	}
 }

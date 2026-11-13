@@ -29,7 +29,7 @@ var wordRe = regexp.MustCompile(`^[a-z0-9_ ]{1,40}$`)
 // nowhere. A partial answer is never printed.
 func Client(args []string, socket string, stdout, stderr io.Writer) int {
 	if len(args) != 1 || !Known(args[0]) {
-		_, _ = fmt.Fprintln(stderr, "bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules")
+		_, _ = fmt.Fprintln(stderr, "bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules|apparmor_profiles")
 		return 2
 	}
 	fail := func(word string) int {

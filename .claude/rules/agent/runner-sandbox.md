@@ -48,9 +48,9 @@ Spec: TS §3.5 (job execution) and §3.7 (privilege model and units). Default re
 ## capread helper (`bitscan-capread`)
 
 - Off by default; installed with `--no-enable --no-start`. It is enabled only on the host itself (for example by configuration management); the manager never enables it.
-- Runs as a `DynamicUser` with only `CAP_NET_ADMIN` and `CAP_AUDIT_CONTROL`.
-- Plugins call `bitscan-capread nft_ruleset` or `bitscan-capread audit_rules`; the client forwards only the request name over `/run/bitscan/capread.sock`.
-- Accepts only uid `bitscan-runner` (`SO_PEERCRED`), and only two request names: `nft_ruleset` runs `/usr/sbin/nft -j list ruleset`, and `audit_rules` runs `/usr/sbin/auditctl -l`.
+- Runs as a `DynamicUser` in the root group (`SupplementaryGroups=root`) with only `CAP_NET_ADMIN` and `CAP_AUDIT_CONTROL`. **Decided** (owner, 2026-11-13; TS §3.7, §8.1): the root group is only for reading the AppArmor profile list, which the kernel opens only for uid or gid 0.
+- Plugins call `bitscan-capread nft_ruleset`, `bitscan-capread audit_rules` or `bitscan-capread apparmor_profiles`; the client forwards only the request name over `/run/bitscan/capread.sock`.
+- Accepts only uid `bitscan-runner` (`SO_PEERCRED`), and only three request names: `nft_ruleset` runs `/usr/sbin/nft -j list ruleset`, `audit_rules` runs `/usr/sbin/auditctl -l`, and `apparmor_profiles` reads the one fixed file `/sys/kernel/security/apparmor/profiles` itself (no process).
 - Each request runs by absolute path with an empty environment, a 10 s timeout and a 1 MB output cap, one at a time.
 - It never takes a command line. Never give these capabilities to the runner or to plugins.
 
