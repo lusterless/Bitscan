@@ -87,13 +87,17 @@ func fakeHelper(t *testing.T, answer []byte, chunks int, pause time.Duration) st
 	return sock
 }
 
-// maxClientThreads bounds the client's OS threads. With one P the runtime
-// needs the main thread, sysmon, at most one thread spinning for work or
-// running the GC worker, and one that takes the P over while another blocks
-// in a system call (the write to the plugin's stdout pipe), plus one spare
-// for the template thread. The runner's cgroup allows 64 tasks in all, and
-// the runner itself uses about 10.
-const maxClientThreads = 6
+// maxClientThreads bounds the client's OS threads. A fixed client needs the
+// main thread, sysmon and the template thread, a thread that takes the P
+// while another blocks in a system call (the write to the plugin's stdout
+// pipe), and the few threads woken to look for work while the runtime still
+// had more than one P during start-up. That count does not grow with the
+// CPU count: 3 to 6 threads in 1,500 local runs at GOMAXPROCS 1 to 192, 7 on
+// a CI runner. The bug grows with it: GOMAXPROCS/4 dedicated GC workers plus
+// about 4, so 20 at 64 CPUs and 53 at 192. 10 leaves room above every
+// measured count and still fails the smallest broken row by a factor of two.
+// The runner's cgroup allows 64 tasks in all; plugins share 48 of them.
+const maxClientThreads = 10
 
 // TestClientThreads runs the real client path with the GOMAXPROCS it starts
 // with and checks it stays at a few threads.
