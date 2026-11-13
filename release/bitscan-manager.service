@@ -1,0 +1,48 @@
+[Unit]
+Description=Bitscan manager
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+ExecStart=/usr/bin/bitscan-manager serve
+ExecReload=/bin/kill -HUP $MAINPID
+EnvironmentFile=/etc/bitscan/manager.env
+LoadCredential=app_dsn:/etc/bitscan/secrets/app.dsn
+LoadCredential=retention_dsn:/etc/bitscan/secrets/retention.dsn
+LoadCredential=tls_cert:/etc/bitscan/secrets/tls.crt
+LoadCredential=tls_key:/etc/bitscan/secrets/tls.key
+LoadCredential=vault_token:/etc/bitscan/secrets/vault.token
+Environment=BITSCAN_DB_DSN_FILE=%d/app_dsn
+Environment=BITSCAN_VAULT_TOKEN_FILE=%d/vault_token
+Environment=BITSCAN_RETENTION_DSN_FILE=%d/retention_dsn
+Environment=BITSCAN_TLS_CERT_FILE=%d/tls_cert
+Environment=BITSCAN_TLS_KEY_FILE=%d/tls_key
+User=bitscan-manager
+Group=bitscan-manager
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/bitscan/bits/uploaded /var/lib/bitscan/audit-queue
+PrivateTmp=yes
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+PrivateIPC=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

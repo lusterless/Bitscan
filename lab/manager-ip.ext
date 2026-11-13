@@ -1,0 +1,4 @@
+subjectAltName=IP:10.11.0.4,IP:157.10.163.1,DNS:mgr.example
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+extendedKeyUsage=serverAuth
