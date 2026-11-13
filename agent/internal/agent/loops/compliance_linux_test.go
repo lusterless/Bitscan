@@ -24,6 +24,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -194,14 +195,24 @@ func (h *compHarness) drive(t *testing.T, cond func() bool) {
 	}
 }
 
+// stateFiles reads every file under dir. The results sender removes a job's
+// spool entries once the manager has acknowledged the final batch, and it can
+// still be doing so when this runs: an entry that disappears during the walk
+// is skipped, since a file that no longer exists stores nothing.
 func stateFiles(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		if err != nil || d.IsDir() {
 			return err
 		}
 		b, err := fs.ReadFile(os.DirFS(filepath.Dir(p)), filepath.Base(p))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -279,7 +290,14 @@ func TestPD45ComplianceThroughRunner(t *testing.T) {
 	if calls[0].job.JobID != uid(1) || len(calls[0].job.Plugins) != 3 || calls[0].job.Plugins[2].Execute != execute {
 		t.Fatalf("the runner got %+v", calls[0].job)
 	}
-	// Nothing executed by the agent, nothing logged or stored.
+	// Nothing executed by the agent, nothing logged or stored. The agent is
+	// stopped first, so its state directory stops changing under the walk.
+	h.stop()
+	select {
+	case <-h.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the pull loop did not stop")
+	}
 	if _, err := os.Stat(canaryFile); err == nil {
 		t.Fatal("the plugin command was executed")
 	}
