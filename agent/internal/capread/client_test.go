@@ -95,7 +95,7 @@ func TestClientArgsRefusedLocally(t *testing.T) {
 		{"unknown_request"}, {"nft_ruleset;id"},
 	} {
 		code, out, errb := runClient(args, h.path)
-		if code != 2 || out != "" || errb != "bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules\n" {
+		if code != 2 || out != "" || errb != "bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules|apparmor_profiles\n" {
 			t.Errorf("%q: exit %d stdout %q stderr %q, want 2 and the usage line", args, code, out, errb)
 		}
 	}

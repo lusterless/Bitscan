@@ -50,7 +50,7 @@ func TestCapreadBinary(t *testing.T) {
 	env := []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
 	for _, args := range [][]string{nil, {""}, {"nft_ruleset", "extra"}, {"/bin/sh"}, {"audit_rules", "nft_ruleset"}, {"--serve", "x"}, {"NFT_RULESET"}} {
 		code, out, errb := runBin(t, bin, env, args...)
-		if code != 2 || out != "" || errb != "bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules\n" {
+		if code != 2 || out != "" || errb != "bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules|apparmor_profiles\n" {
 			t.Errorf("%q: exit %d stdout %q stderr %q, want 2 and the usage line", args, code, out, errb)
 		}
 	}

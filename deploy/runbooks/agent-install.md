@@ -242,7 +242,7 @@ A runner that refuses to start logs one line, `start-up refused`, with a `reason
 
 ## 10. The capread helper (optional)
 
-Live firewall and audit rules need capabilities the runner never has. Checks that want them call `bitscan-capread nft_ruleset` (`nft -j list ruleset`) or `bitscan-capread audit_rules` (`auditctl -l`), and the helper answers. The helper is installed disabled. While it is off, the call exits 1 with `bitscan-capread: not enabled`, and checks read the rule files on disk instead.
+Live firewall and audit rules need capabilities the runner never has, and the list of loaded AppArmor profiles (`/sys/kernel/security/apparmor/profiles`) can be read only by uid or gid 0. Checks that want them call `bitscan-capread nft_ruleset` (`nft -j list ruleset`), `bitscan-capread audit_rules` (`auditctl -l`) or `bitscan-capread apparmor_profiles` (that file, one `name (mode)` line per loaded profile), and the helper answers. The helper runs as a throwaway non-root user in the root group with two capabilities, so on a host where it is enabled, a compromise of the helper could read files that group root can read (TS §8.1). The helper is installed disabled. While it is off, the call exits 1 with `bitscan-capread: not enabled`, and checks read the rule files on disk instead.
 
 Only an administrator on the host enables the helper, by hand or with configuration management. The manager has no route, setting or job that can enable it, and the agent and runner never change a unit.
 
@@ -255,7 +255,7 @@ ls -l /run/bitscan/capread.sock
 sudo -u bitscan-runner /usr/sbin/bitscan-capread nft_ruleset
 ```
 
-The socket is `active`, and the socket file is `srw-rw----`, owned by `root bitscan-runner`. The last command prints the ruleset as JSON. If `nft` or `auditctl` is not installed, the answer is `bitscan-capread: not_installed`. The helper accepts only the `bitscan-runner` user.
+The socket is `active`, and the socket file is `srw-rw----`, owned by `root bitscan-runner`. The last command prints the ruleset as JSON. If `nft` or `auditctl` is not installed, or AppArmor is not enabled (no profile list), the answer is `bitscan-capread: not_installed`. `sudo -u bitscan-runner /usr/sbin/bitscan-capread apparmor_profiles` prints the loaded profiles. The helper accepts only the `bitscan-runner` user.
 
 The next heartbeat (within about 5 minutes) reports `runner_helpers` as `["capread"]`. The manager shows that in `GET /agents` and writes a `runner_helper_changed` alert.
 
