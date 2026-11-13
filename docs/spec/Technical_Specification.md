@@ -274,7 +274,7 @@ The agent is split into processes so that the part talking to the network has no
 | --- | --- | --- | --- |
 | `bitscan-agent` | `bitscan`, no capabilities | Heartbeat, job pull, job checks, inventory collection, result and inventory upload | Read root-only files, run plugin commands |
 | `bitscan-runner` and its plugins | `bitscan-runner`, only `CAP_DAC_READ_SEARCH` (read any file) | Checks jobs, runs plugin `Execute` commands, redacts and returns output | Write outside its private `/tmp`, access devices, open IP sockets, execute files outside system binary paths, trace other processes, call D-Bus methods other than read-only ones, gain privileges, load kernel modules. Plugins **can** read any file and connect to local Unix sockets that accept any user, except those blocked in the unit. |
-| `bitscan-capread` (optional, off by default) | a dynamic unprivileged user with only `CAP_NET_ADMIN` and `CAP_AUDIT_CONTROL` | Runs exactly two fixed commands for the runner: `nft -j list ruleset` and `auditctl -l` | Run anything else. It takes a request name, never a command line. |
+| `bitscan-capread` (optional, off by default) | a dynamic unprivileged user in the root group, with only `CAP_NET_ADMIN` and `CAP_AUDIT_CONTROL` | Runs exactly three fixed requests for the runner: `nft -j list ruleset`, `auditctl -l`, and reading `/sys/kernel/security/apparmor/profiles` | Run anything else. It takes a request name, never a command line or a path. |
 
 **How agent and runner talk**
 
@@ -457,8 +457,9 @@ Requires=bitscan-capread.socket
 
 [Service]
 ExecStart=/usr/sbin/bitscan-capread --serve
-# Not root: a throwaway user with only the two read capabilities it needs
+# Not root: a throwaway user with only the two read capabilities it needs and the root group (for the AppArmor profile list)
 DynamicUser=yes
+SupplementaryGroups=root
 AmbientCapabilities=CAP_NET_ADMIN CAP_AUDIT_CONTROL
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_AUDIT_CONTROL
 NoNewPrivileges=yes
@@ -483,7 +484,7 @@ RestrictAddressFamilies=AF_UNIX AF_NETLINK
 IPAddressDeny=any
 ```
 
-Plugins call `bitscan-capread nft_ruleset` or `bitscan-capread audit_rules`; the command forwards the request over the socket. The helper runs `/usr/sbin/nft -j list ruleset` or `/usr/sbin/auditctl -l` by absolute path with an empty environment, a 10 s timeout and a 1 MB output cap, one request at a time. The helper accepts only uid `bitscan-runner` (`SO_PEERCRED`). It is enabled only on the host itself (for example by configuration management), because the manager never changes host settings. The agent reports enabled helpers in every heartbeat, and the manager shows and audit-logs any change.
+Plugins call `bitscan-capread nft_ruleset`, `bitscan-capread audit_rules` or `bitscan-capread apparmor_profiles`; the command forwards the request over the socket. The helper runs `/usr/sbin/nft -j list ruleset` or `/usr/sbin/auditctl -l` by absolute path with an empty environment, or for `apparmor_profiles` reads the one fixed file `/sys/kernel/security/apparmor/profiles` itself (the kernel lets only uid or gid 0 open it), each with a 10 s timeout and a 1 MB output cap, one request at a time. The helper accepts only uid `bitscan-runner` (`SO_PEERCRED`). It is enabled only on the host itself (for example by configuration management), because the manager never changes host settings. The agent reports enabled helpers in every heartbeat, and the manager shows and audit-logs any change.
 
 **File ownership**
 
@@ -500,7 +501,7 @@ Plugins call `bitscan-capread nft_ruleset` or `bitscan-capread audit_rules`; the
 **Capability trade-offs**
 
 - `CAP_DAC_READ_SEARCH` lets the runner read any file (e.g. `/etc/shadow`, `/etc/sudoers`), which covers most CIS checks.
-- Live firewall and audit rules need `CAP_NET_ADMIN` and `CAP_AUDIT_CONTROL`, which can also change those settings. They are never given to the runner or to plugins; only the fixed-command helper has them. Without the helper, plugins check the rule files on disk (`/etc/nftables.conf`, `/etc/audit/rules.d/`).
+- Live firewall and audit rules need `CAP_NET_ADMIN` and `CAP_AUDIT_CONTROL`, which can also change those settings, and the list of loaded AppArmor profiles needs gid 0. They are never given to the runner or to plugins; only the fixed-command helper has them. Without the helper, plugins check the rule files on disk (`/etc/nftables.conf`, `/etc/audit/rules.d/`).
 - **Why not root.** A uid-0 process can still write root-owned files through paths systemd does not make read-only (such as `/dev`), and can stop or start services over D-Bus because polkit trusts root. A non-root user with only read capability, plus the D-Bus policy above, closes both. A few commands refuse to run unless uid 0; plugins for those checks read the config files instead.
 - **Mount checks.** The runner's own `/tmp` and `/dev` are private, so `findmnt /tmp` would describe the sandbox, not the host. Mount-option checks (CIS 1.1.x) must read the host's view with `findmnt --task 1` or `/proc/1/mountinfo`.
 - Write-like commands are rejected at import (BIT102), and the sandbox blocks writes even if one slips through.
@@ -1252,7 +1253,8 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | Unintended or malicious policy | Only admins can upload policies, and only server administrators can write the policy folder; every import is validated, audit-logged and alerted; write-like commands are rejected (BIT102) and the sandbox blocks writes |
 | Stolen admin credentials | TOTP for admin sign-in; API tokens expire, are revocable, cannot create API tokens or change TOTP, and are revoked with their owner; every import, delete and settings change alerts. **Accepted risk:** a stolen admin session or admin API token can upload a policy that reads any file on every host, with the same fleet-wide credential exposure as a manager compromise. |
 | Tampering with verdicts | Every import is validated, audit-logged and alerted; results snapshot what ran; re-evaluation only adds rows |
-| Plugin tries to change the host | Write-like commands rejected at import (BIT102); runner is non-root with only `CAP_DAC_READ_SEARCH`, a read-only filesystem, no devices, no IP sockets, execution limited to system binaries, no new privileges and a read-only D-Bus policy; sockets of Docker, snapd and journald blocked; live firewall and audit rules only through the hardened fixed-command helper (§3.7) |
+| Plugin tries to change the host | Write-like commands rejected at import (BIT102); runner is non-root with only `CAP_DAC_READ_SEARCH`, a read-only filesystem, no devices, no IP sockets, execution limited to system binaries, no new privileges and a read-only D-Bus policy; sockets of Docker, snapd and journald blocked; live firewall and audit rules and the loaded AppArmor profiles only through the hardened fixed-command helper (§3.7) |
+| Compromise of the enabled `bitscan-capread` helper | Off by default and enabled per host; three fixed requests, never a command line or path; accepts only uid `bitscan-runner`; the full §3.7 sandbox; helper changes are shown and audit-logged. **Accepted risk:** the helper runs in the root group, so a compromise of the helper process could read files that group root can read (for example `/etc/sudoers`) on that host, in addition to what its two capabilities allow. |
 | Plugin outlives its job or interferes with the runner | Each plugin gets its own cgroup, killed when it ends; its temp directory is deleted; the socket and its directory are root-owned; descriptors are close-on-exec; the runner is non-dumpable and `ptrace` is blocked; the runner kills any stray process in its subtree after each job. **Accepted:** a plugin can signal the runner, which only restarts it. |
 | Bug or compromise in the agent's network code | `bitscan-agent` runs as an unprivileged user with no capabilities and a system-call filter. **Accepted risk:** jobs are not signed, so a compromised agent process can make that host's runner read any file on that host, including its password hashes, private keys and credentials, which can be used to gain root there and to reach systems that trust them (§3.7). |
 | Tampered job in transit | TLS 1.2+ with server-certificate verification. Pinning (`ca_file` or `manager_spki_sha256`) is optional. **Accepted risk when pinning is off:** anyone with a publicly trusted certificate for the manager's hostname could impersonate the manager to that agent, read any file on that host (with the same credential exposure as above) and capture the agent's token. |

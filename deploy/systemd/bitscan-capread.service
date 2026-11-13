@@ -4,8 +4,9 @@ Requires=bitscan-capread.socket
 
 [Service]
 ExecStart=/usr/sbin/bitscan-capread --serve
-# Not root: a throwaway user with only the two read capabilities it needs
+# Not root: a throwaway user with only the two read capabilities it needs and the root group (for the AppArmor profile list)
 DynamicUser=yes
+SupplementaryGroups=root
 AmbientCapabilities=CAP_NET_ADMIN CAP_AUDIT_CONTROL
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_AUDIT_CONTROL
 NoNewPrivileges=yes
