@@ -91,7 +91,7 @@ case "$ID" in
 		e.Log.Error("runner: plugin cgroup kill failed")' '	if err := error(nil); err != nil {
 		e.Log.Error("runner: plugin cgroup kill failed")' ;;
 338) rep $A/runner/sweep.go 'killed, err := c.killPids(dir)' 'killed, err := false, error(nil)' ;;
-339) rep $A/runner/sweep.go 'if dir == "." && sub == supervisor {' 'if dir == supervisor || (dir == "." && sub == supervisor) {' ;;
+339) rep $A/runner/sweep.go 'if dir == "." && (sub == supervisor || sub == pluginsDir) {' 'if dir == supervisor || (dir == "." && (sub == supervisor || sub == pluginsDir)) {' ;;
 340) rep $A/runner/hygiene_linux.go 'if magic, err := p.StatfsCgroup(); err != nil || magic != unix.CGROUP2_SUPER_MAGIC {' 'if magic, err := p.StatfsCgroup(); err != nil && magic != unix.CGROUP2_SUPER_MAGIC {' ;;
 343) rep $A/runner/job.go 'timer := time.NewTimer(time.Duration(p.TimeoutS) * time.Second)' 'timer := time.NewTimer(time.Duration(p.TimeoutS) * time.Hour)' ;;
 344) rep $A/redact/redact.go '	b := bytes.ToValidUTF8(data, replacement)' '	if st == Stdout && len(data) > StdoutCap {
