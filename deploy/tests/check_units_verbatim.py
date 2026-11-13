@@ -29,17 +29,18 @@ AGENT: dict[str, tuple[int, int]] = {
     "bitscan-runner.service": (308, 365),
     "bitscan-agent.service": (371, 410),
     "bitscan-capread.socket": (439, 451),
-    "bitscan-capread.service": (453, 484),
+    "bitscan-capread.service": (453, 485),
 }
 # The manager blocks moved down 3 lines with the TS §5.2 index lines (68d3881,
 # TASK-261, 2026-11-11; before: 1354, 1407, 1441, 1471), then 7 more with the
 # TS §6.2, §6.3, §8.1 session-cookie amendment (2026-11-12; before: 1357,
-# 1410, 1444, 1474).
+# 1410, 1444, 1474), then 2 more with the bitscan-capread AppArmor amendment
+# (TS §3.7, §8.1; 2026-11-13; before: 1364, 1417, 1451, 1481).
 MANAGER: dict[str, tuple[int, int]] = {
-    "bitscan-manager.service": (1364, 1413),
-    "bitscan-manager-migrate.service": (1417, 1447),
-    "bitscan-manager-maintain.service": (1451, 1479),
-    "bitscan-manager-maintain.timer": (1481, 1492),
+    "bitscan-manager.service": (1366, 1415),
+    "bitscan-manager-migrate.service": (1419, 1449),
+    "bitscan-manager-maintain.service": (1453, 1481),
+    "bitscan-manager-maintain.timer": (1483, 1494),
 }
 # D-Bus policy (TS §3.7): ```xml fence at L414, closing fence at L433
 DBUS: dict[str, tuple[int, int]] = {
