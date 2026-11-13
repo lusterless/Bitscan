@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -182,7 +183,8 @@ func readFile(ctx context.Context, path string) ([]byte, string) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		f, err := os.Open(path) //nolint:gosec // path comes only from files
+		// path comes only from the files table, never from a request.
+		f, err := os.Open(filepath.Clean(path))
 		if errors.Is(err, fs.ErrNotExist) {
 			done <- result{nil, wordNotInstalled}
 			return
