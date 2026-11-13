@@ -72,7 +72,7 @@ def test_document_is_openapi_31() -> None:
     doc = openapi_document()
     assert str(doc["openapi"]).startswith("3.1.")
     assert {"/healthz", "/readyz"} <= set(doc["paths"])
-    assert doc["info"]["version"] == bitscan_manager.__version__ == "0.3.0"
+    assert doc["info"]["version"] == bitscan_manager.__version__ == "0.4.0"
 
 
 def test_committed_file_matches_a_fresh_export(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bitscan-manager"
-version = "0.3.0"
+version = "0.4.0"
 description = "Bitscan manager: inventory and compliance for Ubuntu and Debian endpoints"
 requires-python = ">=3.12,<3.13"
 dependencies = [
