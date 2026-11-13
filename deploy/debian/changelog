@@ -1,3 +1,28 @@
+bitscan-agent (0.4.1-1) unstable; urgency=medium
+
+  * Release 0.4.1 of the Bitscan agent, with manager 0.4.1.
+  * Fix: on hosts with many CPUs (seen on 256) the runner could die in the
+    middle of a scan ("failed to create new OS thread") and report every
+    remaining check runner_unavailable. A Go program a check ran, such as
+    the bitscan-capread client, sized itself to every CPU on the host and
+    started about 64 threads in the runner's 64-task limit.
+  * Each plugin cgroup now carries the runner unit's CPU limit (cpu.max),
+    so a Go program a check runs starts with GOMAXPROCS=2 whatever the CPU
+    count.
+  * All plugin cgroups now sit under plugins/, which shares the unit's task
+    limit less 16 (48 with TasksMax=64), so checks together can never take
+    the tasks the runner needs. A check that ran while that limit refused a
+    process is reported truncated (ERROR), never PASS or FAIL.
+  * The bitscan-capread client keeps to one P.
+  * The units are unchanged. The manager code is unchanged from 0.4.0 apart
+    from its version.
+  * Supported with manager 0.4.1 and manager 0.4.0. Manager 0.4.1 supports
+    agents 0.4.1-1 and 0.4.0-1.
+  * Upgrades 0.4.0-1 and 0.3.0-1 in place and keeps their configuration,
+    agent token and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Fri, 13 Nov 2026 12:00:00 +0000
+
 bitscan-agent (0.4.0-1) unstable; urgency=medium
 
   * Release 0.4.0 of the Bitscan agent, with manager 0.4.0.

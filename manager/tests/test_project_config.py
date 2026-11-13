@@ -39,7 +39,7 @@ def test_requires_python_is_312_only(
 def test_version_and_console_script(pyproject: dict[str, Any]) -> None:
     project = pyproject["project"]
     assert project["name"] == "bitscan-manager"
-    assert project["version"] == "0.4.0"
+    assert project["version"] == "0.4.1"
     assert project["scripts"]["bitscan-manager"] == "bitscan_manager.cli:main"
 
 
