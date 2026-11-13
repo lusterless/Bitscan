@@ -65,6 +65,8 @@ Copying onto the existing files keeps their owner (`root:root`) and mode 0600. D
 
 Agents pinned with `bitscan/manager_spki_sha256` accept the new certificate only if it keeps the same key. Renew with the same key where you can. With a new key, every pinned agent stops reaching the manager until its pin is changed to the new key (`agent-install.md` section 7), so plan that change with the certificate replacement.
 
+To add the manager's IP addresses to its certificate, so agents can use `https://<ip>` as `manager_url`, follow [`manager-by-ip.md`](manager-by-ip.md).
+
 ## 3. Replace the OpenBao token
 
 The manager reads its OpenBao token when it starts, and `bitscan-openbao-renew.timer` keeps the token alive (`manager-install.md` section 5). Replace the token if it may have been exposed, or if it expired because renewal stopped. Until a valid token is in place, sign-in for users with TOTP answers 503.

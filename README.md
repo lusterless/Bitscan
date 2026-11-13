@@ -33,6 +33,7 @@ Production installs follow the runbooks in `deploy/runbooks/`:
 | [`manager-install.md`](deploy/runbooks/manager-install.md) | A new manager host: PostgreSQL with TLS-only roles, the `bitscan-manager` user and folders, configuration and secrets, the Python package, the four systemd units, the schema and the first admin |
 | [`manager-operations.md`](deploy/runbooks/manager-operations.md) | Upgrades, replacing the TLS certificate and the OpenBao token, backups and the monthly restore test, and removal |
 | [`agent-install.md`](deploy/runbooks/agent-install.md) | Installing, checking, upgrading, re-enrolling and removing the agent on each host |
+| [`manager-by-ip.md`](deploy/runbooks/manager-by-ip.md) | Moving agents from the manager's host name to its IP addresses, including an internal and a public address |
 
 **Release files.** Each release is published on the project's GitHub release page. For 0.4.0 it holds:
 

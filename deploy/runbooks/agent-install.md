@@ -197,6 +197,8 @@ The package writes the new `enroll.token`, clears the token from debconf and res
 
 To change the CA file or the key pin of an installed host, edit `/etc/bitscan/agent.yaml` as root (`sudoedit /etc/bitscan/agent.yaml`; keep the owner `root:bitscan` and mode 0640), then run `sudo systemctl restart bitscan-agent`. `dpkg-reconfigure` does not ask these questions.
 
+To move agents from the manager's host name to its IP addresses (`manager_url`), follow [`manager-by-ip.md`](manager-by-ip.md).
+
 ## 8. Remove and purge
 
 ```sh
