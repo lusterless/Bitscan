@@ -6,8 +6,8 @@ name: e2e
 # - nightly:  manager N (systemd container installed by manager-install.md)
 #             with agent N on Ubuntu 22.04 and 24.04 QEMU/KVM guests: enrol,
 #             approve, heartbeat, inventory, import, scan, results;
-# - compat-a: manager N with the previous release's agent (N-1 = v0.2.0);
-# - compat-b: agent N with the previous release's manager (N-1 = v0.2.0).
+# - compat-a: manager N with the previous release's agent (N-1 = v0.3.0);
+# - compat-b: agent N with the previous release's manager (N-1 = v0.3.0).
 # The upgrade walk (compat.py --phase upgrade) runs at milestone gates only.
 # Each run uploads its row report; the job fails when a row is FAIL or an
 # expected row is missing (nightly.py --check-report).
@@ -186,15 +186,15 @@ jobs:
 
       # Read-only token, this step only. The files go into an empty folder of
       # their own; the sums come from the release page, a different origin.
-      - name: Download the previous release (v0.2.0) and its published sums
+      - name: Download the previous release (v0.3.0) and its published sums
         if: matrix.run != 'nightly'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           mkdir "$RUNNER_TEMP/prev"
-          gh release download v0.2.0 --dir "$RUNNER_TEMP/prev"
-          gh release view v0.2.0 --json body -q .body >"$RUNNER_TEMP/prev-notes.txt"
+          gh release download v0.3.0 --dir "$RUNNER_TEMP/prev"
+          gh release view v0.3.0 --json body -q .body >"$RUNNER_TEMP/prev-notes.txt"
 
       - name: Run the harness (${{ matrix.run }})
         run: |

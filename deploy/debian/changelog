@@ -1,3 +1,24 @@
+bitscan-agent (0.4.0-1) unstable; urgency=medium
+
+  * Release 0.4.0 of the Bitscan agent, with manager 0.4.0.
+  * The optional bitscan-capread helper answers a third fixed request,
+    apparmor_profiles: it reads /sys/kernel/security/apparmor/profiles
+    itself (the kernel opens that file only for uid or gid 0) and returns
+    one "name (mode)" line per loaded AppArmor profile. Its unit adds
+    SupplementaryGroups=root for this; it still runs as a throwaway
+    non-root user with only CAP_NET_ADMIN and CAP_AUDIT_CONTROL, stays off
+    until an administrator enables it on the host, and never takes a
+    command line or a path. Accepted risk: on a host where the helper is
+    enabled, a compromise of the helper could read files that group root
+    can read.
+  * The manager code is unchanged from 0.3.0 apart from its version.
+  * Supported with manager 0.4.0 and manager 0.3.0. Manager 0.4.0 supports
+    agents 0.4.0-1 and 0.3.0-1.
+  * Upgrades 0.3.0-1 and 0.2.0-1 in place and keeps their configuration,
+    agent token and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Fri, 13 Nov 2026 00:00:00 +0000
+
 bitscan-agent (0.3.0-1) unstable; urgency=medium
 
   * Release 0.3.0 of the Bitscan agent, with manager 0.3.0. The agent

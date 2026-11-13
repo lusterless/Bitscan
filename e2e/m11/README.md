@@ -18,7 +18,7 @@ No Hyper-V VM is used by the harness. The user's standing approval for `bitscan-
 
 - `nightly.py`: the chain, one row per step and host, plus the report check (`--check-report`).
 - `guests.sh`: `fetch`, `up`, `ssh`, `put`, `down` for the QEMU guests.
-- `compat.py` (TP-M11-19): the N / N−1 rows (manager N with the previous release's agent, the upgrade walk, agent N with the previous release's manager; N−1 = v0.2.0 since release 0.3.0).
+- `compat.py` (TP-M11-19): the N / N−1 rows (manager N with the previous release's agent, the upgrade walk, agent N with the previous release's manager; N−1 = the previous release: v0.3.0 since release 0.4.0).
 
 ## Run (root, Linux, Docker, QEMU, /dev/kvm)
 
