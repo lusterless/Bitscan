@@ -666,11 +666,15 @@ def r209(ctx: Ctx) -> tuple[str, str]:
                     ("runner CapBnd %s" % st.get("CapBnd"), st.get("CapBnd") == "0000000000000004")])
 
 
-@row("CHK-M10-210", "cgroup layout: each plugin in its own p-<n>, the runner in supervisor, only supervisor left (REQ-238 (2)-(4))")
+@row("CHK-M10-210", "cgroup layout: each plugin in its own plugins/p-<n> with the unit's cpu.max, plugins sharing the unit's task limit less 16, the runner in supervisor, only supervisor and plugins left (REQ-238 (2)-(4))")
 def r210(ctx: Ctx) -> tuple[str, str]:
-    # The runner hops through each new p-<n> while it starts a plugin (#136
-    # (a)), so its cgroup is read after the other starts are over.
+    # The runner hops through each new plugins/p-<n> while it starts a plugin
+    # (#136 (a)), so its cgroup is read after the other starts are over. Each
+    # plugin cgroup carries the unit's cpu.max (CPUQuota=), so a Go program a
+    # plugin runs sizes GOMAXPROCS from it, and all plugins share
+    # plugins/pids.max, the unit's TasksMax= less 16 kept for the runner.
     ex = ("echo CG=$(cut -d: -f3 /proc/self/cgroup); sleep 30.210 & echo CH=$(cut -d: -f3 /proc/$!/cgroup); "
+          "echo CPUMAX=$(tr ' ' _ < /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/cpu.max); "
           "sleep 1.5; echo RCG=$(cut -d: -f3 /proc/$PPID/cgroup)")
     res = run_job(ctx, [plugin(ex) for _ in range(3)], mpp=3)
     ds = [kv(r) for r in res["results"]]
@@ -681,11 +685,25 @@ def r210(ctx: Ctx) -> tuple[str, str]:
     pids = subtree_pids(cg) if cg else {}
     rp = runner_pid()
     others = {k: [p for p in v if p != rp] for k, v in pids.items() if [p for p in v if p != rp]}
+
+    def read(f: Path) -> str:
+        try:
+            return f.read_text().strip()
+        except OSError as e:
+            return "<%s>" % e.__class__.__name__
+    unit_cpu = read(cg / "cpu.max").replace(" ", "_") if cg else ""
+    unit_tasks = read(cg / "pids.max") if cg else ""
+    shared = read(cg / "plugins" / "pids.max") if cg else ""
+    cpus = [d.get("CPUMAX", "") for d in ds]
+    inner = sorted(p.name for p in (cg / "plugins").iterdir() if p.is_dir()) if cg and (cg / "plugins").is_dir() else ["<no plugins>"]
     return verdict([("job done", ok_job(res, 3)),
-                    ("plugin cgroups %s" % cgs, len(set(cgs)) == 3 and all(re.search(r"/bitscan-runner\.service/p-\d+$", c) for c in cgs)),
+                    ("plugin cgroups %s" % cgs, len(set(cgs)) == 3 and all(re.search(r"/bitscan-runner\.service/plugins/p-\d+$", c) for c in cgs)),
                     ("runner in supervisor", all(d.get("RCG", "").endswith("/bitscan-runner.service/supervisor") for d in ds)),
                     ("forked child in the plugin's own cgroup", all(d.get("CH") == d.get("CG") for d in ds)),
-                    ("after the job the service holds only %s" % left, left == ["supervisor"]),
+                    ("plugin cpu.max %s equals the unit's %s" % (cpus, unit_cpu), unit_cpu[:3] != "max" and "_" in unit_cpu and all(c == unit_cpu for c in cpus)),
+                    ("plugins/pids.max %s is the unit's %s less 16" % (shared, unit_tasks), unit_tasks.isdigit() and shared == str(int(unit_tasks) - 16)),
+                    ("after the job the service holds only %s" % left, left == ["plugins", "supervisor"]),
+                    ("and plugins holds no cgroup %s" % inner, inner == []),
                     ("no process but the runner in the subtree", not others)], "subtree pids %s" % others)
 
 

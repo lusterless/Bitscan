@@ -37,11 +37,26 @@ type fakeCG struct {
 	failMove map[string]bool // cgroups whose cgroup.procs refuses writes
 	lie      bool            // SelfCgroup reports supervisor whatever happens
 	onKill   func(pid int)   // called before a pid is killed
+	// Limits: ownCPUMax and ownPidsMax are the own cgroup's cpu.max and
+	// pids.max ("" = no file); noCPUCtl and noPidsCtl refuse that controller
+	// in cgroup.subtree_control; failCPUMax refuses writes to a plugin's
+	// cpu.max. ctl, cpuMax and pidsMax record what was done; limitHits is
+	// the "max" counter of plugins/pids.events.
+	ownCPUMax  string
+	ownPidsMax string
+	noCPUCtl   bool
+	noPidsCtl  bool
+	failCPUMax bool
+	ctl        map[string]map[string]bool
+	cpuMax     map[string]string
+	pidsMax    map[string]string
+	limitHits  int
 }
 
 func newFakeCG() *fakeCG {
 	return &fakeCG{dirs: map[string]bool{"": true}, links: map[string]bool{}, procs: map[int]string{100: ""},
-		self: 100, dead: map[int]bool{}, failMove: map[string]bool{}}
+		self: 100, dead: map[int]bool{}, failMove: map[string]bool{},
+		ctl: map[string]map[string]bool{}, cpuMax: map[string]string{}, pidsMax: map[string]string{}}
 }
 
 func norm(name string) string {
@@ -96,6 +111,41 @@ func (f *fakeCG) WriteFile(name string, data []byte) error {
 		}
 		f.procs[pid] = dir
 		f.op(fmt.Sprintf("write %s %d", n, pid))
+	case "cgroup.subtree_control":
+		// The kernel refuses a domain controller for children while the
+		// cgroup itself holds a process, and one its parent does not pass on.
+		ctl, ok := strings.CutPrefix(string(data), "+")
+		switch {
+		case !ok || (ctl != "cpu" && ctl != "pids"),
+			ctl == "cpu" && f.noCPUCtl, ctl == "pids" && f.noPidsCtl,
+			dir != "" && !f.ctl[norm(path.Dir(dir))][ctl]:
+			return errors.New("EINVAL")
+		}
+		for _, cg := range f.procs {
+			if cg == dir {
+				return errors.New("EBUSY: internal process")
+			}
+		}
+		if f.ctl[dir] == nil {
+			f.ctl[dir] = map[string]bool{}
+		}
+		f.ctl[dir][ctl] = true
+		f.op("write " + n + " " + string(data))
+	case "pids.max":
+		if dir == "" || !f.ctl[norm(path.Dir(dir))]["pids"] {
+			return fs.ErrNotExist
+		}
+		f.pidsMax[dir] = string(data)
+		f.op("write " + n + " " + string(data))
+	case "cpu.max":
+		if dir == "" || !f.ctl[norm(path.Dir(dir))]["cpu"] {
+			return fs.ErrNotExist
+		}
+		if f.failCPUMax {
+			return fs.ErrPermission
+		}
+		f.cpuMax[dir] = string(data)
+		f.op("write " + n + " " + string(data))
 	case "cgroup.kill":
 		if dir == "" && f.noKill {
 			return fs.ErrNotExist
@@ -135,6 +185,24 @@ func (f *fakeCG) ReadFile(name string) ([]byte, error) {
 			fmt.Fprintln(&b, p)
 		}
 		return []byte(b.String()), nil
+	case "pids.max":
+		if dir == "" && f.ownPidsMax != "" {
+			return []byte(f.ownPidsMax), nil
+		}
+		return nil, fs.ErrNotExist
+	case "pids.events":
+		if _, ok := f.pidsMax[dir]; !ok {
+			return nil, fs.ErrNotExist
+		}
+		return []byte(fmt.Sprintf("max %d\n", f.limitHits)), nil
+	case "cpu.max":
+		if dir == "" && f.ownCPUMax != "" {
+			return []byte(f.ownCPUMax), nil
+		}
+		if v, ok := f.cpuMax[dir]; ok && dir != "" {
+			return []byte(v), nil
+		}
+		return nil, fs.ErrNotExist
 	case "cgroup.events":
 		pop := 0
 		for _, cg := range f.procs {
@@ -290,8 +358,8 @@ func TestCgroupExactOperations(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if bornIn != "p-1" {
-		t.Fatalf("child born in %q, want p-1", bornIn)
+	if bornIn != "plugins/p-1" {
+		t.Fatalf("child born in %q, want plugins/p-1", bornIn)
 	}
 	if err := p.Kill(); err != nil {
 		t.Fatal(err)
@@ -303,9 +371,9 @@ func TestCgroupExactOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"mkdir supervisor", "write supervisor/cgroup.procs 100",
-		"mkdir p-1", "write p-1/cgroup.procs 100", "write supervisor/cgroup.procs 100",
-		"write p-1/cgroup.kill 1", "rmdir p-1",
+		"mkdir supervisor", "mkdir plugins", "write supervisor/cgroup.procs 100",
+		"mkdir plugins/p-1", "write plugins/p-1/cgroup.procs 100", "write supervisor/cgroup.procs 100",
+		"write plugins/p-1/cgroup.kill 1", "rmdir plugins/p-1",
 	}
 	if !slices.Equal(f.ops, want) {
 		t.Fatalf("operations:\n got %q\nwant %q", f.ops, want)
@@ -319,7 +387,7 @@ func TestCgroupExactOperations(t *testing.T) {
 	// Distinct names, never from a job.
 	p2, _ := c.NewPlugin()
 	p3, _ := c.NewPlugin()
-	if p2.name != "p-2" || p3.name != "p-3" {
+	if p2.name != "plugins/p-2" || p3.name != "plugins/p-3" {
 		t.Fatalf("names %s %s", p2.name, p3.name)
 	}
 }
@@ -358,7 +426,8 @@ func TestCgroupSetupRefusals(t *testing.T) {
 }
 
 // CHK-M10-103: the sweep kills every stray wherever it sits; the runner
-// stays alive in supervisor; only supervisor is left (REQ-240, #138 (a)).
+// stays alive in supervisor; only supervisor and plugins are left (REQ-240,
+// #138 (a)).
 func TestCgroupSweepKillsEveryStray(t *testing.T) {
 	f := newFakeCG()
 	c := f.cg()
@@ -375,10 +444,13 @@ func TestCgroupSweepKillsEveryStray(t *testing.T) {
 	f.spawnAt(206, "q/r")                   //
 	f.spawnAt(207, "supervisor/supervisor") // a nested supervisor
 	f.links["p-9"] = true                   // a symlink entry is never followed
+	f.spawnAt(208, "plugins/p-4")           // a leftover plugin cgroup in plugins
+	f.spawnAt(209, "plugins/p-4/child")     // and one its plugin made under it
+	f.spawnAt(210, "plugins")               // a plugin that moved into plugins itself
 	if err := c.Sweep(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for pid := 201; pid <= 207; pid++ {
+	for pid := 201; pid <= 210; pid++ {
 		if !f.dead[pid] {
 			t.Errorf("pid %d survived the sweep", pid)
 		}
@@ -391,7 +463,7 @@ func TestCgroupSweepKillsEveryStray(t *testing.T) {
 		dirs = append(dirs, d)
 	}
 	sort.Strings(dirs)
-	if fmt.Sprint(dirs) != "[ supervisor]" {
+	if fmt.Sprint(dirs) != "[ plugins supervisor]" {
 		t.Fatalf("cgroups left: %q", dirs)
 	}
 	for _, o := range f.ops {
@@ -408,8 +480,8 @@ func TestCgroupRunnerMovedBack(t *testing.T) {
 	c := f.cg()
 	_ = c.Setup()
 	p, _ := c.NewPlugin()
-	_ = p.StartIn(func() error { f.spawnAt(300, "p-1"); return nil })
-	f.spawnAt(100, "p-1") // the plugin writes the runner's pid into its own cgroup.procs
+	_ = p.StartIn(func() error { f.spawnAt(300, "plugins/p-1"); return nil })
+	f.spawnAt(100, "plugins/p-1") // the plugin writes the runner's pid into its own cgroup.procs
 	if err := p.Kill(); err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +509,7 @@ func TestCgroupStartInFailsClosed(t *testing.T) {
 	c := f.cg()
 	_ = c.Setup()
 	p, _ := c.NewPlugin()
-	f.failMove["p-1"] = true
+	f.failMove["plugins/p-1"] = true
 	called := false
 	if err := p.StartIn(func() error { called = true; return nil }); err == nil || called {
 		t.Fatalf("hop failed: err %v, start called %v", err, called)
@@ -474,7 +546,7 @@ func TestCgroupWaitEmptyBound(t *testing.T) {
 	c := f.cg()
 	_ = c.Setup()
 	p, _ := c.NewPlugin()
-	f.spawnAt(400, "p-1")
+	f.spawnAt(400, "plugins/p-1")
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
@@ -562,4 +634,147 @@ func TestCgroupSpawnLock(t *testing.T) {
 	}
 	close(release)
 	<-done
+}
+
+// setupOps is what Setup does before any limit: supervisor, plugins and the
+// move.
+var setupOps = []string{"mkdir supervisor", "mkdir plugins", "write supervisor/cgroup.procs 100"}
+
+// The runner copies its own CPU limit into every plugin cgroup, so a Go
+// program a plugin runs sizes GOMAXPROCS from that limit, not from every CPU
+// on the host. Without a limit, or without the cpu controller, plugins start
+// as before and the runner still starts.
+func TestCgroupPluginCPULimit(t *testing.T) {
+	enable := []string{"write cgroup.subtree_control +cpu", "write plugins/cgroup.subtree_control +cpu"}
+	cases := []struct {
+		name       string
+		own        string // the own cgroup's cpu.max; "" = no file
+		noCtl      bool
+		failWrite  bool
+		wantLimit  string // the plugin's cpu.max; "" = none written
+		wantNewErr bool
+		wantOps    []string // after setupOps
+	}{
+		{name: "unit CPUQuota=25%", own: "25000 100000\n", wantLimit: "25000 100000",
+			wantOps: append(slices.Clone(enable), "mkdir plugins/p-1", "write plugins/p-1/cpu.max 25000 100000")},
+		{name: "other period", own: "150000 1000000\n", wantLimit: "150000 1000000",
+			wantOps: append(slices.Clone(enable), "mkdir plugins/p-1", "write plugins/p-1/cpu.max 150000 1000000")},
+		{name: "no limit on the unit", own: "max 100000\n", wantOps: []string{"mkdir plugins/p-1"}},
+		{name: "no cpu controller", own: "", wantOps: []string{"mkdir plugins/p-1"}},
+		{name: "malformed cpu.max", own: "25000\n", wantOps: []string{"mkdir plugins/p-1"}},
+		{name: "controller refused", own: "25000 100000\n", noCtl: true, wantOps: []string{"mkdir plugins/p-1"}},
+		{name: "plugin limit refused", own: "25000 100000\n", failWrite: true, wantNewErr: true,
+			wantOps: append(slices.Clone(enable), "mkdir plugins/p-1", "rmdir plugins/p-1")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeCG()
+			f.ownCPUMax, f.noCPUCtl, f.failCPUMax = tc.own, tc.noCtl, tc.failWrite
+			c := f.cg()
+			if err := c.Setup(); err != nil {
+				t.Fatalf("Setup: %v (the runner must start whatever the CPU limit)", err)
+			}
+			p, err := c.NewPlugin()
+			if tc.wantNewErr {
+				if err == nil {
+					t.Fatal("NewPlugin succeeded with the plugin's CPU limit refused; want an error")
+				}
+				if f.dirs["plugins/p-1"] {
+					t.Fatal("plugins/p-1 left behind after the refused limit")
+				}
+			} else if err != nil {
+				t.Fatalf("NewPlugin: %v", err)
+			} else if p.name != "plugins/p-1" {
+				t.Fatalf("plugin %s", p.name)
+			}
+			if got := f.cpuMax["plugins/p-1"]; got != tc.wantLimit {
+				t.Errorf("plugins/p-1 cpu.max %q, want %q", got, tc.wantLimit)
+			}
+			if want := append(slices.Clone(setupOps), tc.wantOps...); !slices.Equal(f.ops, want) {
+				t.Errorf("operations:\n got %q\nwant %q", f.ops, want)
+			}
+		})
+	}
+}
+
+// All plugins share the unit's task limit less a reserve, in plugins/pids.max,
+// so no plugin can take the threads the runner needs. Without a limit, or
+// without the pids controller, plugins run as before and the runner starts.
+func TestCgroupPluginTaskLimit(t *testing.T) {
+	cases := []struct {
+		name    string
+		own     string // the own cgroup's pids.max; "" = no file
+		noCtl   bool
+		want    string // plugins/pids.max; "" = none
+		wantOps []string
+	}{
+		{name: "unit TasksMax=64", own: "64\n", want: "48",
+			wantOps: []string{"write cgroup.subtree_control +pids", "write plugins/pids.max 48"}},
+		{name: "unit TasksMax=200", own: "200\n", want: "184",
+			wantOps: []string{"write cgroup.subtree_control +pids", "write plugins/pids.max 184"}},
+		{name: "no limit on the unit", own: "max\n"},
+		{name: "no pids controller", own: ""},
+		{name: "limit no bigger than the reserve", own: "16\n"},
+		{name: "controller refused", own: "64\n", noCtl: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeCG()
+			f.ownPidsMax, f.noPidsCtl = tc.own, tc.noCtl
+			c := f.cg()
+			if err := c.Setup(); err != nil {
+				t.Fatalf("Setup: %v (the runner must start whatever the task limit)", err)
+			}
+			if got := f.pidsMax["plugins"]; got != tc.want {
+				t.Errorf("plugins/pids.max %q, want %q", got, tc.want)
+			}
+			if want := append(slices.Clone(setupOps), tc.wantOps...); !slices.Equal(f.ops, want) {
+				t.Errorf("operations:\n got %q\nwant %q", f.ops, want)
+			}
+			p, err := c.NewPlugin()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.HitTaskLimit() {
+				t.Fatal("HitTaskLimit before any refused fork")
+			}
+		})
+	}
+}
+
+// A plugin that ran while the shared limit refused a fork is flagged (its
+// output may be incomplete), and so is one running beside it; a plugin
+// started after the refusal is not.
+func TestCgroupHitTaskLimit(t *testing.T) {
+	f := newFakeCG()
+	f.ownPidsMax = "64\n"
+	f.limitHits = 3 // refusals before these plugins: never counted against them
+	c := f.cg()
+	if err := c.Setup(); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := c.NewPlugin()
+	b, _ := c.NewPlugin()
+	if a.HitTaskLimit() || b.HitTaskLimit() {
+		t.Fatal("old refusals counted against new plugins")
+	}
+	f.mu.Lock()
+	f.limitHits++ // one of them meets the limit
+	f.mu.Unlock()
+	later, _ := c.NewPlugin()
+	if !a.HitTaskLimit() || !b.HitTaskLimit() {
+		t.Fatal("a refusal while the plugins ran was missed")
+	}
+	if later.HitTaskLimit() {
+		t.Fatal("a plugin started after the refusal was flagged")
+	}
+	// No shared limit: nothing to watch, never flagged.
+	g := newFakeCG()
+	cg := g.cg()
+	_ = cg.Setup()
+	p, _ := cg.NewPlugin()
+	g.limitHits = 5
+	if p.HitTaskLimit() {
+		t.Fatal("flagged without a shared limit")
+	}
 }

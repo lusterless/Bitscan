@@ -4,7 +4,10 @@
 // delegated cgroup. Run only as
 //
 //	go test -c -tags delegated -o runner.test ./internal/runner/
-//	systemd-run --wait --pipe --collect -p Delegate=yes ./runner.test -test.run Delegated -test.v
+//	systemd-run --wait --pipe --collect -p Delegate=yes -p CPUQuota=25% -p TasksMax=64 ./runner.test -test.run Delegated -test.v
+//
+// CPUQuota=25% and TasksMax=64 are the runner unit's own (TS §3.7); the CPU
+// and task limit rows need them.
 //
 // (WSL Ubuntu 24.04 with cgroup2fs, or CI). Harmless payloads only: cat and
 // sleep.
@@ -14,11 +17,14 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -98,6 +104,97 @@ func TestDelegatedCgroups(t *testing.T) {
 		t.Fatalf("runner in %s, want %s/supervisor", got, base)
 	}
 
+	t.Run("plugin cgroup carries the runner's CPU limit", func(t *testing.T) {
+		own, err := os.ReadFile(filepath.Join(mount, "cpu.max")) //nolint:gosec // the runner's own cgroup file
+		of := strings.Fields(string(own))
+		if err != nil || len(of) != 2 || of[0] == "max" {
+			t.Fatalf("own cgroup cpu.max %q (%v): run with -p CPUQuota=25%% as the runner unit has", own, err)
+		}
+		p, err := c.NewPlugin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(filepath.Join(mount, p.name, "cpu.max")) //nolint:gosec // the plugin cgroup the runner just made
+		if err != nil || strings.Join(strings.Fields(string(got)), " ") != strings.Join(of, " ") {
+			t.Fatalf("%s cpu.max %q (%v), want the runner's %q", p.name, got, err, own)
+		}
+		// A Go program started there (this binary as a probe, with only PATH
+		// and the probe switch, no GOMAXPROCS) sizes itself from that limit.
+		cmd := exec.Command(os.Args[0]) //nolint:gosec // this test binary, as the probe
+		cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", goProbeEnv + "=1"}
+		var out strings.Builder
+		cmd.Stdout = &out
+		if err := p.StartIn(cmd.Start); err != nil {
+			t.Fatalf("StartIn: %v", err)
+		}
+		if err := cmd.Wait(); err != nil {
+			t.Fatalf("probe: %v", err)
+		}
+		quota, _ := strconv.ParseFloat(of[0], 64)
+		period, _ := strconv.ParseFloat(of[1], 64)
+		want := min(runtime.NumCPU(), max(2, int(math.Ceil(quota/period))))
+		var procs, threads int
+		if _, err := fmt.Sscanf(out.String(), "gomaxprocs=%d threads=%d", &procs, &threads); err != nil {
+			t.Fatalf("probe printed %q", out.String())
+		}
+		t.Logf("RECORDED: %d CPUs, plugin cpu.max %q: probe GOMAXPROCS=%d, %d threads", runtime.NumCPU(), strings.TrimSpace(string(got)), procs, threads)
+		if procs != want {
+			t.Errorf("probe GOMAXPROCS=%d, want %d from the plugin's cpu.max", procs, want)
+		}
+		if err := p.Kill(); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.WaitEmpty(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Remove(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("plugins share the task limit and a refused fork is seen", func(t *testing.T) {
+		own, err := os.ReadFile(filepath.Join(mount, "pids.max")) //nolint:gosec // the runner's own cgroup file
+		n, perr := strconv.Atoi(strings.TrimSpace(string(own)))
+		if err != nil || perr != nil {
+			t.Fatalf("own pids.max %q (%v): run with -p TasksMax=64 as the runner unit has", own, err)
+		}
+		got, err := os.ReadFile(filepath.Join(mount, "plugins", "pids.max")) //nolint:gosec // the cgroup the runner made
+		if err != nil || strings.TrimSpace(string(got)) != strconv.Itoa(n-taskReserve) {
+			t.Fatalf("plugins/pids.max %q (%v), want %d (own %d less %d)", got, err, n-taskReserve, n, taskReserve)
+		}
+		p, err := c.NewPlugin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A plugin that tries to start more processes than the whole unit
+		// allows: the shared limit refuses the excess, not the runner's.
+		script := fmt.Sprintf("i=0; while [ $i -lt %d ]; do sleep 30 & i=$((i+1)); done 2>/dev/null; true", n)
+		cmd := exec.Command("/bin/sh", "-c", script) //nolint:gosec // a fixed harmless payload: sleeps
+		if err := p.StartIn(cmd.Start); err != nil {
+			t.Fatalf("StartIn: %v", err)
+		}
+		_ = cmd.Wait()
+		// The plugin's sleeps are still alive, holding their tasks; the
+		// runner can still start a task of its own.
+		if err := exec.Command("/bin/true").Run(); err != nil {
+			t.Errorf("the runner could not start a process beside the full plugins cgroup: %v", err)
+		}
+		if !p.HitTaskLimit() {
+			t.Error("HitTaskLimit false after the shared limit refused forks")
+		}
+		ev, _ := os.ReadFile(filepath.Join(mount, "plugins", "pids.events")) //nolint:gosec // the cgroup the runner made
+		t.Logf("RECORDED: plugins/pids.max %s, plugins/pids.events %q", strings.TrimSpace(string(got)), strings.TrimSpace(string(ev)))
+		if err := p.Kill(); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.WaitEmpty(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Remove(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("plugin born in its own cgroup (REQ-238 (2), (3))", func(t *testing.T) {
 		p, err := c.NewPlugin()
 		if err != nil {
@@ -154,13 +251,15 @@ func TestDelegatedCgroups(t *testing.T) {
 		moveTo(t, filepath.Join(mount, "p-77", "child"), s4.cmd.Process.Pid)
 		s5 := startSleep(t)
 		moveTo(t, filepath.Join(mount, "q", "r"), s5.cmd.Process.Pid)
+		s7 := startSleep(t)
+		moveTo(t, filepath.Join(mount, "plugins", "p-99"), s7.cmd.Process.Pid)
 		s6 := startSleep(t)
 		rootMove := os.WriteFile(filepath.Join(mount, "cgroup.procs"), []byte(strconv.Itoa(s6.cmd.Process.Pid)), 0o600)
 		t.Logf("RECORDED: moving a stray into the service root: %v (cgroup %s)", rootMove, pidCgroup(t, s6.cmd.Process.Pid))
 		if err := c.Sweep(context.Background()); err != nil {
 			t.Fatalf("Sweep: %v", err)
 		}
-		for i, s := range []*stray{s1, s2, s3, s4, s5, s6} {
+		for i, s := range []*stray{s1, s2, s3, s4, s5, s6, s7} {
 			if !s.deadWithin(3 * time.Second) {
 				t.Errorf("stray %d survived the sweep (cgroup %s)", i+1, pidCgroup(t, s.cmd.Process.Pid))
 			}
@@ -175,13 +274,15 @@ func TestDelegatedCgroups(t *testing.T) {
 				dirs = append(dirs, e.Name())
 			}
 		}
-		if strings.Join(dirs, ",") != "supervisor" {
+		if strings.Join(dirs, ",") != "plugins,supervisor" {
 			t.Fatalf("service subtree after the sweep: %v (REQ-238 (4))", dirs)
 		}
-		sub, _ := os.ReadDir(filepath.Join(mount, "supervisor"))
-		for _, e := range sub {
-			if e.IsDir() {
-				t.Fatalf("a cgroup left under supervisor: %s", e.Name())
+		for _, keep := range []string{"supervisor", "plugins"} {
+			sub, _ := os.ReadDir(filepath.Join(mount, keep))
+			for _, e := range sub {
+				if e.IsDir() {
+					t.Fatalf("a cgroup left under %s: %s", keep, e.Name())
+				}
 			}
 		}
 		if got := ownCgroupPath(t); got != base+"/supervisor" {
