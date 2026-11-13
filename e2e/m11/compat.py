@@ -1,8 +1,8 @@
 """M11 N / N−1 rows (TP-M11-19, REQ-287, REQ-288; #153; CHK-M11-304..309, plant -372).
 
 N = the tree under test (manager wheel and agent .deb built from it); N−1 = the
-previous release (`--prev`: since 0.4.0 the v0.3.0 release,
-`bitscan-agent_0.3.0-1_amd64.deb` and the manager files), each file checked
+previous release (`--prev`: since 0.4.1 the v0.4.0 release,
+`bitscan-agent_0.4.0-1_amd64.deb` and the manager files), each file checked
 against the SHA256SUMS text of the release page (#153 (a)). Same machines and
 helpers as nightly.py (the manager host by the install walk, QEMU/KVM guests);
 one phase per run, so at most one manager and one or two guests are up at a time:
@@ -58,8 +58,8 @@ import nightly as n  # noqa: E402
 SUMS_LINE = re.compile(r"^([0-9a-f]{64})  (\S+)$")
 MANAGER_FILES = ("bitscan-manager.service", "bitscan-manager-migrate.service", "bitscan-manager-maintain.service",
                  "bitscan-manager-maintain.timer")
-PREV_DEB = "bitscan-agent_0.3.0-1_amd64.deb"
-PREV_VERSION = "0.3.0-1"
+PREV_DEB = "bitscan-agent_0.4.0-1_amd64.deb"
+PREV_VERSION = "0.4.0-1"
 
 EXPECTED = {
     "a": [("CHK-M11-304", "runner")] + [("CHK-M11-305", f"agentPrev:{s}") for s in ("enrol", "approve", "heartbeat", "inventory")]
