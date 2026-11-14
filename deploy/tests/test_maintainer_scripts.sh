@@ -317,7 +317,7 @@ sub_install() {
     grep -qx "manager_url: '$URL'" /etc/bitscan/agent.yaml; ok $? "agent.yaml holds the manager URL"
     ! grep -q -F "$can" /etc/bitscan/agent.yaml; ok $? "agent.yaml does not hold the token"
     local keys; keys=$(sed -n 's/^\([a-z_0-9]*\):.*/\1/p' /etc/bitscan/agent.yaml | sort | tr '\n' ' ')
-    is "$keys" "ca_file heartbeat_seconds job_pull_seconds log_level manager_spki_sha256 manager_url max_parallel_plugins spool_max_mb state_dir " "agent.yaml has exactly the TS 3.6 keys"
+    is "$keys" "ca_file heartbeat_seconds job_pull_seconds log_level manager_spki_sha256 manager_url max_parallel_jobs max_parallel_plugins spool_max_mb state_dir " "agent.yaml has exactly the TS 3.6 keys"
     is "$(st /var/lib/bitscan-agent)" "bitscan:bitscan 700" "/var/lib/bitscan-agent owner and mode"
     is "$(st /var/lib/bitscan-agent/enroll.token)" "bitscan:bitscan 600" "enroll.token owner and mode"
     is "$(head -1 /var/lib/bitscan-agent/enroll.token 2>/dev/null)" "$tok" "enroll.token holds the preseeded token"

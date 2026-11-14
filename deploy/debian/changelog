@@ -1,3 +1,29 @@
+bitscan-agent (0.5.0-1) unstable; urgency=medium
+
+  * Release 0.5.0 of the Bitscan agent, with manager 0.5.0.
+  * Compliance jobs of different policies run at the same time, at most
+    max_parallel_jobs at once (agent.yaml, default 2, 1 to 4; manager 0.5.0
+    sends its setting in the heartbeat). Jobs wait in pull order, and two
+    jobs that share a check (the same policy, or a job and its retry) never
+    run at the same time.
+  * The runner serves up to 4 jobs at once. Each job gets the cgroup
+    plugins/j-<n>, inside the shared plugins task limit, and its own temp
+    directory /tmp/bitscan-j-<random>. The end of a job cleans only that
+    job; the full cleanup of the runner's cgroups and of its private /tmp
+    and /var/tmp runs when no job runs.
+  * The heartbeat reports "cmax" in runner_helpers while the optional
+    ClusterMAX collector socket /run/clustermax/collect.sock exists. The
+    agent never connects to it.
+  * New installs write max_parallel_jobs: 2 to agent.yaml. An upgraded host
+    keeps its agent.yaml; without the key the agent uses 2.
+  * The units are unchanged.
+  * Supported with manager 0.5.0 and manager 0.4.1. Manager 0.5.0 supports
+    agents 0.5.0-1 and 0.4.1-1.
+  * Upgrades 0.4.1-1 and 0.4.0-1 in place and keeps their configuration,
+    agent token and agent id.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Sat, 14 Nov 2026 12:00:00 +0000
+
 bitscan-agent (0.4.1-1) unstable; urgency=medium
 
   * Release 0.4.1 of the Bitscan agent, with manager 0.4.1.
