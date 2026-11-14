@@ -105,9 +105,10 @@ def queue_scan(
         requested_by=requested_by,
         created_at=now,
     )
-    jobs = scan_queue.insert_jobs(
+    inserted = scan_queue.insert_jobs(
         conn,
         scan_id=scan_id,
+        policy_id=policy_id,
         agent_ids=resolved,
         job_ids=[uuid4() for _ in resolved],
         created_at=now,
@@ -117,6 +118,7 @@ def queue_scan(
         patterns=built.patterns,
         eval_spec_json=built.eval_spec_json,
     )
+    jobs = inserted.queued + inserted.already_running
     cancelled = scan_queue.cancel_older_queued(
         conn, policy_id=policy_id, agent_ids=resolved, new_scan_id=scan_id, now=now
     )
@@ -128,6 +130,7 @@ def queue_scan(
         "target_kind": target.kind,
         "jobs": jobs,
         "cancelled_older": len(cancelled),
+        "already_running": inserted.already_running,
     }
     audit = TxAudit(PgAuditRepo(conn), tx.on_commit)
     entry_target = f"scan:{scan_id}"

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,8 +38,9 @@ func specExample(t *testing.T) []byte {
 	if !ok {
 		t.Fatal("TS §3.6 closing fence not found")
 	}
-	if n := strings.Count(block, "\n"); n != 9 {
-		t.Fatalf("TS §3.6 block has %d lines, want 9 (L258-L266)", n)
+	// 10 lines since max_parallel_jobs (owner decision 2026-11-14).
+	if n := strings.Count(block, "\n"); n != 10 {
+		t.Fatalf("TS §3.6 block has %d lines, want 10", n)
 	}
 	return []byte(block)
 }
@@ -57,6 +59,7 @@ func TestSpecExampleLoadsExactly(t *testing.T) {
 		HeartbeatSeconds:   300,
 		JobPullSeconds:     300,
 		MaxParallelPlugins: 2,
+		MaxParallelJobs:    2,
 		SpoolMaxMB:         50,
 		LogLevel:           "info",
 	}
@@ -395,5 +398,25 @@ func TestNoEnvironmentOverride(t *testing.T) {
 	}
 	if _, err := config.Parse(nil); err == nil {
 		t.Fatal("an empty file with BITSCAN_MANAGER_URL set was accepted")
+	}
+}
+
+// max_parallel_jobs (TS §3.6; owner decision 2026-11-14): optional,
+// default 2, 1–4; anything else refuses start-up.
+func TestMaxParallelJobs(t *testing.T) {
+	c, err := config.Parse([]byte(goodURL))
+	if err != nil || c.MaxParallelJobs != 2 {
+		t.Fatalf("default: %d %v", c.MaxParallelJobs, err)
+	}
+	for _, v := range []string{"1", "4"} {
+		c, err := config.Parse([]byte(goodURL + "max_parallel_jobs: " + v + "\n"))
+		if err != nil || strconv.Itoa(c.MaxParallelJobs) != v {
+			t.Errorf("max_parallel_jobs %s: %d %v", v, c.MaxParallelJobs, err)
+		}
+	}
+	for _, v := range []string{"0", "5", "-1", "2.5", "\"2\"", "null"} {
+		if _, err := config.Parse([]byte(goodURL + "max_parallel_jobs: " + v + "\n")); err == nil {
+			t.Errorf("max_parallel_jobs %s accepted", v)
+		}
 	}
 }

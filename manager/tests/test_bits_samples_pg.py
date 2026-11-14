@@ -214,9 +214,14 @@ def test_clustermax_sample_has_every_clustermax_check() -> None:
         "status",
         *checks,
     ]
+    # Owner decision 2026-11-14 (TS §3.8): the trigger starts or joins the
+    # job's one audit itself, so each check plugin is one get.
+    assert (found[0]["execute"], found[0]["expected"]) == (
+        "cmax-trigger collect",
+        "^(started|running) [0-9a-f]{32}$",
+    )
     for p, check in zip(found[3:], checks, strict=True):
-        get = f"cmax-trigger get {check}"
-        assert p["execute"] == f"cmax-trigger collect >/dev/null; {get}"
+        assert p["execute"] == f"cmax-trigger get {check}"
         assert (p["operator"], p["expected"], p["timeout"]) == (
             "regex",
             "^(PASS|n/a)( |$)",

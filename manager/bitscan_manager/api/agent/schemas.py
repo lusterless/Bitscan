@@ -33,7 +33,7 @@ from pydantic import (
     StrictStr,
     WithJsonSchema,
 )
-from pydantic.json_schema import JsonSchemaValue
+from pydantic.json_schema import JsonSchemaValue, SkipJsonSchema
 from pydantic_core import CoreSchema
 
 I32: Final = 2**31 - 1
@@ -274,6 +274,11 @@ class HeartbeatResponse(_Closed):
     job_pull_seconds: Annotated[StrictInt, Field(ge=60, le=3600)]
     max_parallel_plugins: Annotated[StrictInt, Field(ge=1, le=8)]
     server_time: Timestamp
+    # Optional, never null (TS §6.5; owner decision 2026-11-14): sent only to
+    # agents 0.5.0 or later, because an older agent refuses an unknown key.
+    max_parallel_jobs: (
+        Annotated[StrictInt, Field(ge=1, le=4)] | SkipJsonSchema[None]
+    ) = None
 
 
 class InventoryJob(_Closed):

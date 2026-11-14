@@ -18,7 +18,7 @@ Spec: TS §6 (routes, auth, conventions, agent wire contract) and §3.2 (enrolme
   - the `{id}` in the path must match the token's agent (otherwise 403);
   - an agent awaiting approval gets 403 `pending_approval`;
   - a machine-id header mismatch gets 401 and revokes the token.
-- Heartbeat responses carry only `job_pull_seconds`, `max_parallel_plugins` and `server_time`, never jobs or commands.
+- Heartbeat responses carry only `job_pull_seconds`, `max_parallel_plugins` and `server_time`, plus `max_parallel_jobs` for agents 0.5.0 or later (absent, never null, for older agents; owner decision 2026-11-14), never jobs or commands.
 - `GET /agent/{id}/jobs` returns at most 10 queued jobs for that agent and marks them `dispatched`; the rest wait. Inventory jobs have `kind: "inventory"` and no `plugins` or `redaction_patterns`.
 - Accept a result only for a job addressed to that agent, within `dispatched_at` + 7 days, for plugin ids in that job. Return 409 otherwise and audit-log it. A second result for the same plugin is ignored and counted in `duplicates`.
 - Re-check every size cap on the server; never trust the agent's own limits:

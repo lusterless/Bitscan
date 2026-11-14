@@ -1,6 +1,7 @@
 """POST /api/v1/agent/{id}/heartbeat (TS §6.1 L1063, §6.5 L1163, §3.3
 L202; REQ-070, REQ-086, REQ-088). The answer is exactly job_pull_seconds,
-max_parallel_plugins and server_time; it never carries jobs or commands.
+max_parallel_plugins and server_time, plus max_parallel_jobs for agents 0.5.0
+or later (owner decision 2026-11-14); it never carries jobs or commands.
 The bsa_ check runs before the body is parsed (TASK-083: the route class),
 so a bad token is 401 and counted whatever the body; a valid token with a
 bad body is still 400.
@@ -32,7 +33,11 @@ from bitscan_manager.services.users import TxAudit
 router = APIRouter(route_class=limit_first(token_first))
 
 
-@router.post("/{id}/heartbeat", responses=problem_responses((401, 403, 429, 503)))
+@router.post(
+    "/{id}/heartbeat",
+    responses=problem_responses((401, 403, 429, 503)),
+    response_model_exclude_unset=True,
+)
 def heartbeat(
     body: HeartbeatRequest,
     agent: Annotated[AuthenticatedAgent, Depends(current_agent)],
@@ -62,8 +67,11 @@ def heartbeat(
     if gone:
         raise Problem(401, "token_revoked", "A valid agent token is required.")
     HEARTBEAT_LATENCY.observe(time.perf_counter() - started)
-    return HeartbeatResponse(
+    response = HeartbeatResponse(
         job_pull_seconds=answer.job_pull_seconds,
         max_parallel_plugins=answer.max_parallel_plugins,
         server_time=answer.server_time,
     )
+    if answer.max_parallel_jobs is not None:  # absent, never null, for older agents
+        response.max_parallel_jobs = answer.max_parallel_jobs
+    return response

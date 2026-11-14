@@ -33,12 +33,13 @@ class SettingsBody(BaseModel):
     decommission_after_days: int
     redaction_patterns: list[str]
     max_parallel_plugins: int
+    max_parallel_jobs: int
     enrolment_alert_per_hour: int
     inventory_interval_s: int
 
 
 class SettingsPatch(BaseModel):
-    """Any non-empty subset of the seven keys; null is not a value."""
+    """Any non-empty subset of the eight keys; null is not a value."""
 
     model_config = ConfigDict(extra="forbid")
     agent_token_ttl_days: StrictInt | None = Field(
@@ -57,6 +58,9 @@ class SettingsPatch(BaseModel):
     )
     max_parallel_plugins: StrictInt | None = Field(
         default=None, ge=_R["max_parallel_plugins"][0], le=_R["max_parallel_plugins"][1]
+    )
+    max_parallel_jobs: StrictInt | None = Field(
+        default=None, ge=_R["max_parallel_jobs"][0], le=_R["max_parallel_jobs"][1]
     )
     enrolment_alert_per_hour: StrictInt | None = Field(
         default=None,

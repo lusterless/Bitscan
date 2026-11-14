@@ -721,10 +721,16 @@ def test_every_documented_request_behaves_as_the_readme_says(  # noqa: PLR0915
     _, _, out = heartbeat("heartbeat (approved)", beat(A, TA, mA), 200)
     w.note(
         "heartbeat answer",
-        "exactly job_pull_seconds, max_parallel_plugins, server_time",
+        "exactly job_pull_seconds, max_parallel_jobs, max_parallel_plugins,"
+        " server_time",
         ",".join(json.loads(out)),
         sorted(json.loads(out))
-        == ["job_pull_seconds", "max_parallel_plugins", "server_time"],
+        == [
+            "job_pull_seconds",
+            "max_parallel_jobs",
+            "max_parallel_plugins",
+            "server_time",
+        ],
     )
     st_a = owner(server, "SELECT status FROM agent WHERE agent_id = %s", (A,))
     w.note(

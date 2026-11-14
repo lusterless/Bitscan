@@ -102,14 +102,18 @@ func checkShape(raw []byte, t reflect.Type, path string) error {
 			if name == "" {
 				continue
 			}
-			only := parseRule(f.Tag.Get("wire")).only
+			fr := parseRule(f.Tag.Get("wire"))
+			only := fr.only
 			val, present := obj[name]
 			wanted := only == "" || only == kind
 			switch {
 			case present && !wanted:
 				return fmt.Errorf("wire: %s.%s: key not allowed here", path, name)
+			case !present && wanted && fr.opt:
 			case !present && wanted:
 				return fmt.Errorf("wire: %s.%s: missing key", path, name)
+			case present && fr.opt && string(bytes.TrimSpace(val)) == "null":
+				return fmt.Errorf("wire: %s.%s: null not allowed", path, name)
 			case present:
 				used++
 				if err := checkShape(val, f.Type, path+"."+name); err != nil {
@@ -144,6 +148,9 @@ type rule struct {
 	hasMin, hasMax bool
 	nul, uniq      bool
 	only           string
+	// opt: the key may be absent (a pointer field, nil then); present, it
+	// must not be null. For keys a newer peer adds (TS §6.5).
+	opt bool
 }
 
 func parseRule(tag string) rule {
@@ -162,6 +169,8 @@ func parseRule(tag string) rule {
 			r.uniq = true
 		case "only":
 			r.only = val
+		case "opt":
+			r.opt = true
 		}
 	}
 	return r

@@ -1,6 +1,7 @@
 """Runtime settings (TS §8.6 L1317–L1327; #42, #68).
 
-Seven keys: six in the setting table, inventory_interval_s in system_schedule.
+Eight keys: seven in the setting table, inventory_interval_s in system_schedule
+(max_parallel_jobs: owner decision 2026-11-14).
 A patch is validated as a whole before anything is written: one bad key
 refuses it all. No key disables inventory, and its interval stays within
 3,600–86,400 s (TS §3.4 L237, §6.2 L1129).
@@ -25,6 +26,7 @@ INT_RANGES: Final[Mapping[str, tuple[int, int]]] = {
     "job_pull_seconds": (60, 3600),
     "decommission_after_days": (0, 365),  # 0 = never
     "max_parallel_plugins": (1, 8),
+    "max_parallel_jobs": (1, 4),
     "enrolment_alert_per_hour": (1, 10_000),
     INVENTORY_KEY: (3600, 86_400),
 }
@@ -38,6 +40,7 @@ KEYS: Final = (
     "decommission_after_days",
     REDACTION_KEY,
     "max_parallel_plugins",
+    "max_parallel_jobs",
     "enrolment_alert_per_hour",
     INVENTORY_KEY,
 )
@@ -50,11 +53,12 @@ class Settings:
     decommission_after_days: int
     redaction_patterns: tuple[str, ...]
     max_parallel_plugins: int
+    max_parallel_jobs: int
     enrolment_alert_per_hour: int
     inventory_interval_s: int
 
     def as_dict(self) -> dict[str, Any]:
-        """The seven keys, in TS §8.6 order (the GET /settings body, #68)."""
+        """The eight keys, in TS §8.6 order (the GET /settings body, #68)."""
         values: dict[str, Any] = {key: getattr(self, key) for key in KEYS}
         values[REDACTION_KEY] = list(self.redaction_patterns)
         return values

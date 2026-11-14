@@ -28,6 +28,7 @@ Spec: TS §8.6 (configuration), §8.7 (deployment and CLI), §8.2 (configuration
 | `decommission_after_days` | 7 | 0 (never) – 365 |
 | `redaction_patterns` | the five TS §8.6 defaults, exactly as written | RE2 patterns, max 50; removing a default needs a TOTP session and alerts |
 | `max_parallel_plugins` | 2 | 1–8; sent to agents in the heartbeat |
+| `max_parallel_jobs` | 2 | 1–4; compliance jobs an agent runs at once; sent in the heartbeat to agents 0.5.0 or later (owner decision 2026-11-14) |
 | `enrolment_alert_per_hour` | 50 | 1–10,000 |
 | `inventory_interval_s` | 21,600 | 3,600–86,400; stored in `system_schedule`, not `setting` |
 

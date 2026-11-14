@@ -76,6 +76,9 @@ func (r *Run) heartbeat() transport.Class {
 		return transport.Drop
 	}
 	r.SetIntervals(hr.JobPullSeconds, hr.MaxParallelPlugins)
+	if hr.MaxParallelJobs != nil { // sent only to agents 0.5.0 or later
+		r.SetMaxParallelJobs(*hr.MaxParallelJobs)
+	}
 	if err := r.d.Rotator.MaybeRotate(r.ctx, now); errors.Is(err, token.ErrStop) {
 		// A 401 on rotate is a revoked or expired token (also reuse detection,
 		// which revokes both); token.ErrStop carries no type (TS §3.2 step 8).

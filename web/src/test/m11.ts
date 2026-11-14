@@ -84,6 +84,7 @@ export function host(i: number, extra: Partial<HostSummary> = {}): HostSummary {
         dispatched_at: "2026-11-01T10:01:00Z",
         started_at: "2026-11-01T10:01:10Z",
         finished_at: "2026-11-01T10:02:00Z",
+        cancel_reason: null,
       },
     ],
     passed: 3,

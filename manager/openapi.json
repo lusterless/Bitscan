@@ -1073,6 +1073,12 @@
             "title": "Job Pull Seconds",
             "type": "integer"
           },
+          "max_parallel_jobs": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Parallel Jobs",
+            "type": "integer"
+          },
           "max_parallel_plugins": {
             "maximum": 8.0,
             "minimum": 1.0,
@@ -1120,6 +1126,18 @@
       },
       "HostJob": {
         "properties": {
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "const": "already_running",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Reason"
+          },
           "dispatched_at": {
             "anyOf": [
               {
@@ -1194,7 +1212,8 @@
           "retry_of",
           "dispatched_at",
           "started_at",
-          "finished_at"
+          "finished_at",
+          "cancel_reason"
         ],
         "title": "HostJob",
         "type": "object"
@@ -4434,6 +4453,10 @@
             "title": "Job Pull Seconds",
             "type": "integer"
           },
+          "max_parallel_jobs": {
+            "title": "Max Parallel Jobs",
+            "type": "integer"
+          },
           "max_parallel_plugins": {
             "title": "Max Parallel Plugins",
             "type": "integer"
@@ -4452,6 +4475,7 @@
           "decommission_after_days",
           "redaction_patterns",
           "max_parallel_plugins",
+          "max_parallel_jobs",
           "enrolment_alert_per_hour",
           "inventory_interval_s"
         ],
@@ -4460,7 +4484,7 @@
       },
       "SettingsPatch": {
         "additionalProperties": false,
-        "description": "Any non-empty subset of the seven keys; null is not a value.",
+        "description": "Any non-empty subset of the eight keys; null is not a value.",
         "properties": {
           "agent_token_ttl_days": {
             "anyOf": [
@@ -4526,6 +4550,19 @@
               }
             ],
             "title": "Job Pull Seconds"
+          },
+          "max_parallel_jobs": {
+            "anyOf": [
+              {
+                "maximum": 4.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Parallel Jobs"
           },
           "max_parallel_plugins": {
             "anyOf": [
