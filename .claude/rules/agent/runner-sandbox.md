@@ -24,12 +24,13 @@ Spec: TS §3.5 (job execution) and §3.7 (privilege model and units). Default re
   - its own empty temp directory;
   - its `timeout_s`;
   - at most `max_parallel_plugins` running at once.
-- **Decided** (`work/open-questions.md` #31 and #135, owner-approved): each plugin runs in a fresh working directory `/tmp/bitscan-p-<random>` (0700) in the runner's private `/tmp`; no `TMPDIR` is set. The directory is removed once the plugin's cgroup is empty, and the runner empties its private `/tmp` and `/var/tmp` after each job.
-- **Running a plugin:** run it with `/bin/sh -c <execute>`. Move the runner into its own leaf cgroup (`supervisor`) and put each plugin in a fresh child cgroup. Pass a cancellable `context.Context` through each job.
+- **Decided** (`work/open-questions.md` #31 and #135, owner-approved): each plugin runs in a fresh working directory in the runner's private `/tmp`; no `TMPDIR` is set. **Owner decision 2026-11-14 (TS §3.5, §3.7):** each job gets `/tmp/bitscan-j-<random>` (0700) and each plugin `p-<random>` (0700) inside it. The plugin directory is removed once the plugin's cgroup is empty, the job directory when the job ends, and the runner empties its private `/tmp` and `/var/tmp` when no job is running.
+- **Running a plugin:** run it with `/bin/sh -c <execute>`. Move the runner into its own leaf cgroup (`supervisor`); each job gets a cgroup `j-<n>` and each plugin a fresh child `j-<n>/p-<m>`. Serve at most 4 jobs (connections) at once; refuse a fifth `busy` without reading its request. Pass a cancellable `context.Context` through each job.
 - **Cleanup:**
   - when a plugin exits or times out, write `cgroup.kill` for its cgroup and delete its temp directory;
-  - after each job, kill every process in the runner's subtree except itself, including a plugin that moved itself elsewhere in the subtree;
-  - no plugin process may outlive its job.
+  - after each job, kill and remove that job's cgroup subtree, kill any process in the runner's own cgroup or `supervisor` other than itself, and delete that job's temp directory;
+  - when no job is running (after the last job ends, and at start-up), kill every process in the runner's subtree except itself, including a plugin that moved itself elsewhere in the subtree;
+  - no plugin process may outlive its job, except one that moved itself into another running job's cgroup: it dies when that job ends (TS §8.1, accepted).
 - **Start-up:** refuse to start unless the host uses unified cgroup v2; the agent then reports `runner_unavailable` (TS §3).
 - **Captured per plugin** (TS §3.5): exit code, redacted stdout and stderr, start and end times, timed-out flag, truncated flag.
 
