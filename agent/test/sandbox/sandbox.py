@@ -666,9 +666,12 @@ def r209(ctx: Ctx) -> tuple[str, str]:
                     ("runner CapBnd %s" % st.get("CapBnd"), st.get("CapBnd") == "0000000000000004")])
 
 
-@row("CHK-M10-210", "cgroup layout: each plugin in its own plugins/p-<n> with the unit's cpu.max, plugins sharing the unit's task limit less 16, the runner in supervisor, only supervisor and plugins left (REQ-238 (2)-(4))")
+@row("CHK-M10-210", "cgroup layout: each plugin in its own plugins/j-<n>/p-<m> inside its job's cgroup, with the unit's cpu.max, plugins sharing the unit's task limit less 16, the runner in supervisor, only supervisor and plugins left (REQ-238 (2)-(4))")
 def r210(ctx: Ctx) -> tuple[str, str]:
-    # The runner hops through each new plugins/p-<n> while it starts a plugin
+    # Owner decision 2026-11-14 (TS §3.7): each job gets plugins/j-<n> and
+    # each of its plugins plugins/j-<n>/p-<m>, so all jobs' plugins still
+    # share plugins/pids.max. The runner hops through each new plugin cgroup
+    # while it starts a plugin
     # (#136 (a)), so its cgroup is read after the other starts are over. Each
     # plugin cgroup carries the unit's cpu.max (CPUQuota=), so a Go program a
     # plugin runs sizes GOMAXPROCS from it, and all plugins share
@@ -697,7 +700,8 @@ def r210(ctx: Ctx) -> tuple[str, str]:
     cpus = [d.get("CPUMAX", "") for d in ds]
     inner = sorted(p.name for p in (cg / "plugins").iterdir() if p.is_dir()) if cg and (cg / "plugins").is_dir() else ["<no plugins>"]
     return verdict([("job done", ok_job(res, 3)),
-                    ("plugin cgroups %s" % cgs, len(set(cgs)) == 3 and all(re.search(r"/bitscan-runner\.service/plugins/p-\d+$", c) for c in cgs)),
+                    ("plugin cgroups %s" % cgs, len(set(cgs)) == 3 and all(re.search(r"/bitscan-runner\.service/plugins/j-\d+/p-\d+$", c) for c in cgs)
+                     and len({c.rsplit("/", 1)[0] for c in cgs}) == 1),
                     ("runner in supervisor", all(d.get("RCG", "").endswith("/bitscan-runner.service/supervisor") for d in ds)),
                     ("forked child in the plugin's own cgroup", all(d.get("CH") == d.get("CG") for d in ds)),
                     ("plugin cpu.max %s equals the unit's %s" % (cpus, unit_cpu), unit_cpu[:3] != "max" and "_" in unit_cpu and all(c == unit_cpu for c in cpus)),

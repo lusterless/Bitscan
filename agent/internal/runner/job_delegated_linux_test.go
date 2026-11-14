@@ -412,13 +412,20 @@ func TestDelegatedJobTmpEmptied(t *testing.T) {
 			t.Error("a file outside /tmp was removed through the symlink")
 		}
 	})
-	t.Run("a failed cleanup is Run's error (fatal), after every result", func(t *testing.T) {
+	// TS §3.5 (owner decision 2026-11-14): /tmp and /var/tmp are emptied
+	// when no job runs, so their failure is Idle's error, which the serve
+	// loop treats as fatal (TestServeIdleFailureIsFatal); the job itself
+	// still ends with every result.
+	t.Run("a failed tmp cleanup is Idle's error (fatal), after every result", func(t *testing.T) {
 		e, logs := newExec(t, []string{"/nonexistent-m10c"})
 		r := runJob(t, e, context.Background(), jobOf(1, nil, plug(1, "echo x", 10)), 20*time.Second, nil)
-		if r.err == nil || len(r.out) != 1 {
-			t.Fatalf("Run: %v, %d results; want an error after 1 result", r.err, len(r.out))
+		if r.err != nil || len(r.out) != 1 {
+			t.Fatalf("Run: %v, %d results; want no error and 1 result", r.err, len(r.out))
 		}
-		if !strings.Contains(logs.String(), "after-job cleanup failed") {
+		if err := e.Idle(context.Background()); err == nil {
+			t.Fatal("Idle: no error with a TmpDirs entry that does not exist")
+		}
+		if !strings.Contains(logs.String(), "idle cleanup failed") {
 			t.Errorf("no cleanup log line: %s", logs.String())
 		}
 	})
