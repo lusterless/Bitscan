@@ -1213,7 +1213,7 @@ Users sign in with a local account and receive an opaque token. Scripts send it 
 | GET | `/agents` | Hosts with status, OS, last heartbeat and inventory | viewer |
 | GET | `/agents/{id}` | Host detail incl. `os_info` | viewer |
 | GET | `/agents/{id}/packages` | Packages on one host | viewer |
-| GET | `/agents/{id}/scans` | Scan history of one host; each job carries `cancel_reason` (`"already_running"` or `null`) | viewer |
+| GET | `/agents/{id}/scans` | Scan history of one host | viewer |
 | PUT | `/agents/{id}/tags` | Set host tags | operator |
 | POST | `/agents/{id}/revoke` | Revoke the agent token (forces re-enrolment) | admin, TOTP session |
 | GET | `/enrollment-requests` | Pending and decided enrolments | admin |
@@ -1222,7 +1222,7 @@ Users sign in with a local account and receive an opaque token. Scripts send it 
 | GET | `/packages/search`, `/packages/search.csv` | Fleet-wide package search (§7), JSON or CSV | viewer |
 | GET | `/scans` | List scans (filter by policy, host, state, date) | viewer |
 | POST | `/scans` | `{ policy_id, target }` → manual scan | operator |
-| GET | `/scans/{id}` | Scan state + per-host summary | viewer |
+| GET | `/scans/{id}` | Scan state + per-host summary; each host job carries `cancel_reason` (`"already_running"` or `null`) | viewer |
 | GET | `/scans/{id}/results`, `/results.csv` | Results, filterable by status and host. `stdout` and `stderr` are included only for operator and admin. | viewer |
 | POST | `/scans/{id}/cancel` | Cancel queued or running jobs | operator |
 | POST | `/scans/{id}/reevaluate` | Re-evaluate against the policy's current version | admin, TOTP session |
