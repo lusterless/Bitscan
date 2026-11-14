@@ -1,0 +1,87 @@
+name: collector
+
+# TS §8.3 "Collector helper": the clustermax-collector package (TS §3.8) and
+# its policy, on every PR. Unit-level rows here; the runner-sandbox row is
+# CHK-M10-224 in sandbox.yml.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Dev lock installs with hashes
+        run: |
+          python -m venv "$RUNNER_TEMP/dev"
+          "$RUNNER_TEMP/dev/bin/python" -m pip install --require-hashes -r manager/requirements-dev.txt
+          echo "$RUNNER_TEMP/dev/bin" >>"$GITHUB_PATH"
+
+      - name: ruff check
+        run: ruff check collector
+
+      - name: ruff format
+        run: ruff format --check collector
+
+      - name: mypy --strict
+        run: mypy --strict collector/src collector/tools
+
+      - name: Helper and client tests
+        run: python -m pytest -q -p no:cacheprovider collector/tests
+
+      - name: The policy is what the generator writes
+        run: |
+          python -I collector/tools/gen_clustermax_bit.py
+          git diff --exit-code -- bits/samples/clustermax-0.3.0.bit collector/tools/plugin-ids.json
+
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Two builds are byte-identical
+        run: |
+          collector/packaging/build-deb.sh "$RUNNER_TEMP/a"
+          collector/packaging/build-deb.sh "$RUNNER_TEMP/b"
+          cmp "$RUNNER_TEMP"/a/*.deb "$RUNNER_TEMP"/b/*.deb
+
+      - name: The vendored ClusterMAX runs on the system Python and lists 81 checks
+        run: |
+          root="$RUNNER_TEMP/root"
+          dpkg-deb -x "$RUNNER_TEMP"/a/*.deb "$root"
+          /usr/bin/python3 --version
+          /usr/bin/python3 -I -c "import sys; sys.path.insert(0, '$root/usr/lib/clustermax/site'); from cmax.cli import main; sys.argv = ['cmax', '-v']; sys.exit(main())" | tee "$RUNNER_TEMP/version"
+          grep -qx 'cmax 0.3.0' "$RUNNER_TEMP/version"
+          /usr/bin/python3 -I -c "import sys; sys.path.insert(0, '$root/usr/lib/clustermax/site'); from cmax.cli import main; sys.argv = ['cmax', 'audit', '--show', '-vvv']; sys.exit(main())" > "$RUNNER_TEMP/show.txt"
+          diff "$RUNNER_TEMP/show.txt" collector/tools/clustermax-0.3.0-checks.txt
+          test "$(find "$root/usr/lib/clustermax/site/cmax" -type f -perm -u+x | wc -l)" -eq 28
+
+      - name: systemd-analyze verify with the programs installed
+        run: |
+          root="$RUNNER_TEMP/root"
+          sudo install -m 0755 "$root/usr/sbin/cmax-helper" /usr/sbin/cmax-helper
+          sudo groupadd --system bitscan-runner || true
+          systemd-analyze verify "$root/usr/lib/systemd/system/cmax-helper.socket" "$root/usr/lib/systemd/system/cmax-helper.service"
