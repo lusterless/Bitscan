@@ -61,7 +61,15 @@ HOST_KEYS = {
     "not_run",
     "score",
 }
-JOB_KEYS = {"job_id", "state", "retry_of", "dispatched_at", "started_at", "finished_at"}
+JOB_KEYS = {
+    "job_id",
+    "state",
+    "retry_of",
+    "dispatched_at",
+    "started_at",
+    "finished_at",
+    "cancel_reason",  # owner decision 2026-11-14 (TS §4.4, §6.4)
+}
 FORBIDDEN_KEYS = {"resolved_agents", "stdout", "stderr", "execute", "expected"}
 
 

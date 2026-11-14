@@ -837,8 +837,10 @@ def chain(  # noqa: PLR0915
                 headers=ah,
             )
             assert st.status == 200, st.body
+            # max_parallel_jobs: the test agent is 0.5.0 or later (TS §6.5)
             assert sorted(json.loads(st.body)) == [
                 "job_pull_seconds",
+                "max_parallel_jobs",
                 "max_parallel_plugins",
                 "server_time",
             ]

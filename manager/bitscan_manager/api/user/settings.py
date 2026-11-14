@@ -2,7 +2,7 @@
 
 GET: admin, session or API token. PATCH: admin with a TOTP-verified session,
 refused for API tokens and during a long audit-sink outage (a sensitive
-action, TS §6.2 L1084). A patch is any non-empty subset of the seven keys,
+action, TS §6.2 L1084). A patch is any non-empty subset of the eight keys,
 applied atomically or not at all; the answer holds all seven. No key can
 disable inventory (TS §6.2 L1129).
 """

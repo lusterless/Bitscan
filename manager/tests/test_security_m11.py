@@ -251,6 +251,15 @@ POST_M11_PINS = {
     "auth/sessions.py": (
         "cdbedf47bb5dc1cad8fc00e34729458e145448171f848022f620c61bdd5be6c3"
     ),
+    # No duplicate run and parallel jobs (TS §4.4, §5.2, §8.6; work/decisions.md
+    # 2026-11-14): queue_scan counts the jobs not run, and m0007 adds
+    # scan_job.cancel_reason and the max_parallel_jobs setting.
+    "services/jobs/queue.py": (
+        "719b773822432da68f64e1a8ea5875a0fe3971777fe609e5185bdbbc009bbbc4"
+    ),
+    "db/migrations/versions/m0007_parallel_jobs.py": (
+        "72cd3aa7a862ea87f01d4e0ba09d23dc817008ac0382e111f0840a8fd556887e"
+    ),
 }
 PINS = {**FROZEN, **POST_M11_PINS}
 

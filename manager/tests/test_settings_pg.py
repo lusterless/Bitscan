@@ -76,7 +76,7 @@ def test_seeded_defaults_read_back_exactly(conn: Conn) -> None:
 
 
 def test_seed_json_shapes(conn: Conn) -> None:
-    """#42: bare numbers for the five numeric keys, an array for the patterns."""
+    """#42: bare numbers for the six numeric keys, an array for the patterns."""
     rows = dict(conn.execute("SELECT key, jsonb_typeof(value) FROM setting").fetchall())
     assert rows == {
         "agent_token_ttl_days": "number",
@@ -85,6 +85,7 @@ def test_seed_json_shapes(conn: Conn) -> None:
         "redaction_patterns": "array",
         "max_parallel_plugins": "number",
         "enrolment_alert_per_hour": "number",
+        "max_parallel_jobs": "number",  # m0007, owner decision 2026-11-14
     }
 
 
@@ -116,7 +117,7 @@ def test_write_value_updates_only_seeded_keys(conn: Conn, restore: None) -> None
     ).fetchone()
     assert row == (120, 7, T0)
     keys = {r[0] for r in conn.execute("SELECT key FROM setting").fetchall()}
-    assert "inventory_enabled" not in keys and len(keys) == 6
+    assert "inventory_enabled" not in keys and len(keys) == 7  # m0007 adds one
     assert read_settings(repo).job_pull_seconds == 120
 
 

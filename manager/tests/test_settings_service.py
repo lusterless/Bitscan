@@ -3,7 +3,7 @@
 Checks CHK-M3-091 to CHK-M3-094 of tests/m3/test-plan.md (TP-M3-09). Expected
 values: TS §8.6 L1317-L1339 (keys, defaults, ranges, at most 50 RE2 patterns),
 TS §3.4 L237 and §6.2 L1129 (no key disables inventory; interval 1-24 h),
-#42 (JSON shapes), #68 (one object of seven keys, a non-empty partial patch),
+#42 (JSON shapes), #68 (one object of eight keys, a non-empty partial patch),
 REQ-083 (2), (3), REQ-088 (2), security invariant "RE2 for every pattern".
 The defaults are read from the spec text itself.
 """
@@ -35,6 +35,7 @@ SPEC_RANGES = {
     "max_parallel_plugins": (1, 8),
     "enrolment_alert_per_hour": (1, 10_000),
     "inventory_interval_s": (3600, 86_400),
+    "max_parallel_jobs": (1, 4),  # owner decision 2026-11-14 (TS §8.6)
 }
 SPEC_DEFAULTS = {
     "agent_token_ttl_days": 365,
@@ -43,6 +44,7 @@ SPEC_DEFAULTS = {
     "max_parallel_plugins": 2,
     "enrolment_alert_per_hour": 50,
     "inventory_interval_s": 21_600,
+    "max_parallel_jobs": 2,
 }
 CANARY = "CANARY-5e7f0a1b2c3d4e5f"
 
@@ -89,13 +91,15 @@ def test_spec_patterns_read() -> None:
 # ------------------------------------------------------------ keys and read
 
 
-def test_keys_are_the_seven_spec_keys() -> None:
+def test_keys_are_the_eight_spec_keys() -> None:
+    # TS §8.6 order; max_parallel_jobs: owner decision 2026-11-14.
     assert list(KEYS) == [
         "agent_token_ttl_days",
         "job_pull_seconds",
         "decommission_after_days",
         "redaction_patterns",
         "max_parallel_plugins",
+        "max_parallel_jobs",
         "enrolment_alert_per_hour",
         "inventory_interval_s",
     ]

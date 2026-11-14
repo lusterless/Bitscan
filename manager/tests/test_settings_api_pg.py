@@ -39,6 +39,7 @@ KEYS = [
     "decommission_after_days",
     "redaction_patterns",
     "max_parallel_plugins",
+    "max_parallel_jobs",  # owner decision 2026-11-14 (TS §8.6)
     "enrolment_alert_per_hour",
     "inventory_interval_s",
 ]

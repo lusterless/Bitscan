@@ -297,6 +297,7 @@ Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, 
   | `decommission_after_days` | 7 | 0 (never) – 365 |
   | `redaction_patterns` | five built-in patterns | at most 50 RE2 patterns |
   | `max_parallel_plugins` | 2 | 1–8; sent to agents in the heartbeat |
+  | `max_parallel_jobs` | 2 | 1–4; compliance jobs of different profiles a host runs at once; sent in the heartbeat to agents 0.5.0 or later |
   | `enrolment_alert_per_hour` | 50 | 1–10,000 |
   | `inventory_interval_s` | 21,600 | 3,600–86,400 (1–24 h) |
 
@@ -475,6 +476,8 @@ curl -s https://manager.example:8443/api/v1/scans \
 - **The answer** is 202 `{scan_id, state: "queued", policy_version, jobs}`; `jobs` is the number of hosts.
 - **Refusals** (nothing is written): a malformed target or any other body key gets 400 (`Invalid request: target…`); an unknown profile 404; a disabled or deleted profile, or one with no active check, 409 `conflict`; a target with no eligible host 422; a body over 1 MiB 413.
 - **One job per host and profile.** A new scan cancels the still-queued jobs of earlier scans of the same profile on the same hosts. Jobs already handed out keep running, and inventory jobs are never touched.
+- **No duplicate run.** A host that already has a handed-out or running job of the profile does not run it again: the new scan's job for that host is saved as `cancelled` with `cancel_reason` `already_running` and is never sent. The scan page shows "not run: already running on this host" for it.
+- **Profiles in parallel.** A host runs jobs of different profiles at the same time, at most `max_parallel_jobs` at once (default 2); the others wait their turn in the order they were pulled. Agents before 0.5.0 run one job at a time.
 - **Commands are fixed when queued.** A job keeps the commands it was built with, even if the profile is imported again; scans queued afterwards use the new version. Disabling a profile blocks new scans; its queued and running jobs still run.
 - **`Idempotency-Key`** (optional, 1–255 printable ASCII characters, else 400): repeating the request with the same key and the same body returns the first 202 answer and starts no second scan. The same key with a different body gets 409. Keys are kept per user, in memory, for 24 hours, and are forgotten when the manager restarts. Only a 202 is remembered, so a refused request can be retried with the same key. A repeat sent while the first is still running waits for its answer.
 - **Alert:** an all-hosts scan (`{"all": true}`) started with an API token writes an `all_hosts_scan_api_token` alert. Every scan writes one `scan.create` audit entry.
@@ -624,7 +627,7 @@ The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_`
 | Route | Purpose |
 | --- | --- |
 | `POST /agent/enroll` | Exchange a `bse_` token for `agent_id` and an agent token (`bsa_`), with `issued_at`, `expires_at` and `status` (`enrolled` or `awaiting_approval`) |
-| `POST /agent/{id}/heartbeat` | Report status; the answer is only `job_pull_seconds`, `max_parallel_plugins` and `server_time` |
+| `POST /agent/{id}/heartbeat` | Report status; the answer is only `job_pull_seconds`, `max_parallel_plugins` and `server_time`, plus `max_parallel_jobs` for agents 0.5.0 or later |
 | `GET /agent/{id}/jobs` | Pull up to 10 queued jobs, each handed out once |
 | `POST /agent/{id}/jobs/{job_id}/results` | Return results of a compliance job, at most 50 per batch; answers `{accepted, duplicates}` |
 | `PUT /agent/{id}/inventory[?job_id=...]` | Upload `os_info` and the package list, gzip-compressed; answers 204 |
