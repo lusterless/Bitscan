@@ -367,6 +367,9 @@ func TestDelegatedJobTmpEmptied(t *testing.T) {
 		if r.err != nil {
 			t.Fatal(r.err)
 		}
+		if err := e.Idle(context.Background()); err != nil { // no job runs now
+			t.Fatal(err)
+		}
 		if _, err := os.Stat(marker); err != nil {
 			t.Fatalf("with no TmpDirs the job removed %s: %v", marker, err)
 		}
@@ -379,6 +382,15 @@ func TestDelegatedJobTmpEmptied(t *testing.T) {
 		r := runJob(t, e, context.Background(), jobOf(1, nil, plug(1, exe, 10)), 20*time.Second, nil)
 		if r.err != nil || len(r.out) != 1 || exitOf(r.out[0].item) != "0" {
 			t.Fatalf("Run: %v %+v", r.err, r.out)
+		}
+		// TS §3.5 (owner decision 2026-11-14): the job's own temp directory
+		// is gone after Run; the private /tmp and /var/tmp are emptied by
+		// the idle cleanup, which the serve loop runs when no job runs.
+		if jobs, _ := filepath.Glob("/tmp/bitscan-j-*"); len(jobs) != 0 {
+			t.Errorf("job temp directory left after Run: %v", jobs)
+		}
+		if err := e.Idle(context.Background()); err != nil {
+			t.Fatal(err)
 		}
 		for _, d := range []string{"/tmp", "/var/tmp"} {
 			ents, err := os.ReadDir(d)
@@ -515,7 +527,7 @@ type countingSpawn struct {
 	fail  error
 }
 
-func (s *countingSpawn) spawn(p *Plugin, execute string, now func() time.Time) (*Spawned, error) {
+func (s *countingSpawn) spawn(p *Plugin, jobDir, execute string, now func() time.Time) (*Spawned, error) {
 	s.mu.Lock()
 	s.calls++
 	k := s.calls
@@ -523,7 +535,7 @@ func (s *countingSpawn) spawn(p *Plugin, execute string, now func() time.Time) (
 	if k == s.failK {
 		return nil, s.fail
 	}
-	return Spawn(p, execute, now)
+	return Spawn(p, jobDir, execute, now)
 }
 
 func (s *countingSpawn) n() int {
@@ -637,15 +649,20 @@ func TestDelegatedJobCleanupBeforeEmit(t *testing.T) {
 	}
 	r := runJob(t, e, context.Background(), jobOf(1, nil, specs...), 20*time.Second, func(it wire.ResultItem) {
 		dir := strings.TrimSpace(it.Stdout)
-		if !strings.HasPrefix(dir, "/tmp/bitscan-p-") {
+		// TS §3.7 (owner decision 2026-11-14): p-<random> inside the job's
+		// /tmp/bitscan-j-<random>.
+		if !strings.HasPrefix(dir, "/tmp/bitscan-j-") || !strings.HasPrefix(filepath.Base(dir), "p-") {
 			t.Errorf("pwd %q", dir)
 		} else if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("temp dir %s still there when its result is emitted", dir)
 		}
-		ents, _ := os.ReadDir(filepath.Join(mountOf(e.CG), "plugins"))
-		for _, d := range ents {
-			if d.IsDir() && strings.HasPrefix(d.Name(), "p-") {
-				t.Errorf("cgroup %s still there when the result is emitted", d.Name())
+		jobs, _ := filepath.Glob(filepath.Join(mountOf(e.CG), "plugins", "j-*"))
+		for _, j := range jobs {
+			ents, _ := os.ReadDir(j)
+			for _, d := range ents {
+				if d.IsDir() && strings.HasPrefix(d.Name(), "p-") {
+					t.Errorf("cgroup %s/%s still there when the result is emitted", filepath.Base(j), d.Name())
+				}
 			}
 		}
 	})
@@ -693,8 +710,8 @@ func TestDelegatedJobCaptureErrorTruncated(t *testing.T) {
 	})
 	for _, stream := range []string{"stdout", "stderr"} {
 		t.Run("unit: a "+stream+" read that fails (EISDIR)", func(t *testing.T) {
-			e.Spawn = func(p *Plugin, execute string, now func() time.Time) (*Spawned, error) {
-				s, err := Spawn(p, execute, now)
+			e.Spawn = func(p *Plugin, jobDir, execute string, now func() time.Time) (*Spawned, error) {
+				s, err := Spawn(p, jobDir, execute, now)
 				if err != nil {
 					return s, err
 				}

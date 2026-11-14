@@ -60,11 +60,12 @@ func (s *Spawned) Wait() (syscall.WaitStatus, error) {
 
 // Spawn starts /bin/sh -c execute born in p's cgroup, with exactly the PATH
 // variable, stdin /dev/null, stdout and stderr pipes and no other
-// descriptor, a fresh 0700 working directory under the private /tmp (no
-// TMPDIR), niceness 10 and I/O class idle. No Pdeathsig: it would fire when
-// the start thread is discarded (#136 (c)).
-func Spawn(p *Plugin, execute string, now func() time.Time) (*Spawned, error) {
-	dir, err := os.MkdirTemp(tmpRoot, "bitscan-p-")
+// descriptor, a fresh 0700 working directory p-<random> inside its job's
+// temp directory jobDir in the private /tmp (no TMPDIR; TS §3.7), niceness
+// 10 and I/O class idle. No Pdeathsig: it would fire when the start thread
+// is discarded (#136 (c)).
+func Spawn(p *Plugin, jobDir, execute string, now func() time.Time) (*Spawned, error) {
+	dir, err := os.MkdirTemp(jobDir, "p-")
 	if err != nil {
 		return nil, fmt.Errorf("%w: temp dir: %w", ErrExec, err)
 	}

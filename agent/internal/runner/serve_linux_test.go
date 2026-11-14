@@ -68,6 +68,14 @@ type fakeExec struct {
 	fatal    error
 	canceled chan time.Time // receives when ctx is done during hold
 	once     sync.Once
+	idles    atomic.Int32 // Idle calls
+	idleErr  error        // returned by Idle
+}
+
+// Idle counts the idle cleanups; idleErr makes one fail (fatal).
+func (f *fakeExec) Idle(context.Context) error {
+	f.idles.Add(1)
+	return f.idleErr
 }
 
 func (f *fakeExec) Run(ctx context.Context, req proto.Request, emit func(proto.Result) error) error {
@@ -126,6 +134,12 @@ const srvExecCanary = "M10SRVCANARY-execute"
 
 func startServer(t *testing.T, ex *fakeExec) *srvHarness {
 	t.Helper()
+	return startServerN(t, ex, 1)
+}
+
+// startServerN is startServer with MaxJobs set (0 = DefaultMaxJobs).
+func startServerN(t *testing.T, ex Executor, maxJobs int) *srvHarness {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runner.sock")
 	l, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
@@ -133,10 +147,14 @@ func startServer(t *testing.T, ex *fakeExec) *srvHarness {
 		t.Fatal(err)
 	}
 	logs := &jobLog{}
-	s := &Server{Listener: unixListener{l}, Checks: NewChecks(agentFile(t, ownID+"\n")), Exec: ex,
+	// startServer passes MaxJobs 1: those rows test the slot rules with one
+	// slot, exactly as before parallel jobs; serve_parallel_linux_test.go
+	// tests the default 4.
+	s := &Server{Listener: unixListener{l}, Checks: NewChecks(agentFile(t, ownID+"\n")), Exec: ex, MaxJobs: maxJobs,
 		Clock: func() time.Time { return now0 }, Log: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
 	ctx, cancel := context.WithCancel(context.Background())
-	h := &srvHarness{path: path, srv: s, exec: ex, logs: logs, stop: cancel, errCh: make(chan error, 1)}
+	fe, _ := ex.(*fakeExec) // nil for other executors
+	h := &srvHarness{path: path, srv: s, exec: fe, logs: logs, stop: cancel, errCh: make(chan error, 1)}
 	go func() { h.errCh <- s.Serve(ctx) }()
 	t.Cleanup(func() {
 		cancel()
@@ -550,7 +568,7 @@ func TestServeWriteDeadline(t *testing.T) {
 	var reps []proto.Reply
 	for {
 		time.Sleep(time.Second)
-		if !h.srv.busy.Load() {
+		if h.srv.Active() == 0 {
 			break
 		}
 		if time.Since(start) > 90*time.Second {
@@ -721,7 +739,7 @@ func fatalServer(t *testing.T) (*Server, *gatedListener, *fakeExec, string, chan
 	g := &gatedListener{l: l, gate: make(chan struct{}), closed: make(chan struct{}), done: make(chan struct{})}
 	planted := errors.New("planted: sweep failed")
 	ex := &fakeExec{results: 1, hold: make(chan struct{}), started: make(chan struct{}), fatal: planted}
-	s := &Server{Listener: g, Checks: NewChecks(agentFile(t, ownID+"\n")), Exec: ex,
+	s := &Server{Listener: g, Checks: NewChecks(agentFile(t, ownID+"\n")), Exec: ex, MaxJobs: 1,
 		Clock: func() time.Time { return now0 }, Log: slog.New(slog.NewJSONHandler(&jobLog{}, nil))}
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.Serve(context.Background()) }()
@@ -767,7 +785,7 @@ func TestServeNoJobAfterFatal(t *testing.T) {
 		t.Fatal("the fatal error did not close the listener")
 	}
 	deadline := time.Now().Add(10 * time.Second)
-	for s.busy.Load() {
+	for s.Active() > 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("busy was not cleared after the fatal job")
 		}

@@ -18,12 +18,20 @@ const (
 )
 
 // Executor runs one checked request and emits one Result per plugin (plan
-// TASK-209 §4). Run returns nil once the job has ended: every plugin
-// emitted, ctx cancelled or emit failed. A non-nil error means the runner
+// TASK-209 §4). Run returns nil once the job has ended and its own cleanup
+// is done: every plugin emitted, ctx cancelled or emit failed. Idle is the
+// cleanup for when no job runs (TS §3.5: the full sweep and the emptied
+// private /tmp); Serve calls it after the last running job ends, with no
+// job able to start meanwhile. A non-nil error from either means the runner
 // can no longer guarantee its cleanup (a failed sweep) and must exit.
 type Executor interface {
 	Run(ctx context.Context, req proto.Request, emit func(proto.Result) error) error
+	Idle(ctx context.Context) error
 }
+
+// DefaultMaxJobs is the most jobs the runner serves at once: the top of
+// max_parallel_jobs (TS §3.7, owner decision 2026-11-14).
+const DefaultMaxJobs = 4
 
 // Listener is where connections come from: *sdsock.Listener, which returns
 // only peer-checked connections (TASK-217).
@@ -32,21 +40,75 @@ type Listener interface {
 	Close() error
 }
 
-// Server is the runner's serve loop: one connection carries one request,
-// and one job runs at a time (#130).
+// Server is the runner's serve loop: one connection carries one request
+// (#130), and at most MaxJobs jobs run at once (TS §3.7).
 type Server struct {
 	Listener Listener
 	Checks   *Checks
 	Exec     Executor
 	Clock    func() time.Time
 	Log      *slog.Logger
+	// MaxJobs is the most connections served at once; 0 means
+	// DefaultMaxJobs. One more is refused busy, its request unread.
+	MaxJobs int
 
-	busy atomic.Bool
-	// failed is set, after fatal and before busy is cleared, once a job's
+	// mu guards active. The idle cleanup runs with mu held, so no job is
+	// accepted while it sweeps.
+	mu     sync.Mutex
+	active int
+	// failed is set, after fatal and before the slot is freed, once a
 	// cleanup failed: no job may run after that (TASK-225 r1).
 	failed atomic.Bool
 	fatal  error
 	once   sync.Once
+}
+
+// Active is the number of connections being served.
+func (s *Server) Active() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.active
+}
+
+func (s *Server) maxJobs() int {
+	if s.MaxJobs > 0 {
+		return s.MaxJobs
+	}
+	return DefaultMaxJobs
+}
+
+// take reserves a slot; false when all are in use.
+func (s *Server) take() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active >= s.maxJobs() {
+		return false
+	}
+	s.active++
+	return true
+}
+
+// release frees a slot and closes the connection, both under mu. When it
+// was the last slot and nothing has failed, the connection is closed and
+// then the idle cleanup runs, still under mu: the client sees EOF at once,
+// and a connection made meanwhile waits in take until the cleanup is done,
+// so no job starts during it and none is refused busy for it. A failed idle
+// cleanup is fatal like a failed job cleanup.
+func (s *Server) release(ctx context.Context, conn *net.UnixConn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.active--
+	_ = conn.Close()
+	if s.active == 0 && !s.failed.Load() {
+		if err := s.Exec.Idle(context.WithoutCancel(ctx)); err != nil {
+			s.Log.Error("runner: idle cleanup failed")
+			s.fail(err)
+		}
+	}
+}
+
+func (s *Server) fail(err error) {
+	s.once.Do(func() { s.fatal = err; s.failed.Store(true); _ = s.Listener.Close() })
 }
 
 // Serve accepts until ctx is done (it returns nil after the running job has
@@ -68,19 +130,24 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 			return err
 		}
-		won := s.busy.CompareAndSwap(false, true)
-		// Checked after the CAS: a won CAS read the busy=false stored after
-		// failed was set, so it sees failed; checked before, a fatal between
-		// the check and the CAS would let one job run after a failed sweep.
+		won := s.take()
+		// Checked after take: failed is set before a slot is freed, so a
+		// slot won after a fatal sees it; checked before, a fatal between the
+		// check and take would let one job run after a failed sweep.
 		// Closed unanswered: a busy reply would make the agent retry.
 		if s.failed.Load() {
+			if won {
+				s.mu.Lock()
+				s.active--
+				s.mu.Unlock()
+			}
 			_ = conn.Close()
 			wg.Wait()
 			return s.fatal
 		}
 		if !won {
-			// A second connection while a job runs: refused at once, its
-			// request never read (#130 (g)).
+			// One connection more than MaxJobs: refused at once, its request
+			// never read (#130 (g)).
 			_ = s.reply(conn, proto.Reply{Kind: proto.KindRefused, Reason: proto.ReasonBusy})
 			_ = conn.Close()
 			continue
@@ -89,16 +156,16 @@ func (s *Server) Serve(ctx context.Context) error {
 		go func() {
 			// In this order (TASK-225 r1): handle has ended the job and its
 			// cleanup, and a fatal error has set failed and closed the
-			// listener; then busy is cleared, so a client that sees EOF and
-			// dials again is served; then the connection is closed; wg.Done
-			// last, so Serve waits for the close.
+			// listener; then, under mu, the slot is freed and the connection
+			// closed, so a client that sees EOF and dials again is served
+			// (after the idle cleanup when this was the last job); wg.Done
+			// last, so Serve waits for it.
 			defer func() {
-				s.busy.Store(false)
-				_ = conn.Close()
+				s.release(ctx, conn)
 				wg.Done()
 			}()
 			if err := s.handle(ctx, conn); err != nil {
-				s.once.Do(func() { s.fatal = err; s.failed.Store(true); _ = s.Listener.Close() })
+				s.fail(err)
 			}
 		}()
 	}
