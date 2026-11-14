@@ -25,26 +25,30 @@ SPEC = Path("docs/spec/Technical_Specification.md")
 # (work/tasks.md TASK-007/008/092 give the pre-2026-11-03 ranges; TS L308 onwards
 # moved down 2 lines with the runner unit change, decisions 2026-11-03)
 AGENT: dict[str, tuple[int, int]] = {
-    "bitscan-runner.socket": (289, 302),
-    "bitscan-runner.service": (308, 365),
-    "bitscan-agent.service": (371, 410),
-    "bitscan-capread.socket": (439, 451),
-    "bitscan-capread.service": (453, 485),
+    "bitscan-runner.socket": (297, 310),
+    "bitscan-runner.service": (316, 373),
+    "bitscan-agent.service": (379, 418),
+    "bitscan-capread.socket": (447, 459),
+    "bitscan-capread.service": (461, 493),
 }
 # The manager blocks moved down 3 lines with the TS §5.2 index lines (68d3881,
 # TASK-261, 2026-11-11; before: 1354, 1407, 1441, 1471), then 7 more with the
 # TS §6.2, §6.3, §8.1 session-cookie amendment (2026-11-12; before: 1357,
 # 1410, 1444, 1474), then 2 more with the bitscan-capread AppArmor amendment
-# (TS §3.7, §8.1; 2026-11-13; before: 1364, 1417, 1451, 1481).
+# (TS §3.7, §8.1; 2026-11-13; before: 1364, 1417, 1451, 1481), then 99 more
+# with the TS §3.8 ClusterMAX collector helper and the parallel-jobs
+# amendments (2026-11-14; before: 1366, 1419, 1453, 1483). The §3 blocks and
+# the D-Bus policy moved down 8 lines with the same amendments (before: 289,
+# 308, 371, 439, 453 and 414).
 MANAGER: dict[str, tuple[int, int]] = {
-    "bitscan-manager.service": (1366, 1415),
-    "bitscan-manager-migrate.service": (1419, 1449),
-    "bitscan-manager-maintain.service": (1453, 1481),
-    "bitscan-manager-maintain.timer": (1483, 1494),
+    "bitscan-manager.service": (1465, 1514),
+    "bitscan-manager-migrate.service": (1518, 1548),
+    "bitscan-manager-maintain.service": (1552, 1580),
+    "bitscan-manager-maintain.timer": (1582, 1593),
 }
-# D-Bus policy (TS §3.7): ```xml fence at L414, closing fence at L433
+# D-Bus policy (TS §3.7): ```xml fence at L422, closing fence at L441
 DBUS: dict[str, tuple[int, int]] = {
-    "bitscan-runner.conf": (414, 433),
+    "bitscan-runner.conf": (422, 441),
 }
 
 # Recorded deviations from the verbatim TS blocks: file name -> (the spec line
