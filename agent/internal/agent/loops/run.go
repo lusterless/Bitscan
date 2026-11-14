@@ -23,6 +23,10 @@ import (
 // is enabled (#30; TS §3.7 L484). The agent never connects to it.
 const CapreadSock = "/run/bitscan/capread.sock"
 
+// CmaxSock is the ClusterMAX collector helper's socket (TS §3.8); while a
+// file exists there the heartbeat reports "cmax". The agent never connects.
+const CmaxSock = "/run/clustermax/collect.sock"
+
 // maxLastError is HeartbeatRequest.last_error's bound (#78 (e)).
 const maxLastError = 1024
 
@@ -69,6 +73,7 @@ type Deps struct {
 	// heartbeat answer carries one (TS §3.3; owner decision 2026-11-14).
 	MaxParallelJobs int
 	CapreadSock     string // empty: CapreadSock
+	CmaxSock        string // empty: CmaxSock
 	// SpoolBytes is the spool's size on disk, the heartbeat's spool_bytes
 	// (#78 (d)); the spool's Size. Nil reports 0.
 	SpoolBytes func() int64
@@ -102,6 +107,9 @@ type Run struct {
 func NewRun(parent context.Context, d Deps) *Run {
 	if d.CapreadSock == "" {
 		d.CapreadSock = CapreadSock
+	}
+	if d.CmaxSock == "" {
+		d.CmaxSock = CmaxSock
 	}
 	log := d.Log
 	if log == nil {

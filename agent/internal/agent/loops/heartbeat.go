@@ -98,11 +98,18 @@ func (r *Run) spoolBytes() int64 {
 	return max(r.d.SpoolBytes(), 0)
 }
 
-// helpers is ["capread"] when any file exists at the capread socket path
-// (#30; lead ruling 2026-10-24), else [].
+// helpers lists, in this order, "capread" when any file exists at the
+// capread socket path (#30; lead ruling 2026-10-24) and "cmax" when any file
+// exists at the ClusterMAX collector's socket path (TS §3.8); else [].
 func (r *Run) helpers() []wire.HelperName {
-	if _, err := os.Lstat(r.d.CapreadSock); err == nil {
-		return []wire.HelperName{"capread"}
+	out := []wire.HelperName{}
+	for _, h := range []struct {
+		name wire.HelperName
+		path string
+	}{{"capread", r.d.CapreadSock}, {"cmax", r.d.CmaxSock}} {
+		if _, err := os.Lstat(h.path); err == nil {
+			out = append(out, h.name)
+		}
 	}
-	return []wire.HelperName{}
+	return out
 }
