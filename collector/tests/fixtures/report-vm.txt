@@ -1,0 +1,505 @@
+# ClusterMAX audit target
+  Command: cmax audit
+  Target: Local virtual machine
+  Host: vm
+  System: Linux 6.18.44-fc-v378 (x86_64)
+  Access: current shell; cluster credentials are not used
+  Selection: auto-detected
+  Confirmation: accepted with --yes
+==> cmax audit: /root/.clustermax/audit/20261112-064605-882014
+ClusterMAX audit · standalone complete: 55/55 checks in 4s
+Observability: # ClusterMAX observability isolation check
+Observability:   discovery: reading audit evidence, local services, and Kubernetes services
+Observability:   discovery: found 0 target(s) via none; 0 checkable from this host
+Observability:   backend check: no targets found; nothing to check
+# ClusterMAX audit report
+
+PASS     Access / Sudo Available  [access.sudoAvailable]
+         Passwordless sudo is available to the audited user.
+         Observed: true
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+PASS     Access / User Management  [access.userManagement]
+         User and group management commands (useradd / groupadd) are usable.
+         Observed: {"groupadd": true, "useradd": true}
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration-easy-process-for-adding-new-cluster-users
+
+PASS     BMC and IPMI tenant isolation  [bmc-ipmi]
+         The sampled environment did not expose BMC or IPMI access.
+         Observed: BMC/IPMI=false; node coverage and access mode were not recorded
+         Recommendation: Remove tenant access to IPMI devices and commands, and isolate BMC management networks.
+         References:
+           [1] CISA IPMI risk alert  https://www.cisa.gov/news-events/alerts/2013/07/26/risks-using-intelligent-platform-management-interface-ipmi
+           [2] NIST SP 800-193 platform resilience  https://csrc.nist.gov/pubs/sp/800/193/final
+           [3] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-strong-isolation-between-tenants-not-namespaces-or-container-only-isolation-i-e-use-vcluster-private-nodes-instead-of-vcluster-shared-nodes
+
+PASS     Containers / Worker Check Ok  [containers.workerCheckOk]
+         The worker container check completed, so its runtime observations are valid.
+         Observed: check completed=true; worker node=vm
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+PASS     Security / Januscape  [security.januscape.status]
+         The audit did not find Januscape exposure on this target.
+         Observed: CPU virtualization exposed=false; KVM device exposed=false; nested virtualization enabled=unknown; status=not-exposed
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-protection-against-container-escalation-vulnerabilities
+
+SKIPPED  Access / Slurm Commands Ok  [access.slurmCommandsOk]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  Access / Ssh To Compute Nodes  [access.sshToComputeNodes]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration-no-ssh-key-copying-required
+
+SKIPPED  Arm SMMU Virtualization  [arm_smmu_virtualization.status]
+         vm: x86_64 host; Arm SMMU command queue virtualization applies to Arm and Grace platforms only
+         Observed: not_applicable
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  Containers / Docker On Workers  [containers.dockerOnWorkers]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  Containers / Enroot  [containers.enroot]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  Containers / Enroot Import Works  [containers.enrootImportWorks]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  Containers / Pyxis CLI Available  [containers.pyxisRuntimeWorks]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration-pyxis-container-plugin-support
+
+SKIPPED  Containers / Singularity  [containers.singularity]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  GPU Controls / vBoost  [gpu_controls.vboost.allowed]
+         The vBoost check never reached a GPU with nvidia-smi on any node, so this value is unverified rather than a provider denial. In Slurm, run the audit in an allocation that requests GPUs, such as --gres=gpu:N.
+         Observed: allowed=false; status=unavailable; mode=local; allowed nodes=0/1
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  GPUs / GDRCopy  [gpus.gdrcopy.installed]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle-out-of-the-box-gpudirect-rdma-between-nic-and-gpu-setup
+
+SKIPPED  GPUs / GPU Direct RDMA Path  [gpus.gpuDirectRdmaPath]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle-out-of-the-box-gpudirect-rdma-between-nic-and-gpu-setup
+
+SKIPPED  GPUs / GPU Direct RDMA Path / NVIDIA Peermem Legacy  [gpus.gpuDirectRdmaPath.nvidiaPeermemLegacy]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle-out-of-the-box-gpudirect-rdma-between-nic-and-gpu-setup
+
+SKIPPED  HBM Memory Exposure  [hbm_memory_exposure.status]
+         no coherent NVIDIA GPU hosts were checked
+         Observed: not_applicable
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  Health Checks / DCGM Installed  [healthChecks.dcgmInstalled]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring-dcgm-health-checks-plugged-into-the-slurm-healthcheckprogram
+
+SKIPPED  Health Checks / DCGM Slurm  [healthChecks.dcgmSlurm]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring-dcgm-health-checks-plugged-into-the-slurm-healthcheckprogram
+
+SKIPPED  Health Checks / Monitoring Stack / DCGM Exporter  [healthChecks.monitoringStack.dcgmExporter]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring-out-of-the-box-detailed-managed-grafana
+
+SKIPPED  Health Checks / Nhc Installed  [healthChecks.nhcInstalled]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring-automated-active-and-passive-health-checks
+
+SKIPPED  Hugepage Allocation  [hugepage_allocation.status]
+         vm: The allocation test requires --try-allocate on an idle host.
+         Observed: skipped
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  InfiniBand UFM secured profile  [ufm-profile]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-infiniband-csps-enable-the-ufm-secured-bare-metal-cloud-profile-providing-a-comprehensive-set-of-security-features-required-for-secure-multi-tenant-cloud-environments
+
+SKIPPED  K8s Scheduling  [k8s_scheduling.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  Kubelet CPU Manager Policy  [kubelet_cpu_manager_policy.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-strong-isolation-between-tenants-not-namespaces-or-container-only-isolation-i-e-use-vcluster-private-nodes-instead-of-vcluster-shared-nodes
+
+SKIPPED  Kubernetes nodes/proxy GET permission  [kubernetes-nodes-proxy]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-strong-isolation-between-tenants-not-namespaces-or-container-only-isolation-i-e-use-vcluster-private-nodes-instead-of-vcluster-shared-nodes
+
+SKIPPED  NCCL Ib Qps  [nccl_ib_qps.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#networking
+
+SKIPPED  NCCL Topo File  [nccl_topo_file.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#networking-out-of-the-box-slurm-topology-configuration
+
+SKIPPED  Networking / HCA Naming Valid  [networking.hcaNamingValid]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#networking
+
+SKIPPED  Networking / NCCL Auto Config  [networking.ncclAutoConfig]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#networking-nccl-min-nchannels-nccl-proto-nccl-algo-not-set-auto-configuration
+
+SKIPPED  Networking / Topology Configured  [networking.topologyConfigured]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration-out-of-the-box-slurm-topology-configuration
+
+SKIPPED  PCIe passthrough isolation  [pcie-passthrough]
+         Skipped because this audit is running in a VM; PCIe passthrough isolation is controlled by the physical host.
+         Observed: running in a VM
+         References:
+           [1] Linux VFIO documentation  https://docs.kernel.org/driver-api/vfio.html
+           [2] Linux IOMMU userspace API  https://docs.kernel.org/6.8/userspace-api/iommu.html
+           [3] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-strong-isolation-between-tenants-not-namespaces-or-container-only-isolation-i-e-use-vcluster-private-nodes-instead-of-vcluster-shared-nodes
+
+SKIPPED  QEMU virtio-serial security fix  [qemu-virtio-serial]
+         This check does not apply to the audited target.
+         Observed: status=not-applicable; cve=CVE-2024-3446; ubuntuNobleFixStatus=released; ubuntuNobleMinimum=1:8.2.2+ds-0ubuntu1.16
+         Recommendation: Upgrade the physical host QEMU package to the fixed vendor release.
+         References:
+           [1] Ubuntu CVE-2024-3446  https://ubuntu.com/security/CVE-2024-3446
+           [2] NVD CVE-2024-3446  https://nvd.nist.gov/vuln/detail/CVE-2024-3446
+           [3] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-qemu-virtio-serial
+
+SKIPPED  Security Versions / Amd Driver  [securityVersions.amdDriver.status]
+         AMD host-driver policy does not apply to NVIDIA GPUs
+         Observed: observed version unknown; minimum version AMD Instinct only
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+SKIPPED  Security Versions / CUDA Toolkit  [securityVersions.cudaToolkit.status]
+         CUDA Toolkit is not installed on the inspected host
+         Observed: observed version not-found; minimum version 13.4.92; measured from the installed toolkit with nvcc
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+SKIPPED  Security Versions / Connectx Firmware  [securityVersions.connectxFirmware.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+SKIPPED  Security Versions / DCGM  [securityVersions.dcgm.status]
+         DCGM is not installed on the inspected host
+         Observed: observed version not-installed; minimum version 4.5.3
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+SKIPPED  Security Versions / DCGM Exporter  [securityVersions.dcgmExporter.status]
+         DCGM Exporter is not installed on the inspected host
+         Observed: observed version not-installed; minimum version 4.8.2
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+SKIPPED  Security Versions / DPU Host Isolation  [securityVersions.dpuHostIsolation.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-strong-isolation-between-tenants-not-namespaces-or-container-only-isolation-i-e-use-vcluster-private-nodes-instead-of-vcluster-shared-nodes
+
+SKIPPED  Security Versions / Virtio Net Bluefield  [securityVersions.virtioNetBluefield.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+SKIPPED  Security Versions / Virtio Net Bluefield / Exposure  [securityVersions.virtioNetBluefield.exposure]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-strong-isolation-between-tenants-not-namespaces-or-container-only-isolation-i-e-use-vcluster-private-nodes-instead-of-vcluster-shared-nodes
+
+SKIPPED  Slurm / Accounting / Sacct Available  [slurm.accounting.sacctAvailable]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring-sacct-integration-for-job-accounting-and-resource-utilization
+
+SKIPPED  Slurm / Slinky Controller Separate  [slurm.slinkyControllerSeparate]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  Software / CUDA Visible Devices Status  [software.cudaVisibleDevicesStatus]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration-cuda-visible-devices-properly-configured
+
+SKIPPED  Software / Lmod / Modules Status  [software.lmod.modulesStatus]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration-slurm-modules-availability
+
+SKIPPED  Software / NCU / Profiling Enabled  [software.ncu.profilingEnabled]
+         Not applicable: its prerequisite software.ncu.installed is false on this target, so there is nothing to verify.
+         Observed: unknown
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring-ncu-profiling-available-for-all-users
+
+SKIPPED  Software / NVHPC  [software.nvhpc.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle-out-of-the-box-ib-rocev2-and-nvidia-drivers-configuration
+
+SKIPPED  Software / Perf / Kptr Restrict  [software.perf.kptrRestrict]
+         Not applicable: its prerequisite software.perf.installed is false on this target, so there is nothing to verify.
+         Observed: unknown
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring
+
+SKIPPED  Software / Perf / Perf Event Paranoid  [software.perf.perfEventParanoid]
+         Not applicable: its prerequisite software.perf.installed is false on this target, so there is nothing to verify.
+         Observed: unknown
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring
+
+SKIPPED  Static Hugepages  [static_hugepages.status]
+         vm: HugeTLB pool capacity is 0.000000 GB (0.000000 GiB); capacity does not affect the score
+         Observed: neutral
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  Storage / RWX Status  [storage.rwxStatus]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#storage-storage-integration-with-kubernetes-for-pvcs-storage-class-including-readwritemany-rwx-pvcs
+
+SKIPPED  Tenant Pod Defaults  [tenant_pod_defaults.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  Tenant Pod Defaults / Checks / GDRCopy Device  [tenant_pod_defaults.checks.gdrcopyDevice.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle-out-of-the-box-gpudirect-rdma-between-nic-and-gpu-setup
+
+SKIPPED  Tenant Pod Defaults / Checks / Memlock  [tenant_pod_defaults.checks.memlock.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  Tenant Pod Defaults / Checks / RDMA Devices  [tenant_pod_defaults.checks.rdmaDevices.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle-out-of-the-box-gpudirect-rdma-between-nic-and-gpu-setup
+
+SKIPPED  Tenant Pod Defaults / Checks / Shm  [tenant_pod_defaults.checks.shm.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  Tenant Pod Defaults / Checks / Tuned Pod Admission  [tenant_pod_defaults.checks.tunedPodAdmission.status]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration
+
+SKIPPED  Thp Madvise  [thp_madvise.status]
+         vm: THP top-level policy is madvise; effective modes are madvise, never
+         Observed: neutral
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  Vm IOMMU  [vm_iommu.status]
+         vm: no GPU or RDMA NIC PCI function on this host; IOMMU mapping overhead does not apply
+         Observed: not_applicable
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+SKIPPED  ingress-nginx CVE-2025-1974  [ingress-nginx-cve-2025-1974]
+         Observed: n/a for standalone machines
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-strong-isolation-between-tenants-not-namespaces-or-container-only-isolation-i-e-use-vcluster-private-nodes-instead-of-vcluster-shared-nodes
+
+WARNING  Access / External Idp / Detected  [access.externalIdp.detected]
+         Check failed
+         Observed: false
+         Recommendation: Enable the required configuration, and run the audit again.
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#orchestration-rbac-and-sso-implementation
+
+WARNING  GPUs / Pcie Acs / Enabled  [gpus.pcieAcs.enabled]
+         The collector could not verify this check. Treat this value as unverified.
+         Observed: unknown
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle
+
+WARNING  NVLink tenant boundary  [nvlink-boundary]
+         Tenant-visible NVLink topology or the machine boundary could not be determined. The provider must attest the complete physical NVLink or NVSwitch domain.
+         Observed: tenant-visible NVLink=unknown; topology checked=false; fleet coverage complete=false; target=VM; physical domain exclusive=unknown
+         Reproduce: on every GPU host (or in the NVIDIA driver pod on Kubernetes): run nvidia-smi topo -m; then have the provider map the complete physical NVLink or NVSwitch domain and its partition to tenant ownership; once verified, rerun with CLUSTERMAX_NVLINK_DOMAIN_EXCLUSIVE_ATTESTED=true
+         Recommendation: Have the provider prove that every GPU in the physical NVLink or NVSwitch domain belongs to one trust boundary. A whole-host VM is enough only for a node-local domain; use an exclusive NVLink partition for a rack-scale domain. After verifying it, rerun with CLUSTERMAX_NVLINK_DOMAIN_EXCLUSIVE_ATTESTED=true to record the attestation.
+         References:
+           [1] NVBleed disclosure  https://arxiv.org/abs/2503.17847
+           [2] NVIDIA NVLink partition management  https://docs.nvidia.com/mission-control/docs/systems-administration-guide/2.3.0/nvlink-partition-management.html
+           [3] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-strong-isolation-between-tenants-not-namespaces-or-container-only-isolation-i-e-use-vcluster-private-nodes-instead-of-vcluster-shared-nodes
+
+WARNING  Observability backend tenant isolation  [observability-isolation]
+         Observability isolation was not tested. Auto-discovery found no metrics or Grafana endpoint from the audit evidence, this node's listening sockets and processes, or Kubernetes Services. Set CLUSTERMAX_OBS_TARGETS to the endpoint to assess whether the backend enforces per-tenant query isolation.
+         Observed: not assessed (no backend found)
+         Recommendation: Enforce per-tenant scoping in the query path on the server (tenant derived from an authenticated identity, not a client-supplied filter). Auto-discovery finds a local or in-cluster backend; set CLUSTERMAX_OBS_TARGETS for an endpoint that only a URL reaches.
+         References:
+           [1] Grafana data source permissions  https://grafana.com/docs/grafana/latest/administration/data-source-management/
+           [2] Mimir multi-tenancy  https://grafana.com/docs/mimir/latest/manage/secure/authentication-and-authorization/
+           [3] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-observability-isolation
+
+WARNING  Security / Bad Epoll  [security.badEpoll.status]
+         The collector could not verify this check. Treat this value as unverified.
+         Observed: observed version 6.18.44-fc-v378; minimum version unknown; CVE-2026-46242; Kernel package identity or advisory mapping is unverified; requires provider patch evidence.
+         Reproduce: on the audited worker: uname -r; cat /proc/version_signature; dpkg-query -W 'linux-image-*'; inspect /sys/kernel/livepatch
+         Recommendation: Ask the provider to attest the Bad Epoll patch status with host evidence.
+         References:
+           [1] CVE-2026-46242  https://nvd.nist.gov/vuln/detail/CVE-2026-46242
+           [2] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+WARNING  Security / Fragnesia  [security.fragnesia.status]
+         The collector could not verify this check. Treat this value as unverified.
+         Observed: observed version 6.18.44-fc-v378; minimum version unknown
+         Reproduce: on the audited worker: uname -r
+         References:
+           [1] ClusterMAX minimum versions  https://www.clustermax.ai/minimum-versions#ubuntuNoble
+
+WARNING  Security / Guest Kernel / Newer Installed  [security.guestKernel.newerInstalled]
+         The audit could not list the installed kernel packages for the running kernel, so it cannot rule out a pending security reboot. Ask the provider to send the output of dpkg-query -W 'linux-image-*' or rpm -q kernel on this host, with the package version and the source build record from /proc/version_signature.
+         Observed: observed version 6.18.44-fc-v378; minimum version not applicable; newest installed version unknown
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+WARNING  Security / Guest Kernel / Ubuntu CVE Status  [security.guestKernel.ubuntuCveStatus]
+         The collector could not verify this check. Treat this value as unverified.
+         Observed: unknown; running kernel 6.18.44-fc-v378
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+WARNING  Security / Pwnescape  [security.pwnescape.status]
+         The audit cannot read the physical host from this target, so the host status is unverified.
+         Observed: observed version 6.18.44-fc-v378; minimum version unknown; local status unknown; CVE-2026-99999; The distribution or custom kernel needs vendor evidence for this CVE. Upstream versions do not establish distribution backport status. The physical host is not established at this scope. Request its running-kernel build and CVE-specific patch evidence.
+         Reproduce: on every worker and control-plane host: uname -r; cat /etc/os-release /proc/version_signature; dpkg-query -W "linux-image-$(uname -r)"; inspect /sys/kernel/livepatch; request provider patch evidence for each host that the audit could not read or that runs inside a guest
+         Recommendation: Ask the provider for the physical host's running kernel and CVE-specific patch evidence.
+         References:
+           [1] CVE-2026-99999  https://nvd.nist.gov/vuln/detail/CVE-2026-99999
+           [2] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+WARNING  Security / Ubuntu Noble Kernel Minimum  [security.ubuntuNobleKernelMinimum.status]
+         The collector could not verify this check. Treat this value as unverified.
+         Observed: unknown
+         Reproduce: on the audited worker: uname -r
+         Recommendation: Ask the provider to attest the Ubuntu Noble kernel security minimum with host evidence.
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-every-component-patched-to-at-least-the-published-clustermax-minimum-version-covering-the-gpu-driver-container-runtime-nic-and-dpu-firmware-and-host-packages
+
+WARNING  Security Versions / Docker  [securityVersions.docker.status]
+         The Docker Engine server version could not be read. The installed Docker client is 29.9.2.
+         Observed: observed version unknown; minimum version 29.9.3
+         Reproduce: on the audited worker: docker version --format '{{.Server.Version}}'
+         Recommendation: If the worker uses Docker Engine, make its daemon version readable to the audit and confirm that the server meets the published minimum. If the worker uses containerd without Docker Engine, record Docker Engine as not applicable.
+         References:
+           [1] ClusterMAX minimum versions  https://www.clustermax.ai/minimum-versions#docker
+
+WARNING  Security Versions / NVIDIA Container Toolkit  [securityVersions.nvidiaContainerToolkit.status]
+         The collector could not verify this check. Treat this value as unverified.
+         Observed: observed version unknown; minimum version 1.19.1
+         Reproduce: on the audited worker: nvidia-container-toolkit --version or nvidia-ctk --version
+         Recommendation: NVIDIA Container Toolkit 1.19.1 or later.
+         References:
+           [1] ClusterMAX minimum versions  https://www.clustermax.ai/minimum-versions#nvidiaContainerToolkit
+
+WARNING  Security Versions / NVIDIA Driver  [securityVersions.nvidiaDriver.status]
+         The collector could not verify this check. Treat this value as unverified.
+         Observed: observed version unknown; minimum version branch-specific
+         Reproduce: on the audited worker: nvidia-smi --query-gpu=driver_version --format=csv,noheader
+         Recommendation: NVIDIA driver branch-specific or later.
+         References:
+           [1] ClusterMAX minimum versions  https://www.clustermax.ai/minimum-versions#nvidiaDriver
+
+WARNING  Security Versions / Runc  [securityVersions.runc.status]
+         The collector could not verify this check. Treat this value as unverified.
+         Observed: observed version unknown; minimum version 1.5.0-rc.3 or 1.4.3 or 1.3.6 or 1.2.8 or 1.1.14 or 1.0.3 or 0.1.0
+         Reproduce: on the audited worker: runc --version
+         Recommendation: Runc 1.5.0-rc.3 or 1.4.3 or 1.3.6 or 1.2.8 or 1.1.14 or 1.0.3 or 0.1.0 or later.
+         References:
+           [1] ClusterMAX minimum versions  https://www.clustermax.ai/minimum-versions#runc
+
+WARNING  Storage Config  [storage_config.status]
+         /opt/claude-code on vm is 93% used
+         Observed: warning
+         Recommendation: Inspect the recorded per-node filesystems, missing mounts, capacity, and collection errors before changing storage.
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#storage
+
+WARNING  VMSCAPE host mitigation  [vmscape]
+         The audit cannot verify the physical host mitigation.
+         Observed: status=host-mitigation-required; cve=CVE-2025-40300; ubuntuNobleFixStatus=released; ubuntuNobleKernelMinimum=6.8.0-87.88
+         Recommendation: Install the fixed physical-host kernel and confirm the VMSCAPE mitigation is active.
+         References:
+           [1] Ubuntu VMSCAPE guidance  https://ubuntu.com/security/vulnerabilities/vmscape
+           [2] Ubuntu CVE-2025-40300  https://ubuntu.com/security/CVE-2025-40300
+           [3] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#security-vmscape
+
+FAIL     Containers / NVIDIA Container Toolkit  [containers.nvidiaContainerToolkit]
+         Not installed
+         Observed: installed=false
+         Recommendation: Install NVIDIA Container Toolkit.
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#lifecycle-out-of-the-box-ib-rocev2-and-nvidia-drivers-configuration
+
+FAIL     Software / NCCL  [software.nccl.installed]
+         Not installed
+         Observed: false
+         Recommendation: Install NCCL.
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#networking
+
+FAIL     Software / NCU  [software.ncu.installed]
+         Not installed
+         Observed: false
+         Recommendation: Install Nsight Compute (ncu).
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring-ncu-profiling-available-for-all-users
+
+FAIL     Software / Perf  [software.perf.installed]
+         Not installed
+         Observed: false
+         Recommendation: Install perf (Linux performance counters).
+         References:
+           [1] ClusterMAX evaluation criteria  https://www.clustermax.ai/criteria#monitoring
+
+4 failed, 16 warnings, 5 passed, 56 skipped
+Raw collector log: /root/.clustermax/audit/20261112-064605-882014/audit.out

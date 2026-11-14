@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ] && [ -d /run/systemd/system ]; then
+    systemctl disable --now cmax-helper.socket || true
+    systemctl stop cmax-helper.service || true
+fi
+exit 0

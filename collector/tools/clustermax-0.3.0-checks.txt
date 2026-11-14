@@ -1,0 +1,100 @@
+[versions] Minimum versions (10 checks)
+  securityVersions.amdDriver.status: Security Versions / Amd Driver
+  securityVersions.nvidiaDriver.status: Security Versions / NVIDIA Driver
+  securityVersions.nvidiaContainerToolkit.status: Security Versions / NVIDIA Container Toolkit
+  securityVersions.cudaToolkit.status: Security Versions / CUDA Toolkit
+  securityVersions.runc.status: Security Versions / Runc
+  securityVersions.docker.status: Security Versions / Docker
+  securityVersions.connectxFirmware.status: Security Versions / Connectx Firmware
+  securityVersions.dcgm.status: Security Versions / DCGM
+  securityVersions.dcgmExporter.status: Security Versions / DCGM Exporter
+  securityVersions.virtioNetBluefield.status: Security Versions / Virtio Net Bluefield
+
+[isolation] Security isolation (18 checks)
+  securityVersions.virtioNetBluefield.exposure: Security Versions / Virtio Net Bluefield / Exposure
+  securityVersions.dpuHostIsolation.status: Security Versions / DPU Host Isolation
+  security.januscape.status: Security / Januscape
+  security.guestKernel.newerInstalled: Security / Guest Kernel / Newer Installed
+  security.ubuntuNobleKernelMinimum.status: Security / Ubuntu Noble Kernel Minimum
+  security.guestKernel.ubuntuCveStatus: Security / Guest Kernel / Ubuntu CVE Status
+  security.fragnesia.status: Security / Fragnesia
+  security.badEpoll.status: Security / Bad Epoll
+  security.pwnescape.status: Security / Pwnescape
+  qemu-virtio-serial: QEMU virtio-serial security fix
+  vmscape: VMSCAPE host mitigation
+  observability-isolation: Observability backend tenant isolation
+  bmc-ipmi: BMC and IPMI tenant isolation
+  kubernetes-nodes-proxy: Kubernetes nodes/proxy GET permission
+  ingress-nginx-cve-2025-1974: ingress-nginx CVE-2025-1974
+  ufm-profile: InfiniBand UFM secured profile
+  pcie-passthrough: PCIe passthrough isolation
+  nvlink-boundary: NVLink tenant boundary
+
+[hardware] Hardware (11 checks)
+  thp_madvise.status: Thp Madvise
+  static_hugepages.status: Static Hugepages
+  hugepage_allocation.status: Hugepage Allocation
+  gpus.gdrcopy.installed: GPUs / GDRCopy
+  gpus.gpuDirectRdmaPath: GPUs / GPU Direct RDMA Path
+  gpus.gpuDirectRdmaPath.nvidiaPeermemLegacy: GPUs / GPU Direct RDMA Path / NVIDIA Peermem Legacy
+  gpu_controls.vboost.allowed: GPU Controls / vBoost
+  hbm_memory_exposure.status: HBM Memory Exposure
+  vm_iommu.status: Vm IOMMU
+  arm_smmu_virtualization.status: Arm SMMU Virtualization
+  gpus.pcieAcs.enabled: GPUs / Pcie Acs / Enabled
+
+[software] Software tools (9 checks)
+  software.nvhpc.status: Software / NVHPC
+  software.ncu.installed: Software / NCU
+  software.ncu.profilingEnabled: Software / NCU / Profiling Enabled
+  software.lmod.modulesStatus: Software / Lmod / Modules Status
+  software.cudaVisibleDevicesStatus: Software / CUDA Visible Devices Status
+  software.nccl.installed: Software / NCCL
+  software.perf.installed: Software / Perf
+  software.perf.perfEventParanoid: Software / Perf / Perf Event Paranoid
+  software.perf.kptrRestrict: Software / Perf / Kptr Restrict
+
+[containers] Container runtime (5 checks)
+  containers.nvidiaContainerToolkit: Containers / NVIDIA Container Toolkit
+  containers.enroot: Containers / Enroot
+  containers.enrootImportWorks: Containers / Enroot Import Works
+  containers.dockerOnWorkers: Containers / Docker On Workers
+  containers.singularity: Containers / Singularity
+
+[orchestration] Orchestration (12 checks)
+  k8s_scheduling.status: K8s Scheduling
+  containers.workerCheckOk: Containers / Worker Check Ok
+  containers.pyxisRuntimeWorks: Containers / Pyxis CLI Available
+  kubelet_cpu_manager_policy.status: Kubelet CPU Manager Policy
+  slurm.slinkyControllerSeparate: Slurm / Slinky Controller Separate
+  slurm.accounting.sacctAvailable: Slurm / Accounting / Sacct Available
+  tenant_pod_defaults.status: Tenant Pod Defaults
+  tenant_pod_defaults.checks.memlock.status: Tenant Pod Defaults / Checks / Memlock
+  tenant_pod_defaults.checks.shm.status: Tenant Pod Defaults / Checks / Shm
+  tenant_pod_defaults.checks.rdmaDevices.status: Tenant Pod Defaults / Checks / RDMA Devices
+  tenant_pod_defaults.checks.gdrcopyDevice.status: Tenant Pod Defaults / Checks / GDRCopy Device
+  tenant_pod_defaults.checks.tunedPodAdmission.status: Tenant Pod Defaults / Checks / Tuned Pod Admission
+
+[networking] Networking (5 checks)
+  nccl_topo_file.status: NCCL Topo File
+  nccl_ib_qps.status: NCCL Ib Qps
+  networking.topologyConfigured: Networking / Topology Configured
+  networking.hcaNamingValid: Networking / HCA Naming Valid
+  networking.ncclAutoConfig: Networking / NCCL Auto Config
+
+[storage] Storage (2 checks)
+  storage.rwxStatus: Storage / RWX Status
+  storage_config.status: Storage Config
+
+[health] Health and monitoring (4 checks)
+  healthChecks.nhcInstalled: Health Checks / Nhc Installed
+  healthChecks.monitoringStack.dcgmExporter: Health Checks / Monitoring Stack / DCGM Exporter
+  healthChecks.dcgmInstalled: Health Checks / DCGM Installed
+  healthChecks.dcgmSlurm: Health Checks / DCGM Slurm
+
+[access] Access and identity (5 checks)
+  access.sudoAvailable: Access / Sudo Available
+  access.userManagement: Access / User Management
+  access.sshToComputeNodes: Access / Ssh To Compute Nodes
+  access.externalIdp.detected: Access / External Idp / Detected
+  access.slurmCommandsOk: Access / Slurm Commands Ok

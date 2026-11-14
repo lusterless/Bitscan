@@ -1,0 +1,12 @@
+Package: clustermax-collector
+Version: @VERSION@
+Architecture: all
+Maintainer: Bitscan maintainers
+Depends: bitscan-agent, python3 (>= 3.10)
+Section: admin
+Priority: optional
+Description: ClusterMAX audit helper for Bitscan (TS 3.8)
+ Runs the fixed ClusterMAX audit (cmax audit -vvv -y) as root when the
+ Bitscan runner asks over /run/clustermax/collect.sock, and keeps the report
+ only in memory. Install it only on hosts that a ClusterMAX policy targets.
+ ClusterMAX is pinned at lusterless/clustermax @COMMIT@ (Apache-2.0).
