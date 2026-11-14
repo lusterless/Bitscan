@@ -998,7 +998,7 @@ def r344(ctx: Ctx) -> tuple[str, str]:
                     ("tail %r" % so[-12:], so.endswith("[REDAC") or "[REDACTED]" in so[-16:] or so.rstrip("a") == "")])
 
 
-@row("CHK-M10-222", "every bits/samples plugin under the sandbox: no error, timeout or 126/127; stdout equal to root's outside (#143)")
+@row("CHK-M10-222", "every bits/samples plugin under the sandbox: no error, timeout or 126/127; stdout equal to root's outside (#143); clustermax-*.bit is CHK-M10-224")
 def r222(ctx: Ctx) -> tuple[str, str]:
     sdir = getattr(ctx, "samples", None)
     if not sdir or not os.path.isdir(sdir):
@@ -1010,7 +1010,7 @@ def r222(ctx: Ctx) -> tuple[str, str]:
     except ImportError:
         return ("NOT RUN", "defusedxml is not installed on this host (run_vm.sh --samples installs python3-defusedxml)")
     plugins: list[tuple[str, str, int]] = []
-    for f in sorted(Path(sdir).glob("*.bit")):
+    for f in sample_files(sdir, clustermax=False):
         root = DET.parse(str(f), forbid_dtd=True).getroot()
         for p in root.iter():
             if p.tag.split("}")[-1] != "Plugin":
@@ -1045,7 +1045,77 @@ def r222(ctx: Ctx) -> tuple[str, str]:
             diff.append("%s: sandbox exit %s vs root %s; sandbox %r vs root %r" % (name, it.get("exit_code"), r.returncode, mask(n1)[:160], mask(n2)[:160]))
     st = "PASS" if ok_job(res, len(specs)) and not bad and not diff else "FAIL"
     return (st, "%d plugins from %d files; job %s; failing %s; differing from root %s" % (
-        len(specs), len(list(Path(sdir).glob("*.bit"))), "done" if ok_job(res, len(specs)) else res["kinds"][-3:], bad, diff))
+        len(specs), len(sample_files(sdir, clustermax=False)), "done" if ok_job(res, len(specs)) else res["kinds"][-3:], bad, diff))
+
+
+# The ClusterMAX policy (TS §3.8) reads its report from the root cmax-helper,
+# which serves only bitscan-runner, so its plugins cannot equal root's output
+# outside the sandbox (CHK-M10-222). Owner decision 2026-11-14.
+CLUSTERMAX_GLOB = "clustermax-*.bit"
+CMAX_TRIGGER = "/usr/bin/cmax-trigger"
+CMAX_SOCKET = "/run/clustermax/collect.sock"
+
+
+def sample_files(sdir: str, clustermax: bool) -> list[Path]:
+    cm = set(Path(sdir).glob(CLUSTERMAX_GLOB))
+    return sorted(f for f in Path(sdir).glob("*.bit") if (f in cm) == clustermax)
+
+
+def sample_plugins(files: list[Path]) -> list[tuple[str, str, int]]:
+    from defusedxml import ElementTree as DET
+    out: list[tuple[str, str, int]] = []
+    for f in files:
+        root = DET.parse(str(f), forbid_dtd=True).getroot()
+        for p in root.iter():
+            if p.tag.split("}")[-1] != "Plugin":
+                continue
+            name = ex = None
+            to = 30
+            for c in p:
+                t = c.tag.split("}")[-1]
+                if t == "PluginName":
+                    name = (c.text or "").strip()
+                elif t == "Execute":
+                    ex = c.text or ""
+                    to = int(c.get("timeout", "30"))
+            if name and ex:
+                out.append(("%s: %s" % (f.stem, name), ex.strip(), to))
+    return out
+
+
+@row("CHK-M10-224", "every clustermax-*.bit plugin under the sandbox with cmax-trigger and no cmax-helper: exit 0, no error or timeout, stdout NOHELPER (TS §3.8)")
+def r224(ctx: Ctx) -> tuple[str, str]:
+    sdir = getattr(ctx, "samples", None)
+    if not sdir or not os.path.isdir(sdir):
+        return ("NOT RUN", "no samples directory given (--samples)")
+    try:
+        import defusedxml  # noqa: F401
+    except ImportError:
+        return ("NOT RUN", "defusedxml is not installed on this host (run_vm.sh --samples installs python3-defusedxml)")
+    files = sample_files(sdir, clustermax=True)
+    if not files:
+        return ("NOT RUN", "no %s in %s" % (CLUSTERMAX_GLOB, sdir))
+    if os.path.exists(CMAX_SOCKET):
+        return ("NOT RUN", "cmax-helper is installed on this host (%s exists); this row needs a host without it" % CMAX_SOCKET)
+    client = Path(sdir).resolve().parents[1] / "collector" / "src" / "cmax_trigger.py"
+    installed = not os.path.exists(CMAX_TRIGGER)
+    if installed:
+        shutil.copyfile(client, CMAX_TRIGGER)
+        os.chmod(CMAX_TRIGGER, 0o755)
+    try:
+        plugins = sample_plugins(files)
+        res = run_job(ctx, [plugin(e, t) for _, e, t in plugins], mpp=4, timeout=1800)
+    finally:
+        if installed:
+            os.unlink(CMAX_TRIGGER)
+    bad = []
+    for (name, _ex, _to), it in zip(plugins, res["results"]):
+        it = it or {}
+        out = norm(it.get("stdout", ""))
+        if it.get("error") or it.get("timed_out") or it.get("exit_code") != 0 or not out.startswith("NOHELPER "):
+            bad.append("%s: exit %s timed_out %s error %s stdout %r" % (name, it.get("exit_code"), it.get("timed_out"), it.get("error"), mask(out)[:120]))
+    return verdict([("job done", ok_job(res, len(plugins))), ("%d plugins print NOHELPER with exit 0" % len(plugins), not bad)],
+                   "files %s; failing %s" % ([f.name for f in files], bad[:5]))
 
 
 def norm(s: str) -> str:

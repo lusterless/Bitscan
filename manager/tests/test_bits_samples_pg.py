@@ -34,6 +34,11 @@ SPEC_TS = REPO / "docs" / "spec" / "Technical_Specification.md"
 NOTE = "Control numbers are not yet confirmed against the CIS benchmark copy (TS §8.5)."
 WS = " \t\r\n"
 SAMPLE_FILES = sorted(SAMPLES.glob("*.bit"))
+# #111 covers the two CIS samples. Owner decision 2026-11-14 adds the
+# ClusterMAX policy (TS §3.8), which has its own checks below.
+CIS_FILES = [p for p in SAMPLE_FILES if p.name.startswith("cis-")]
+CLUSTERMAX = SAMPLES / "clustermax-0.3.0.bit"
+CLUSTERMAX_CHECKS = REPO / "collector" / "tools" / "clustermax-0.3.0-checks.txt"
 
 
 def fenced_after(path: Path, heading: str, lang: str) -> str:
@@ -109,7 +114,11 @@ def fresh(tmp_path: Path) -> Iterator[Env]:
 
 
 def test_g59_all_samples_together_in_one_fresh_catalog(fresh: Env) -> None:
-    assert len(SAMPLE_FILES) == 2  # #111: exactly the two samples
+    assert [p.name for p in CIS_FILES] == [  # #111: exactly the two CIS samples
+        "cis-ubuntu-22.04-l1-server.bit",
+        "cis-ubuntu-24.04-l1-server.bit",
+    ]
+    assert SAMPLE_FILES == [*CIS_FILES, CLUSTERMAX]  # and the ClusterMAX policy
     outcomes = {}
     for path in SAMPLE_FILES:
         out = fresh.imp(path.read_bytes(), path.name, mode="manual")
@@ -157,8 +166,11 @@ def test_policy_names_and_plugin_ids_are_distinct_across_the_samples() -> None:
         re2.fullmatch(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}", i) for i in ids
     )
     by_sample = {f.name: {p["uuid"] for p in plugins(f)} for f in SAMPLE_FILES}
-    a, b = by_sample.values()
-    assert a.isdisjoint(b)
+    sets = list(by_sample.values())
+    assert len(sets) == 3
+    for i, a in enumerate(sets):
+        for b in sets[i + 1 :]:
+            assert a.isdisjoint(b)
 
 
 # CHK-M7-302 / REQ-179 (3), (4) ------------------------------------------------
@@ -171,13 +183,45 @@ def test_the_2404_sample_starts_with_the_sr_plugin_byte_for_byte() -> None:
     assert value(root, "PolicyName") == "CIS Ubuntu 24.04 Level 1 - Server"
 
 
-@pytest.mark.parametrize("path", SAMPLE_FILES, ids=lambda p: p.name)
+@pytest.mark.parametrize("path", CIS_FILES, ids=lambda p: p.name)
 def test_description_note_and_status(path: Path) -> None:
     root = parsed(path)
     assert value(root, "PolicyDescription").endswith(NOTE)
     assert value(root, "PolicyStatus") == "enabled"
     assert root.get("formatVersion") == "1.0"
     assert 10 <= len(root.findall("PluginsGroups/Plugin")) <= 20  # about 15
+
+
+def test_clustermax_sample_has_every_clustermax_check() -> None:
+    # TS §3.8, owner decision 2026-11-14: the 81 checks of `cmax audit
+    # --show -vvv` (ClusterMAX 0.3.0, lusterless/clustermax f849f46), in that
+    # order, after the collect, header and status plugins.
+    root = parsed(CLUSTERMAX)
+    assert value(root, "PolicyName") == "ClusterMAX 0.3.0 audit checks"
+    assert value(root.find("Family"), "FamilyName") == "Clustermax"
+    assert value(root, "PolicyStatus") == "enabled"
+    assert root.get("formatVersion") == "1.0"
+    checks = [
+        line.split(":", 1)[0].strip()
+        for line in CLUSTERMAX_CHECKS.read_text(encoding="utf-8").splitlines()
+        if line.startswith("  ")
+    ]
+    assert len(checks) == len(set(checks)) == 81
+    found = plugins(CLUSTERMAX)
+    assert [p["name"].split(" - ")[1] for p in found] == [
+        "collect",
+        "header",
+        "status",
+        *checks,
+    ]
+    for p, check in zip(found[3:], checks, strict=True):
+        get = f"cmax-trigger get {check}"
+        assert p["execute"] == f"cmax-trigger collect >/dev/null; {get}"
+        assert (p["operator"], p["expected"], p["timeout"]) == (
+            "regex",
+            "^(PASS|n/a)( |$)",
+            "600",
+        )
 
 
 # CHK-M7-303 / REQ-179 (2): the SR §2.4 script rules, one row per plugin --------------

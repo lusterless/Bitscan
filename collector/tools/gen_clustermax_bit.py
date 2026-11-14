@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Generate collector/bits/clustermax-0.3.0.bit from the ClusterMAX check list.
+"""Generate bits/samples/clustermax-0.3.0.bit from the ClusterMAX check list.
 
 Input:  clustermax-0.3.0-checks.txt, the output of `cmax audit --show -vvv`
         for ClusterMAX 0.3.0 (lusterless/clustermax f849f46).
 Ids:    plugin-ids.json keeps every PluginId stable across regenerations;
         new entries get a fresh lowercase uuid4.
-Output: ../bits/clustermax-0.3.0.bit (not bits/samples/: that folder is the CIS
-        sample set, which the parser tests and the sandbox suite run as a whole)
+Output: ../../bits/samples/clustermax-0.3.0.bit
 
 Each check plugin asks cmax-helper (TS §3.8) for one line of the report:
 `<PASS|FAIL|WARNING|n/a> observed=<value>`. PASS and n/a (ClusterMAX SKIPPED)
@@ -25,7 +24,7 @@ from xml.sax.saxutils import escape
 HERE = Path(__file__).resolve().parent
 CHECKS = HERE / "clustermax-0.3.0-checks.txt"
 IDS = HERE / "plugin-ids.json"
-OUT = HERE.parent / "bits" / "clustermax-0.3.0.bit"
+OUT = HERE.parent.parent / "bits" / "samples" / "clustermax-0.3.0.bit"
 
 GROUP = re.compile(r"^\[(\w+)\] (.+) \((\d+) checks\)$")
 CHECK = re.compile(r"^  ([A-Za-z0-9_.-]+): (.+)$")

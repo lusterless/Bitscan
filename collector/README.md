@@ -10,8 +10,7 @@ the ClusterMAX policy run `cmax audit -vvv -y` as root on a host, while
 | `src/cmax_trigger.py` | `/usr/bin/cmax-trigger`: the client plugins call (`collect`, `get <check-id>`, `get header`, `get status`) |
 | `systemd/` | `cmax-helper.socket` and `cmax-helper.service`, verbatim from TS §3.8 |
 | `packaging/` | `build-deb.sh`, the hash-pinned `requirements.txt`, the `cmax` entry point and the maintainer scripts |
-| `bits/clustermax-0.3.0.bit` | The ClusterMAX policy (84 plugins). Upload it as an admin, or copy it to the policy folder |
-| `tools/gen_clustermax_bit.py` | Generates `bits/clustermax-0.3.0.bit` from `tools/clustermax-0.3.0-checks.txt`; `tools/plugin-ids.json` keeps the plugin ids stable |
+| `tools/gen_clustermax_bit.py` | Generates `bits/samples/clustermax-0.3.0.bit` (84 plugins) from `tools/clustermax-0.3.0-checks.txt`; `tools/plugin-ids.json` keeps the plugin ids stable |
 | `tests/` | Helper and client tests; `fixtures/report-vm.txt` is a real ClusterMAX 0.3.0 report |
 
 ## Build
