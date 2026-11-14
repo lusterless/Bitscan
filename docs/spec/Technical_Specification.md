@@ -19,9 +19,9 @@ The platform (working name **Bitscan**) is a manager + agent system that invento
 
 ### 1.2 Out of scope (v1)
 
-- Network/remote (agentless) scanning, Windows or macOS endpoints.
+- Network/remote (agentless) scanning, Windows or macOS endpoints. **Exception:** the optional ClusterMAX collector helper (§3.8) runs `cmax audit`, which in Slurm or Kubernetes mode starts jobs or pods on other hosts of that cluster. Bitscan itself still opens no connection to any host.
 - CVE vulnerability matching against packages (the inventory is designed so it can be added in v2, see §7.4).
-- Automatic remediation. Plugins only read and report state.
+- Automatic remediation. Plugins only read and report state. **Exception:** a plugin may ask the ClusterMAX collector helper (§3.8) to run its fixed audit, which changes some host state as part of its checks (§3.8, "Effects on the host").
 - A signed APT repository for the agent package. v1 ships the `.deb` file with a published SHA-256.
 
 ### 1.3 Terminology
@@ -72,6 +72,7 @@ flowchart LR
     RN["bitscan-runner<br/>user bitscan-runner<br/>CAP_DAC_READ_SEARCH only"]
     PL["Plugins<br/>sandboxed sh -c Execute"]
     CR["bitscan-capread<br/>optional, off by default"]
+    CMX["cmax-helper (separate package)<br/>root, optional<br/>fixed cmax audit -vvv -y"]
   end
 
   U --> UI --> UR
@@ -88,6 +89,7 @@ flowchart LR
   AG -- "/run/bitscan/runner.sock<br/>whole jobs only" --> RN
   RN --> PL
   RN -. "nft_ruleset / audit_rules" .-> CR
+  RN -. "collect / get" .-> CMX
 ```
 
 *Figure 1. System architecture: manager components and the agent. Every arrow into the manager is an outbound HTTPS call from its caller; the agent accepts no inbound connections.*
@@ -105,6 +107,7 @@ Agents poll the API; the scheduler writes jobs to the database; the evaluator sc
 | Result evaluator | Compare stdout with ExpectedResult using the Operator (§4.5), compute scores | In the API process, on result arrival |
 | Database | Single source of truth | PostgreSQL 16 (`pg_trgm`, `debversion`) |
 | Agent | Heartbeat, job pull, inventory; runner executes plugins | Go (a currently supported release), static binaries, `.deb`, systemd |
+| ClusterMAX collector helper (optional) | Runs the fixed ClusterMAX audit as root for the runner and returns its report (§3.8) | Separate `.deb` with pinned ClusterMAX (Python), systemd socket activation |
 
 ### 2.2 Design principles
 
@@ -175,6 +178,8 @@ The agent is one `.deb`, `bitscan-agent_<version>_<arch>.deb` (amd64, arm64), fo
 If the manager URL or enrolment token is missing, `postinst` fails with a clear message and the package stays unconfigured. On upgrade none are needed: config, token and agent id are kept, and the services restart. Maintainer scripts must be idempotent and pass `lintian`.
 
 **Distribution.** v1 ships the `.deb` file directly, with its SHA-256 published on the release page (a different origin from the download host). Builds are reproducible Go builds, and every release ships an SBOM. A signed APT repository is deferred (§1.2).
+
+**ClusterMAX collector package.** `clustermax-collector_<clustermax-version>-<rev>_<arch>.deb` is a separate package, not part of `bitscan-agent`. It installs ClusterMAX at a pinned commit with hash-pinned Python dependencies under `/usr/lib/clustermax/`, the client `/usr/bin/cmax-trigger`, the server `/usr/sbin/cmax-helper`, and the units `cmax-helper.socket` and `cmax-helper.service` (§3.8). `postinst` enables `cmax-helper.socket` only. It is installed only on hosts the operator intends to scan with a ClusterMAX policy, is published with its SHA-256 and SBOM like the agent, and ships ClusterMAX's `LICENSE` (Apache-2.0).
 
 ### 3.2 Enrolment
 
@@ -506,6 +511,88 @@ Plugins call `bitscan-capread nft_ruleset`, `bitscan-capread audit_rules` or `bi
 - **Mount checks.** The runner's own `/tmp` and `/dev` are private, so `findmnt /tmp` would describe the sandbox, not the host. Mount-option checks (CIS 1.1.x) must read the host's view with `findmnt --task 1` or `/proc/1/mountinfo`.
 - Write-like commands are rejected at import (BIT102), and the sandbox blocks writes even if one slips through.
 - **Local users.** Plugins must never execute, source or `cd` into files or directories that non-root users can write; they read them only as data. Otherwise a local user could get their own code run with the runner's read-any-file capability. BIT102 rejects the usual ways of doing so, and the runner can execute only system binaries.
+
+### 3.8 ClusterMAX collector helper (`cmax-helper`)
+
+Owner decision 2026-11-14. Optional, in a separate package, and present only on hosts where an operator installs it.
+
+**Purpose.** Lets a compliance scan run the full ClusterMAX audit (`lusterless/clustermax`, `cmax audit`), which needs root, devices and, in cluster mode, cluster credentials, while `bitscan-agent` and `bitscan-runner` keep the privileges in §3.7 unchanged.
+
+**Who runs as what**
+
+| Process | Runs as | Does |
+| --- | --- | --- |
+| `cmax-trigger` | `bitscan-runner` (inside a plugin) | Sends one request name over the socket and prints the answer |
+| `cmax-helper` | root | Accepts requests, runs the fixed audit, keeps the report in memory |
+| `cmax audit -vvv -y` | root (child of the helper) | The ClusterMAX audit, run unmodified |
+
+**Protocol**
+
+- Socket `/run/clustermax/collect.sock`, `root:bitscan-runner`, 0660, in a root-owned 0755 directory.
+- The helper accepts only peers with uid `bitscan-runner` (`SO_PEERCRED`). It takes a request name, never a command line or arguments.
+- `collect`: if no audit is running and no report younger than 30 minutes is held, start `/usr/lib/clustermax/bin/cmax audit -vvv -y` with an empty environment except `PATH`, `HOME=/run/cmax-work` and `LANG=C.UTF-8`. Answer `started` or `running` at once.
+- `get <check-id>`: wait for the running audit (up to 590 s), then return the report line whose trailing `[<check-id>]` matches, and its `Observed:` line. `get header` returns the report's target block (command, target, host, system, selection). `get status` returns `ok <age-seconds> <cmax-version>`, `running`, `failed <exit-code>` or `none`.
+- One audit at a time; concurrent `collect` requests share the same run.
+- `<check-id>` must match `^[A-Za-z0-9_.-]{1,128}$`; any other request is refused.
+
+**Non-persistence.** The report text is held only in the helper's memory. ClusterMAX writes its own files under `HOME=/run/cmax-work` (`RuntimeDirectory=`, tmpfs) and its private `/tmp`, both removed by systemd when the service stops. The helper stops 30 minutes after the last completed audit, or when no request arrives for 30 minutes, which drops the report. The helper writes nothing to persistent storage. Results reach the manager through the normal result path (§3.5), including the agent's spool.
+
+**Effects on the host (accepted, §8.1).** `cmax audit -vvv -y` runs unmodified, so its normal effects apply: `nvidia-smi boost-slider --vboost 2`, `enroot import docker://hello-world` where Enroot exists, outbound HTTPS to `ipinfo.io`, and, when ClusterMAX auto-detects Slurm or Kubernetes, `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace that ClusterMAX does not delete. `-y` skips ClusterMAX's host role check, so the scan target alone decides which hosts audit a whole cluster.
+
+**Units**
+
+```ini
+# cmax-helper.socket
+[Unit]
+Description=ClusterMAX collector helper socket
+
+[Socket]
+ListenStream=/run/clustermax/collect.sock
+SocketUser=root
+SocketGroup=bitscan-runner
+SocketMode=0660
+DirectoryMode=0755
+
+[Install]
+WantedBy=sockets.target
+```
+
+```ini
+# cmax-helper.service
+[Unit]
+Description=ClusterMAX collector helper
+Requires=cmax-helper.socket
+
+[Service]
+ExecStart=/usr/sbin/cmax-helper --serve
+User=root
+RuntimeDirectory=cmax-work
+RuntimeDirectoryMode=0700
+PrivateTmp=yes
+UMask=0077
+NoNewPrivileges=yes
+CPUQuota=50%
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=1G
+TimeoutStopSec=30
+```
+
+No `ProtectSystem=`, `PrivateDevices=` or network restriction is set, because ClusterMAX needs devices, `/sys`, `/proc`, its tools and the network. They may be tightened after testing on real hosts, without losing checks.
+
+**File ownership**
+
+| Path | Owner | Mode |
+| --- | --- | --- |
+| `/usr/lib/clustermax/` | `root:root` | 0755 directories, 0644 files, 0755 executables |
+| `/usr/sbin/cmax-helper`, `/usr/bin/cmax-trigger` | `root:root` | 0755 |
+| `/run/clustermax/` | `root:root` | 0755 |
+| `/run/clustermax/collect.sock` | `root:bitscan-runner` | 0660 |
+| `/run/cmax-work/` | `root:root` | 0700 (tmpfs, removed on stop) |
+
+**Reporting.** The agent reports `"cmax"` in the heartbeat's `runner_helpers` (§6.5) when `/run/clustermax/collect.sock` exists. The manager shows it on the host page and audit-logs any change, as for `"capread"`.
+
+**The manager never installs, enables, disables or configures the helper.**
 
 ## 4. Compliance Engine
 
@@ -1270,6 +1357,9 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | Audit sink outage | Entries queue on disk, an alert fires at once, and sensitive actions are refused after 15 minutes of outage (§5.3) |
 | Flooding from one agent | Rate limits; at most one unscheduled inventory upload per 10 minutes; hard caps on every upload; unreferenced packages pruned; alert on bursts of new packages |
 | Install and supply chain | `.deb` published with its SHA-256 on a separate origin; debconf inputs (no secrets in shell history); reproducible builds; SBOM per release; hashed Python dependencies. A signed APT repository is deferred (§1.2). |
+| Root ClusterMAX run started by a scan | `cmax-helper` (§3.8) is a separate package installed only on chosen hosts; one fixed command; no arguments; only uid `bitscan-runner` can connect; one run at a time; report in memory only; CPU, memory and I/O limits. **Accepted risk:** anyone who controls the manager, or holds an admin session or admin API token, can make every host with the helper run `cmax audit -vvv -y` as root, which changes the GPU vBoost setting, downloads an image, makes outbound HTTPS requests and, in cluster mode, starts jobs or privileged pods. A bug in ClusterMAX or its dependencies runs as root. |
+| Wrong host audits a whole cluster | **Accepted:** with `-y`, ClusterMAX's host role check is skipped, so the scan target alone decides which hosts run a cluster audit. Use a dedicated tag for ClusterMAX targets. |
+| Supply chain of the ClusterMAX collector | Pinned ClusterMAX commit, hash-pinned dependencies, SHA-256 and SBOM per release; upgrades reviewed against the upstream diff |
 | Secrets in config | Manager secrets from a vault or root-only files (§8.6), never in the repo |
 
 ### 8.2 Coding standards
@@ -1295,6 +1385,7 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | End-to-end | Enrol → approve enrolment → heartbeat → inventory → import → scan → results | Nightly, 3 VMs |
 | Load | 10,000 simulated agents heartbeating | p95 heartbeat < 200 ms |
 | Security | Expired, foreign and replayed jobs rejected by agent and runner; tokens rejected on the wrong route group; API tokens refused for sensitive actions, token creation and TOTP changes; non-admins refused for policy upload and delete; uploads with hostile file names stored safely; first result wins under concurrent retries; BIT015 / BIT102 rejections; agent refuses a manager certificate that fails verification or its pin | Every PR touching importer, auth, agent or runner |
+| Collector helper | The socket refuses any uid other than `bitscan-runner`; unknown request names and bad check ids are refused; only one audit runs under concurrent `collect`; no report on persistent storage after the service stops (`/run/cmax-work` gone, no new files under `/root`, `/var` or `/tmp`); the helper exits after its idle timeout; `cmax-trigger` works from inside the runner sandbox; the ClusterMAX policy passes BIT102 | Every PR touching the collector package; Ubuntu 22.04 and 24.04, amd64 |
 
 ### 8.4 Observability
 

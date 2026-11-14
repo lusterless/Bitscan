@@ -153,7 +153,7 @@ The `Execute` output (stdout) is compared with `ExpectedResult` using `Operator`
 - **Numbers** are decimal integers or floats with an optional sign; the whole trimmed stdout must be one number.
 - **Who evaluates:** the manager, not the agent, using the Operator and ExpectedResult recorded when the job was queued. The runner redacts output on the host before returning it (redaction patterns replace matches with `[REDACTED]`), and evaluation uses that redacted text. Write checks so that the value compared is never something the redaction patterns would hide.
 - **Script rules:**
-  - Read-only: no writes outside `/tmp`, no prompts, no changes to services or packages.
+  - Read-only: no writes outside `/tmp`, no prompts, no changes to services or packages. **Exception:** `cmax-trigger collect` asks the ClusterMAX collector helper (Technical Specification §3.8) to run its fixed audit; the plugin itself still writes nothing.
   - Print only the observed value (e.g. `install ok installed`), not a sentence.
   - Mount-option checks must read the host's view (`findmnt --task 1` or `/proc/1/mountinfo`), because the runner's own `/tmp` and `/dev` are private.
   - Live firewall and audit rules are read with `bitscan-capread nft_ruleset` and `bitscan-capread audit_rules` where the helper is enabled; otherwise read the rule files on disk.

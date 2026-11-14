@@ -9,11 +9,12 @@ These apply to all code. Each line is a hard rule from the approved spec; breaki
 - An endpoint, setting, role or agent option that disables inventory collection (TS §3.4, §6.2).
 - Cryptographic signing of `.bit` files or jobs, or a policy approval workflow. These are owner decisions (`.claude/CLAUDE.md`); the resulting risks are accepted in TS §3.7 and §8.1.
 - Agent client certificates. The only certificate is the manager's server certificate; agents authenticate with their `bsa_` token (TS §2.2).
-- A manager route or job that changes host settings, such as enabling the `bitscan-capread` helper (TS §3.7).
+- A manager route or job that changes host settings, such as enabling the `bitscan-capread` helper (TS §3.7). **Owner exception (2026-11-14):** a scan of a ClusterMAX policy may ask the separately installed `cmax-helper` (TS §3.8) to run its one fixed audit. The manager never installs, enables or configures the helper.
 - Automatic remediation. BIT102 is a safety net; the runner sandbox is the real control, and both must exist (TS §1.2; SR §4.2).
 
 ## Accepted risks (TS §8.1) — document, never "mitigate" with signing
 
+- Anyone who controls the manager, or holds an admin session or admin API token, can make hosts with `cmax-helper` installed run `cmax audit -vvv -y` as root (TS §3.8, §8.1).
 - Jobs are not signed. Whoever controls the manager or its database, or holds a stolen admin session or admin API token, can make every host return any file. Mitigations are least-privilege DB roles, admin TOTP, the hash-chained and externally shipped audit log, and alerts on every import.
 - A compromised `bitscan-agent` can make its host's runner read any file there; treat it as a compromise of every secret on that host (TS §3.7). The agent and runner job checks catch mistakes, not attacks.
 - Without pinning, a holder of a publicly trusted certificate for the manager's hostname can impersonate the manager to that agent. Pinning stays optional.
