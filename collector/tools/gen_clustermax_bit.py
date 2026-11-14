@@ -29,14 +29,14 @@ OUT = HERE.parent.parent / "bits" / "samples" / "clustermax-0.3.0.bit"
 GROUP = re.compile(r"^\[(\w+)\] (.+) \((\d+) checks\)$")
 CHECK = re.compile(r"^  ([A-Za-z0-9_.-]+): (.+)$")
 PASSING = r"^(PASS|n/a)( |$)"
-COLLECT = "cmax-trigger collect >/dev/null"
 
 POLICY_DESCRIPTION = (
     "The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y). "
     "Needs the clustermax-collector package on the host (Technical Specification 3.8); "
-    "without it every plugin prints NOHELPER and fails. The first plugin that runs starts one "
-    "root ClusterMAX audit through cmax-helper; every plugin reads its own line from the report, "
-    "which is kept only in the helper's memory. ClusterMAX PASS and SKIPPED (printed as n/a) "
+    "without it every plugin prints NOHELPER and fails. Every scan runs a fresh audit: the first "
+    "plugin of the scan's job on a host starts one root ClusterMAX audit through cmax-helper, and "
+    "every plugin of that job reads its own line from that audit's report, which is kept only in "
+    "the helper's memory. ClusterMAX PASS and SKIPPED (printed as n/a) "
     "pass; WARNING and FAIL fail. With -y, ClusterMAX auto-detects standalone, Slurm or "
     "Kubernetes on each targeted host, so target only the hosts that should run it, for example "
     "with a dedicated tag."
@@ -91,21 +91,22 @@ def main() -> int:
     plugins = [
         plugin(
             "0.1 - collect - Run the ClusterMAX audit",
-            "Asks cmax-helper to run cmax audit -vvv -y as root, unless a run is in progress or a "
-            "report younger than 30 minutes is held. Prints started, running or ready; NOHELPER "
-            "when the collector package is not installed.",
+            "Asks cmax-helper to run cmax audit -vvv -y as root for this scan, unless an audit is "
+            "already running, which this scan then shares. Prints started or running with the run "
+            "id every plugin of this scan reads; NOHELPER when the collector package is not "
+            "installed.",
             pid("collect"),
             "cmax-trigger collect",
             30,
             "regex",
-            r"^(started|running|ready)$",
+            r"^(started|running) [0-9a-f]{32}$",
         ),
         plugin(
             "0.2 - header - ClusterMAX target",
             "Waits for the audit and prints the target block ClusterMAX reported: command, target, "
             "host, system, access and selection. Evidence of what ran on this host.",
             pid("header"),
-            f"{COLLECT}; cmax-trigger get header",
+            "cmax-trigger get header",
             600,
             "regex",
             r"^Command: cmax audit; ",
@@ -115,7 +116,7 @@ def main() -> int:
             "Waits for the audit, then prints ok <age-seconds> <cmax-version>. Passes only when the "
             "audit finished without error and the installed ClusterMAX is 0.3.0.",
             pid("status"),
-            f"{COLLECT}; cmax-trigger get header >/dev/null; cmax-trigger get status",
+            "cmax-trigger get header >/dev/null; cmax-trigger get status",
             600,
             "regex",
             r"^ok [0-9]+ 0\.3\.0$",
@@ -132,7 +133,7 @@ def main() -> int:
                 "Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and "
                 "FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.",
                 pid(check_id),
-                f"{COLLECT}; cmax-trigger get {check_id}",
+                f"cmax-trigger get {check_id}",
                 600,
                 "regex",
                 PASSING,

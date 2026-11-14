@@ -3,14 +3,18 @@
 
 Started by systemd socket activation (cmax-helper.socket). Accepts only peers
 with uid `bitscan-runner`, takes a request name and never a command line, runs
-exactly `cmax audit -vvv -y`, and keeps the report only in memory. It exits
-when it has been idle for IDLE_EXIT_S, which drops the report.
+exactly `cmax audit -vvv -y`, and keeps the reports only in memory. It exits
+when it has been idle for IDLE_EXIT_S, which drops every report.
 
 Requests (one line, at most MAX_REQUEST bytes):
-  collect            start the audit unless one is running or a fresh report is held
-  get <check-id>     wait for the audit, return that check's verdict line
-  get header         wait for the audit, return the report's target block
-  get status         ok <age-s> <cmax-version> | running | failed <rc> | none
+  collect                    start an audit unless one runs:
+                             started <run-id> | running <run-id>
+  get <run-id> <check-id>    wait for that run, return the check's verdict line
+  get <run-id> header        wait for that run, return its target block
+  get <run-id> status        ok <age-s> <cmax-version> | running | failed <rc>
+
+Every collect that finds no running audit starts a new one; a finished report
+is never reused (owner decision 2026-11-14). The last KEEP_RUNS runs are kept.
 """
 
 from __future__ import annotations
@@ -18,24 +22,27 @@ from __future__ import annotations
 import os
 import pwd
 import re
+import secrets
 import socket
 import struct
 import subprocess
 import sys
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 CMAX = "/usr/lib/clustermax/bin/cmax"
 WORK_DIR = "/run/cmax-work"
 ALLOWED_USER = "bitscan-runner"
-FRESH_S = 30 * 60
 IDLE_EXIT_S = 30 * 60
 GET_WAIT_S = 590
+KEEP_RUNS = 4
 MAX_REQUEST = 256
 MAX_REPLY = 4000
 CHECK_ID = re.compile(r"[A-Za-z0-9_.-]{1,128}")
+RUN_ID = re.compile(r"[0-9a-f]{32}")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 VERDICT = re.compile(r"^(PASS|FAIL|WARNING|SKIPPED|INFO)\s+.*\[([A-Za-z0-9_.-]+)\]\s*$")
 # A ClusterMAX SKIPPED is "not applicable" (owner decision): printed as n/a.
@@ -101,14 +108,22 @@ def parse_header(report: str) -> str:
 
 
 @dataclass
+class Run:
+    """One audit. Guarded by State.lock."""
+
+    running: bool = True
+    report: str | None = None
+    exit_code: int | None = None
+    finished_at: float = 0.0
+
+
+@dataclass
 class State:
     """Shared state. All fields are guarded by `lock`."""
 
     lock: threading.Condition = field(default_factory=threading.Condition)
-    running: bool = False
-    report: str | None = None
-    finished_at: float = 0.0
-    exit_code: int | None = None
+    runs: OrderedDict[str, Run] = field(default_factory=OrderedDict)  # oldest first
+    current: str | None = None  # the running audit's id
     last_activity: float = field(default_factory=time.monotonic)
 
 
@@ -122,6 +137,7 @@ class Helper:
         version: str,
         clock: Callable[[], float] = time.monotonic,
         get_wait_s: float = GET_WAIT_S,
+        new_id: Callable[[], str] = lambda: secrets.token_hex(16),
     ) -> None:
         self.command = command
         self.environment = environment
@@ -129,32 +145,25 @@ class Helper:
         self.version = version
         self.clock = clock
         self.get_wait_s = get_wait_s
+        self.new_id = new_id
         self.state = State(last_activity=clock())
 
     # -- audit -----------------------------------------------------------
-    def _fresh(self) -> bool:
-        s = self.state
-        return (
-            s.report is not None
-            and s.exit_code == 0
-            and self.clock() - s.finished_at < FRESH_S
-        )
-
     def collect(self) -> str:
         s = self.state
         with s.lock:
             s.last_activity = self.clock()
-            if s.running:
-                return "running"
-            if self._fresh():
-                return "ready"
-            s.running = True
-            s.report = None
-            s.exit_code = None
-        threading.Thread(target=self._run, daemon=True).start()
-        return "started"
+            if s.current is not None:
+                return f"running {s.current}"
+            run_id = self.new_id()
+            s.runs[run_id] = Run()
+            s.current = run_id
+            while len(s.runs) > KEEP_RUNS:  # the running one is the newest
+                s.runs.popitem(last=False)
+        threading.Thread(target=self._run, args=(run_id,), daemon=True).start()
+        return f"started {run_id}"
 
-    def _run(self) -> None:
+    def _run(self, run_id: str) -> None:
         try:
             done = subprocess.run(
                 self.command,
@@ -173,63 +182,74 @@ class Helper:
             text, code = f"cmax could not start: {exc.strerror}", 127
         s = self.state
         with s.lock:
-            s.report, s.exit_code = text, code
-            s.running = False
-            s.finished_at = s.last_activity = self.clock()
+            run = s.runs.get(run_id)
+            if run is not None:
+                run.report, run.exit_code = text, code
+                run.running = False
+                run.finished_at = self.clock()
+            s.current = None
+            s.last_activity = self.clock()
             s.lock.notify_all()
 
-    def _wait(self) -> str | None:
-        """Wait for a running audit; return the report, or None."""
+    def _wait(self, run_id: str) -> Run | None:
+        """Wait for the run to finish; None when it is unknown or still running."""
         s = self.state
         deadline = self.clock() + self.get_wait_s
         with s.lock:
-            while s.running:
+            while True:
+                run = s.runs.get(run_id)
+                if run is None or not run.running:
+                    return run
                 left = deadline - self.clock()
                 if left <= 0:
                     return None
                 s.lock.wait(timeout=min(left, 5.0))
-            return s.report
 
-    def get(self, what: str) -> str:
+    def get(self, run_id: str, what: str) -> str:
         s = self.state
         with s.lock:
             s.last_activity = self.clock()
+            run = s.runs.get(run_id)
+            if run is None:
+                return f"MISSING run {run_id} is not held"
             if what == "status":
-                if s.running:
+                if run.running:
                     return "running"
-                if s.report is None:
-                    return "none"
-                if s.exit_code != 0:
-                    return f"failed {s.exit_code}"
-                return f"ok {int(self.clock() - s.finished_at)} {self.version}"
-        report = self._wait()
-        if report is None:
+                if run.exit_code != 0:
+                    return f"failed {run.exit_code}"
+                return f"ok {int(self.clock() - run.finished_at)} {self.version}"
+        done = self._wait(run_id)
+        if done is None:
             with s.lock:
-                return (
-                    "TIMEOUT the audit is still running"
-                    if s.running
-                    else "MISSING no report; send collect first"
-                )
-        if s.exit_code != 0:
-            return f"ERROR cmax exited {s.exit_code}"
-        return parse_header(report) if what == "header" else parse_check(report, what)
+                held = run_id in s.runs
+            return (
+                "TIMEOUT the audit is still running"
+                if held
+                else f"MISSING run {run_id} is not held"
+            )
+        if done.exit_code != 0 or done.report is None:
+            return f"ERROR cmax exited {done.exit_code}"
+        if what == "header":
+            return parse_header(done.report)
+        return parse_check(done.report, what)
 
     def handle(self, request: str) -> str:
         words = request.split()
         if words == ["collect"]:
             return self.collect()
         if (
-            len(words) == 2
+            len(words) == 3
             and words[0] == "get"
-            and (words[1] in {"header", "status"} or CHECK_ID.fullmatch(words[1]))
+            and RUN_ID.fullmatch(words[1])
+            and (words[2] in {"header", "status"} or CHECK_ID.fullmatch(words[2]))
         ):
-            return self.get(words[1])
+            return self.get(words[1], words[2])
         return "REFUSED unknown request"
 
     def idle(self) -> bool:
         s = self.state
         with s.lock:
-            return not s.running and self.clock() - s.last_activity >= IDLE_EXIT_S
+            return s.current is None and self.clock() - s.last_activity >= IDLE_EXIT_S
 
 
 def peer_uid(conn: socket.socket) -> int:

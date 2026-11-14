@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Policy formatVersion="1.0">
   <PolicyName>ClusterMAX 0.3.0 audit checks</PolicyName>
-  <PolicyDescription>The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y). Needs the clustermax-collector package on the host (Technical Specification 3.8); without it every plugin prints NOHELPER and fails. The first plugin that runs starts one root ClusterMAX audit through cmax-helper; every plugin reads its own line from the report, which is kept only in the helper's memory. ClusterMAX PASS and SKIPPED (printed as n/a) pass; WARNING and FAIL fail. With -y, ClusterMAX auto-detects standalone, Slurm or Kubernetes on each targeted host, so target only the hosts that should run it, for example with a dedicated tag.</PolicyDescription>
+  <PolicyDescription>The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y). Needs the clustermax-collector package on the host (Technical Specification 3.8); without it every plugin prints NOHELPER and fails. Every scan runs a fresh audit: the first plugin of the scan's job on a host starts one root ClusterMAX audit through cmax-helper, and every plugin of that job reads its own line from that audit's report, which is kept only in the helper's memory. ClusterMAX PASS and SKIPPED (printed as n/a) pass; WARNING and FAIL fail. With -y, ClusterMAX auto-detects standalone, Slurm or Kubernetes on each targeted host, so target only the hosts that should run it, for example with a dedicated tag.</PolicyDescription>
   <PolicyStatus>enabled</PolicyStatus>
   <Family>
     <FamilyName>Clustermax</FamilyName>
@@ -9,20 +9,20 @@
   <PluginsGroups>
     <Plugin>
       <PluginName>0.1 - collect - Run the ClusterMAX audit</PluginName>
-      <PluginDescription>Asks cmax-helper to run cmax audit -vvv -y as root, unless a run is in progress or a report younger than 30 minutes is held. Prints started, running or ready; NOHELPER when the collector package is not installed.</PluginDescription>
+      <PluginDescription>Asks cmax-helper to run cmax audit -vvv -y as root for this scan, unless an audit is already running, which this scan then shares. Prints started or running with the run id every plugin of this scan reads; NOHELPER when the collector package is not installed.</PluginDescription>
       <PluginId>3bde17c0-474e-4333-a5f5-d5f3572b4501</PluginId>
       <Execute timeout="30"><![CDATA[
         cmax-trigger collect
       ]]></Execute>
       <Operator>regex</Operator>
-      <ExpectedResult>^(started|running|ready)$</ExpectedResult>
+      <ExpectedResult>^(started|running) [0-9a-f]{32}$</ExpectedResult>
     </Plugin>
     <Plugin>
       <PluginName>0.2 - header - ClusterMAX target</PluginName>
       <PluginDescription>Waits for the audit and prints the target block ClusterMAX reported: command, target, host, system, access and selection. Evidence of what ran on this host.</PluginDescription>
       <PluginId>713b6874-6bc0-461e-8041-8cfecd21d586</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get header
+        cmax-trigger get header
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^Command: cmax audit; </ExpectedResult>
@@ -32,7 +32,7 @@
       <PluginDescription>Waits for the audit, then prints ok &lt;age-seconds&gt; &lt;cmax-version&gt;. Passes only when the audit finished without error and the installed ClusterMAX is 0.3.0.</PluginDescription>
       <PluginId>6e01db1d-354f-4a8c-a2e3-5d8596e013a7</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get header >/dev/null; cmax-trigger get status
+        cmax-trigger get header >/dev/null; cmax-trigger get status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^ok [0-9]+ 0\.3\.0$</ExpectedResult>
@@ -42,7 +42,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.amdDriver.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>4614077c-28a8-4fd0-8a47-ed18c329b60a</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.amdDriver.status
+        cmax-trigger get securityVersions.amdDriver.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -52,7 +52,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.nvidiaDriver.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>7f912392-3b2a-4cb0-a9c2-f33c8f4cdbd0</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.nvidiaDriver.status
+        cmax-trigger get securityVersions.nvidiaDriver.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -62,7 +62,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.nvidiaContainerToolkit.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>772a3de6-7ead-425e-9385-4110a4c148b3</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.nvidiaContainerToolkit.status
+        cmax-trigger get securityVersions.nvidiaContainerToolkit.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -72,7 +72,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.cudaToolkit.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>713689e0-de8e-4571-8dd4-52972f96dc44</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.cudaToolkit.status
+        cmax-trigger get securityVersions.cudaToolkit.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -82,7 +82,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.runc.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>02d54130-0a0d-4ca5-a872-0d3c6247c5c8</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.runc.status
+        cmax-trigger get securityVersions.runc.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -92,7 +92,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.docker.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>b16100aa-702d-453c-b3e9-f7b369ef3870</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.docker.status
+        cmax-trigger get securityVersions.docker.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -102,7 +102,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.connectxFirmware.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>7fa3ea10-c7ad-4a70-8ecb-c2d0f39880e6</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.connectxFirmware.status
+        cmax-trigger get securityVersions.connectxFirmware.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -112,7 +112,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.dcgm.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>3eb30129-050c-4b4d-81f5-477a6c85bb55</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.dcgm.status
+        cmax-trigger get securityVersions.dcgm.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -122,7 +122,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.dcgmExporter.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>4b441023-0651-4bc9-9516-9a90c5805191</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.dcgmExporter.status
+        cmax-trigger get securityVersions.dcgmExporter.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -132,7 +132,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.virtioNetBluefield.status (Minimum versions). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>83d97f64-9f32-430c-83ef-3b19d10f77c1</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.virtioNetBluefield.status
+        cmax-trigger get securityVersions.virtioNetBluefield.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -142,7 +142,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.virtioNetBluefield.exposure (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>a9c70725-4cc0-4e14-9c9a-8d3e8e3562b9</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.virtioNetBluefield.exposure
+        cmax-trigger get securityVersions.virtioNetBluefield.exposure
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -152,7 +152,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check securityVersions.dpuHostIsolation.status (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>27187fdf-f086-4af5-94c1-1822d6e06e3f</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get securityVersions.dpuHostIsolation.status
+        cmax-trigger get securityVersions.dpuHostIsolation.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -162,7 +162,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check security.januscape.status (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>c30e19e8-079e-428e-a335-791ff019f85c</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get security.januscape.status
+        cmax-trigger get security.januscape.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -172,7 +172,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check security.guestKernel.newerInstalled (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>394a7bda-e969-45d3-8bf0-a1504a4ec5c2</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get security.guestKernel.newerInstalled
+        cmax-trigger get security.guestKernel.newerInstalled
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -182,7 +182,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check security.ubuntuNobleKernelMinimum.status (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>6bcc5075-bf37-4130-a377-6d758e075672</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get security.ubuntuNobleKernelMinimum.status
+        cmax-trigger get security.ubuntuNobleKernelMinimum.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -192,7 +192,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check security.guestKernel.ubuntuCveStatus (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>dea608c1-dc71-4c7f-ba68-e1b22f6006d0</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get security.guestKernel.ubuntuCveStatus
+        cmax-trigger get security.guestKernel.ubuntuCveStatus
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -202,7 +202,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check security.fragnesia.status (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>8af891f8-0607-4689-8cf3-66f8b4231ac1</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get security.fragnesia.status
+        cmax-trigger get security.fragnesia.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -212,7 +212,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check security.badEpoll.status (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>d9bebb8f-a506-43b9-8214-c89f2d75a661</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get security.badEpoll.status
+        cmax-trigger get security.badEpoll.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -222,7 +222,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check security.pwnescape.status (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>149f5b25-fc71-40d2-8ac2-8df73d0a80ed</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get security.pwnescape.status
+        cmax-trigger get security.pwnescape.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -232,7 +232,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check qemu-virtio-serial (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>2d5780ff-b5e8-4613-b439-ad020a365792</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get qemu-virtio-serial
+        cmax-trigger get qemu-virtio-serial
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -242,7 +242,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check vmscape (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>bf9acdf5-efcf-49e2-8d3a-17ff493280c8</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get vmscape
+        cmax-trigger get vmscape
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -252,7 +252,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check observability-isolation (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>a7003246-4bb9-4528-9817-898e140898f4</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get observability-isolation
+        cmax-trigger get observability-isolation
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -262,7 +262,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check bmc-ipmi (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>d0d5b9c3-63f7-42ce-af03-c8ba6330d563</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get bmc-ipmi
+        cmax-trigger get bmc-ipmi
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -272,7 +272,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check kubernetes-nodes-proxy (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>7e9b38b8-7f77-483a-9118-c280af97ce70</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get kubernetes-nodes-proxy
+        cmax-trigger get kubernetes-nodes-proxy
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -282,7 +282,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check ingress-nginx-cve-2025-1974 (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>8a0e1be1-95c2-4728-a898-4c0b67705e64</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get ingress-nginx-cve-2025-1974
+        cmax-trigger get ingress-nginx-cve-2025-1974
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -292,7 +292,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check ufm-profile (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>c30a08ef-c212-4aad-9415-32a62508ca2a</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get ufm-profile
+        cmax-trigger get ufm-profile
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -302,7 +302,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check pcie-passthrough (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>ec99f790-ebba-4382-a35b-7af82e098de2</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get pcie-passthrough
+        cmax-trigger get pcie-passthrough
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -312,7 +312,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check nvlink-boundary (Security isolation). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>3cbe4afe-e62a-4e2f-8110-46edb1984815</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get nvlink-boundary
+        cmax-trigger get nvlink-boundary
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -322,7 +322,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check thp_madvise.status (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>252d3f80-e770-4c57-aa8f-f4d05e0cdff4</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get thp_madvise.status
+        cmax-trigger get thp_madvise.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -332,7 +332,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check static_hugepages.status (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>20af9c63-5122-4468-9e04-94d51bf4c2db</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get static_hugepages.status
+        cmax-trigger get static_hugepages.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -342,7 +342,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check hugepage_allocation.status (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>ff77f246-3ede-49ee-bf08-5e5d2e4ab1cc</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get hugepage_allocation.status
+        cmax-trigger get hugepage_allocation.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -352,7 +352,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check gpus.gdrcopy.installed (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>f93c8c09-511a-47d9-8b10-fccfc6507a0b</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get gpus.gdrcopy.installed
+        cmax-trigger get gpus.gdrcopy.installed
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -362,7 +362,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check gpus.gpuDirectRdmaPath (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>b36ec0b2-35b6-4ad4-b815-c69290a7a397</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get gpus.gpuDirectRdmaPath
+        cmax-trigger get gpus.gpuDirectRdmaPath
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -372,7 +372,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check gpus.gpuDirectRdmaPath.nvidiaPeermemLegacy (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>f0629de5-c793-401c-96d4-249bf03c1fc6</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get gpus.gpuDirectRdmaPath.nvidiaPeermemLegacy
+        cmax-trigger get gpus.gpuDirectRdmaPath.nvidiaPeermemLegacy
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -382,7 +382,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check gpu_controls.vboost.allowed (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>efd06e5c-5d91-426e-aa1a-41b93fd0368f</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get gpu_controls.vboost.allowed
+        cmax-trigger get gpu_controls.vboost.allowed
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -392,7 +392,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check hbm_memory_exposure.status (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>c31aba1e-8e8e-4fa1-b154-be92d9c432c5</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get hbm_memory_exposure.status
+        cmax-trigger get hbm_memory_exposure.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -402,7 +402,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check vm_iommu.status (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>8e4a7c70-edf9-4200-810e-183b14ebaca7</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get vm_iommu.status
+        cmax-trigger get vm_iommu.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -412,7 +412,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check arm_smmu_virtualization.status (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>251b3ae6-c9fa-43cc-8ee4-27f79bb54efd</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get arm_smmu_virtualization.status
+        cmax-trigger get arm_smmu_virtualization.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -422,7 +422,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check gpus.pcieAcs.enabled (Hardware). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>940e904b-0d5d-492d-957e-a10d95015974</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get gpus.pcieAcs.enabled
+        cmax-trigger get gpus.pcieAcs.enabled
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -432,7 +432,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.nvhpc.status (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>a65aa9f7-47b3-4375-9957-8eeb92299e57</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.nvhpc.status
+        cmax-trigger get software.nvhpc.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -442,7 +442,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.ncu.installed (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>9de3588f-e39f-42e0-a2ae-0bf7890e484c</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.ncu.installed
+        cmax-trigger get software.ncu.installed
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -452,7 +452,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.ncu.profilingEnabled (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>8fc05832-9e9e-411b-a591-30ecda44a361</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.ncu.profilingEnabled
+        cmax-trigger get software.ncu.profilingEnabled
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -462,7 +462,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.lmod.modulesStatus (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>38dbd501-b01f-48cf-8993-651c3a08294f</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.lmod.modulesStatus
+        cmax-trigger get software.lmod.modulesStatus
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -472,7 +472,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.cudaVisibleDevicesStatus (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>15f2e1f7-3f57-467f-b0f9-ba9198cffe4c</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.cudaVisibleDevicesStatus
+        cmax-trigger get software.cudaVisibleDevicesStatus
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -482,7 +482,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.nccl.installed (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>76583175-0caa-4145-a5c0-30c5d80bd874</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.nccl.installed
+        cmax-trigger get software.nccl.installed
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -492,7 +492,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.perf.installed (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>6810a951-dd93-4f9f-a0d7-42cd294818dc</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.perf.installed
+        cmax-trigger get software.perf.installed
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -502,7 +502,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.perf.perfEventParanoid (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>7c129427-6f3e-4a37-b417-83e734941102</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.perf.perfEventParanoid
+        cmax-trigger get software.perf.perfEventParanoid
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -512,7 +512,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check software.perf.kptrRestrict (Software tools). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>4c6d9b68-a128-457d-8170-1f592d2b4e25</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get software.perf.kptrRestrict
+        cmax-trigger get software.perf.kptrRestrict
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -522,7 +522,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check containers.nvidiaContainerToolkit (Container runtime). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>62f10095-5ed1-4edb-81c0-466ec33c5595</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get containers.nvidiaContainerToolkit
+        cmax-trigger get containers.nvidiaContainerToolkit
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -532,7 +532,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check containers.enroot (Container runtime). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>bd7c0e62-4ce7-4fe5-994c-3988fe5420cd</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get containers.enroot
+        cmax-trigger get containers.enroot
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -542,7 +542,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check containers.enrootImportWorks (Container runtime). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>f87c4beb-c521-4d02-ab65-956d554ef3a7</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get containers.enrootImportWorks
+        cmax-trigger get containers.enrootImportWorks
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -552,7 +552,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check containers.dockerOnWorkers (Container runtime). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>b47602b8-c4f2-402b-977c-db477e9ef9e3</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get containers.dockerOnWorkers
+        cmax-trigger get containers.dockerOnWorkers
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -562,7 +562,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check containers.singularity (Container runtime). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>e0283eaa-c65c-4a54-9337-47dd39d6de52</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get containers.singularity
+        cmax-trigger get containers.singularity
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -572,7 +572,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check k8s_scheduling.status (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>9a1ec16e-ebbd-4cb4-8e6b-50864c68a22e</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get k8s_scheduling.status
+        cmax-trigger get k8s_scheduling.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -582,7 +582,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check containers.workerCheckOk (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>17e943dd-a40d-49e5-84da-9297b8f569bf</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get containers.workerCheckOk
+        cmax-trigger get containers.workerCheckOk
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -592,7 +592,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check containers.pyxisRuntimeWorks (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>2f3b88ba-07e6-4ba9-92b2-7bae5a130474</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get containers.pyxisRuntimeWorks
+        cmax-trigger get containers.pyxisRuntimeWorks
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -602,7 +602,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check kubelet_cpu_manager_policy.status (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>9353195f-83fb-49cb-a7d1-9a6f5bafb545</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get kubelet_cpu_manager_policy.status
+        cmax-trigger get kubelet_cpu_manager_policy.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -612,7 +612,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check slurm.slinkyControllerSeparate (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>8f5cc6a7-64ab-46b5-bae7-bb4aa54ab0c4</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get slurm.slinkyControllerSeparate
+        cmax-trigger get slurm.slinkyControllerSeparate
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -622,7 +622,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check slurm.accounting.sacctAvailable (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>3df8a38c-5a38-43c2-a84a-470bd9e707bf</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get slurm.accounting.sacctAvailable
+        cmax-trigger get slurm.accounting.sacctAvailable
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -632,7 +632,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check tenant_pod_defaults.status (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>8191bf4a-1b64-4bce-aedc-e6554d2d95b9</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get tenant_pod_defaults.status
+        cmax-trigger get tenant_pod_defaults.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -642,7 +642,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check tenant_pod_defaults.checks.memlock.status (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>ffca528e-8a44-4618-8452-0509fd2be4ed</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get tenant_pod_defaults.checks.memlock.status
+        cmax-trigger get tenant_pod_defaults.checks.memlock.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -652,7 +652,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check tenant_pod_defaults.checks.shm.status (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>9be15255-b3ff-41c2-a57e-e3f05147f63e</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get tenant_pod_defaults.checks.shm.status
+        cmax-trigger get tenant_pod_defaults.checks.shm.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -662,7 +662,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check tenant_pod_defaults.checks.rdmaDevices.status (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>fb332eaf-4bd5-4b7b-8257-f05db962fe47</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get tenant_pod_defaults.checks.rdmaDevices.status
+        cmax-trigger get tenant_pod_defaults.checks.rdmaDevices.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -672,7 +672,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check tenant_pod_defaults.checks.gdrcopyDevice.status (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>a98ab118-df7a-443c-a785-721573a6b942</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get tenant_pod_defaults.checks.gdrcopyDevice.status
+        cmax-trigger get tenant_pod_defaults.checks.gdrcopyDevice.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -682,7 +682,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check tenant_pod_defaults.checks.tunedPodAdmission.status (Orchestration). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>89ff684b-d047-4b9b-afd2-c54cc4d31253</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get tenant_pod_defaults.checks.tunedPodAdmission.status
+        cmax-trigger get tenant_pod_defaults.checks.tunedPodAdmission.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -692,7 +692,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check nccl_topo_file.status (Networking). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>992907a9-9e55-4bf6-992c-cd7143236e21</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get nccl_topo_file.status
+        cmax-trigger get nccl_topo_file.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -702,7 +702,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check nccl_ib_qps.status (Networking). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>450a48bb-3c13-41fc-a14e-afb1bcb1f276</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get nccl_ib_qps.status
+        cmax-trigger get nccl_ib_qps.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -712,7 +712,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check networking.topologyConfigured (Networking). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>f0db2a31-5ba5-455d-80d2-0dfeebba0518</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get networking.topologyConfigured
+        cmax-trigger get networking.topologyConfigured
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -722,7 +722,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check networking.hcaNamingValid (Networking). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>2840060d-6094-441c-aecc-0bd04f6c2692</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get networking.hcaNamingValid
+        cmax-trigger get networking.hcaNamingValid
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -732,7 +732,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check networking.ncclAutoConfig (Networking). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>e3d4a154-aee8-4931-996d-863e9d57865a</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get networking.ncclAutoConfig
+        cmax-trigger get networking.ncclAutoConfig
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -742,7 +742,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check storage.rwxStatus (Storage). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>4f71384d-e229-4078-b023-9110c488946f</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get storage.rwxStatus
+        cmax-trigger get storage.rwxStatus
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -752,7 +752,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check storage_config.status (Storage). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>f58976cb-a6f5-44a6-9f6e-b5adaa6d42fd</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get storage_config.status
+        cmax-trigger get storage_config.status
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -762,7 +762,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check healthChecks.nhcInstalled (Health and monitoring). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>966f63a0-545f-4dab-a38a-b442bae54375</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get healthChecks.nhcInstalled
+        cmax-trigger get healthChecks.nhcInstalled
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -772,7 +772,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check healthChecks.monitoringStack.dcgmExporter (Health and monitoring). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>a0b94674-7a02-4016-a257-7c3799be704b</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get healthChecks.monitoringStack.dcgmExporter
+        cmax-trigger get healthChecks.monitoringStack.dcgmExporter
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -782,7 +782,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check healthChecks.dcgmInstalled (Health and monitoring). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>92ddd01f-6057-42e8-b49d-512ff2b97ed0</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get healthChecks.dcgmInstalled
+        cmax-trigger get healthChecks.dcgmInstalled
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -792,7 +792,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check healthChecks.dcgmSlurm (Health and monitoring). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>765049d5-1f0e-4ebd-94ca-7b37e4c15e7a</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get healthChecks.dcgmSlurm
+        cmax-trigger get healthChecks.dcgmSlurm
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -802,7 +802,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check access.sudoAvailable (Access and identity). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>0cb7bda1-e211-4308-934a-a399057f72c2</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get access.sudoAvailable
+        cmax-trigger get access.sudoAvailable
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -812,7 +812,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check access.userManagement (Access and identity). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>f689eff9-becf-4217-ad0b-89da79060c03</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get access.userManagement
+        cmax-trigger get access.userManagement
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -822,7 +822,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check access.sshToComputeNodes (Access and identity). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>6d35eaf9-0d2b-425f-bbd9-086baadb43f5</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get access.sshToComputeNodes
+        cmax-trigger get access.sshToComputeNodes
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -832,7 +832,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check access.externalIdp.detected (Access and identity). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>db1068d6-a7b0-412d-a649-3b6d344837af</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get access.externalIdp.detected
+        cmax-trigger get access.externalIdp.detected
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>
@@ -842,7 +842,7 @@
       <PluginDescription>ClusterMAX 0.3.0 check access.slurmCommandsOk (Access and identity). Prints the ClusterMAX verdict and its Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.</PluginDescription>
       <PluginId>c01a3118-84ef-4eee-972c-03c1ce7cff23</PluginId>
       <Execute timeout="600"><![CDATA[
-        cmax-trigger collect >/dev/null; cmax-trigger get access.slurmCommandsOk
+        cmax-trigger get access.slurmCommandsOk
       ]]></Execute>
       <Operator>regex</Operator>
       <ExpectedResult>^(PASS|n/a)( |$)</ExpectedResult>

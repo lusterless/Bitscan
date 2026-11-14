@@ -17,6 +17,7 @@ import threading
 import time
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -47,25 +48,32 @@ def fake_cmax(
     return [str(script), "audit", "-vvv", "-y"], counter
 
 
-def make_helper(tmp: Path, **kw: float) -> tuple[helper_mod.Helper, Path]:
+def rid(n: int) -> str:
+    """The n-th run id the test helper hands out (32 lowercase hex)."""
+    return f"{n:032x}"
+
+
+def make_helper(tmp: Path, **kw: Any) -> tuple[helper_mod.Helper, Path]:
     command, counter = fake_cmax(
         tmp, delay=kw.pop("delay", 0.0), exit_code=int(kw.pop("exit_code", 0))
     )
     work = tmp / "work"
     work.mkdir()
+    ids = iter(range(1, 1000))
     h = helper_mod.Helper(
         command=command,
         environment=helper_mod.audit_environment(str(work)),
         work_dir=str(work),
         version="0.3.0",
+        new_id=lambda: rid(next(ids)),
         **kw,
     )
     return h, counter
 
 
-def wait_done(h: helper_mod.Helper) -> None:
+def wait_done(h: helper_mod.Helper, run_id: str = rid(1)) -> None:
     for _ in range(200):
-        if h.get("status") != "running":
+        if h.get(run_id, "status") != "running":
             return
         time.sleep(0.05)
     raise AssertionError("audit did not finish")
@@ -146,11 +154,17 @@ def test_header_is_the_target_block() -> None:
         "run",
         "collect now",
         "get",
+        "get status",
+        "get access.sudoAvailable",
         "get a b",
-        "get ../../etc/shadow",
-        "get $(id)",
+        "get " + rid(1),
+        "get " + rid(0xABC).upper() + " status",
+        "get " + rid(1)[:31] + " status",
+        "get " + rid(1) + " ../../etc/shadow",
+        "get " + rid(1) + " $(id)",
+        "get " + rid(1) + " status extra",
         "exec cmax",
-        "get " + "a" * 129,
+        "get " + rid(1) + " " + "a" * 129,
     ],
 )
 def test_unknown_or_bad_requests_are_refused(tmp_path: Path, request_text: str) -> None:
@@ -159,16 +173,40 @@ def test_unknown_or_bad_requests_are_refused(tmp_path: Path, request_text: str) 
     assert not counter.exists()
 
 
-def test_collect_runs_once_and_get_returns_lines(tmp_path: Path) -> None:
+def test_collect_starts_a_run_and_get_returns_its_lines(tmp_path: Path) -> None:
     h, counter = make_helper(tmp_path, delay=0.3)
-    assert h.handle("get status") == "none"
-    assert h.handle("collect") == "started"
-    assert h.handle("collect") == "running"
-    assert h.handle("get access.sudoAvailable") == "PASS observed=true"
-    assert h.handle("collect") == "ready"
-    assert h.handle("get status").startswith("ok ")
-    assert h.handle("get status").endswith(" 0.3.0")
+    assert h.handle(f"get {rid(1)} status").startswith("MISSING ")
+    assert h.handle("collect") == f"started {rid(1)}"
+    assert h.handle("collect") == f"running {rid(1)}"
+    assert h.handle(f"get {rid(1)} status") == "running"
+    assert h.handle(f"get {rid(1)} access.sudoAvailable") == "PASS observed=true"
+    assert h.handle(f"get {rid(1)} status").startswith("ok ")
+    assert h.handle(f"get {rid(1)} status").endswith(" 0.3.0")
     assert counter.read_text() == "x"
+
+
+def test_every_collect_after_a_run_starts_a_new_audit(tmp_path: Path) -> None:
+    """TS §3.8 (owner decision 2026-11-14): a finished report is never
+    reused, however fresh; the earlier run stays readable by its id."""
+    h, counter = make_helper(tmp_path)
+    assert h.handle("collect") == f"started {rid(1)}"
+    wait_done(h, rid(1))
+    assert h.handle("collect") == f"started {rid(2)}"
+    wait_done(h, rid(2))
+    assert counter.read_text() == "xx"
+    assert h.handle(f"get {rid(1)} software.perf.installed") == "FAIL observed=false"
+    assert h.handle(f"get {rid(2)} software.perf.installed") == "FAIL observed=false"
+
+
+def test_only_the_last_four_runs_are_kept(tmp_path: Path) -> None:
+    h, _ = make_helper(tmp_path)
+    for n in range(1, 6):
+        assert h.handle("collect") == f"started {rid(n)}"
+        wait_done(h, rid(n))
+    assert h.handle(f"get {rid(1)} header").startswith("MISSING ")
+    assert h.handle(f"get {rid(1)} status").startswith("MISSING ")
+    for n in range(2, 6):
+        assert h.handle(f"get {rid(n)} status").startswith("ok "), n
 
 
 def test_concurrent_collects_share_one_run(tmp_path: Path) -> None:
@@ -183,13 +221,14 @@ def test_concurrent_collects_share_one_run(tmp_path: Path) -> None:
     for t in threads:
         t.join()
     wait_done(h)
-    assert answers.count("started") == 1
+    assert answers.count(f"started {rid(1)}") == 1
+    assert answers.count(f"running {rid(1)}") == 15
     assert counter.read_text() == "x"
 
 
-def test_get_before_collect_is_missing(tmp_path: Path) -> None:
+def test_get_of_an_unknown_run_is_missing(tmp_path: Path) -> None:
     h, counter = make_helper(tmp_path)
-    assert h.handle("get access.sudoAvailable").startswith("MISSING ")
+    assert h.handle(f"get {rid(9)} access.sudoAvailable").startswith("MISSING ")
     assert not counter.exists()
 
 
@@ -197,26 +236,18 @@ def test_failed_cmax_is_reported(tmp_path: Path) -> None:
     h, _ = make_helper(tmp_path, exit_code=3)
     h.handle("collect")
     wait_done(h)
-    assert h.handle("get status") == "failed 3"
-    assert h.handle("get access.sudoAvailable") == "ERROR cmax exited 3"
-    assert h.handle("collect") == "started"
+    assert h.handle(f"get {rid(1)} status") == "failed 3"
+    assert h.handle(f"get {rid(1)} access.sudoAvailable") == "ERROR cmax exited 3"
+    assert h.handle("collect") == f"started {rid(2)}"
 
 
 def test_get_times_out_while_the_audit_runs(tmp_path: Path) -> None:
     h, _ = make_helper(tmp_path, delay=2.0, get_wait_s=0.2)
     h.handle("collect")
-    assert h.handle("get access.sudoAvailable") == "TIMEOUT the audit is still running"
-
-
-def test_stale_report_is_collected_again(tmp_path: Path) -> None:
-    now = [1000.0]
-    h, counter = make_helper(tmp_path, clock=lambda: now[0])
-    h.handle("collect")
-    wait_done(h)
-    now[0] += helper_mod.FRESH_S + 1
-    assert h.handle("collect") == "started"
-    wait_done(h)
-    assert counter.read_text() == "xx"
+    assert (
+        h.handle(f"get {rid(1)} access.sudoAvailable")
+        == "TIMEOUT the audit is still running"
+    )
 
 
 def test_idle_after_timeout_and_never_while_running(tmp_path: Path) -> None:
@@ -236,7 +267,7 @@ def test_helper_writes_nothing_to_disk(tmp_path: Path) -> None:
     before = {p for p in tmp_path.rglob("*")}
     h.handle("collect")
     wait_done(h)
-    h.handle("get header")
+    h.handle(f"get {rid(1)} header")
     after = {p for p in tmp_path.rglob("*")}
     # Only the fake cmax's own run counter is new; the helper adds nothing.
     assert after - before == {counter}
@@ -273,11 +304,76 @@ class Server:
 
 
 def test_trigger_round_trip(tmp_path: Path) -> None:
+    """Outside a runner job directory every call collects on its own."""
     h, _ = make_helper(tmp_path)
     server = Server(h, os.getuid())
-    assert server.ask(["collect"]) == "started"
+    assert server.ask(["collect"]) == f"started {rid(1)}"
+    wait_done(h, rid(1))
     assert server.ask(["get", "software.perf.installed"]) == "FAIL observed=false"
     assert server.ask(["get", "header"]).startswith("Command: cmax audit;")
+
+
+def plugin_dir(base: Path, job: str, plugin: str) -> Path:
+    d = base / ("bitscan-j-" + job) / ("p-" + plugin)
+    d.mkdir(parents=True)
+    return d
+
+
+def test_one_audit_per_job_and_a_new_audit_per_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TS §3.8 (owner decision 2026-11-14): the plugins of one job share one
+    run, whichever starts first; the next job (a new scan) starts a new one."""
+    h, counter = make_helper(tmp_path)
+    server = Server(h, os.getuid())
+    jobs = tmp_path / "tmp"
+    monkeypatch.chdir(plugin_dir(jobs, "aaa", "1"))
+    assert server.ask(["get", "software.perf.installed"]) == "FAIL observed=false"
+    monkeypatch.chdir(plugin_dir(jobs, "aaa", "2"))
+    assert server.ask(["collect"]) == f"started {rid(1)}"  # the saved answer
+    assert server.ask(["get", "status"]).startswith("ok ")
+    assert (jobs / "bitscan-j-aaa" / "cmax-run").read_text() == f"started {rid(1)}\n"
+    assert counter.read_text() == "x"
+    monkeypatch.chdir(plugin_dir(jobs, "bbb", "1"))
+    assert server.ask(["collect"]) == f"started {rid(2)}"
+    wait_done(h, rid(2))
+    assert counter.read_text() == "xx"
+
+
+def test_parallel_plugins_of_one_job_start_one_audit(tmp_path: Path) -> None:
+    """Plugins run in parallel (max_parallel_plugins): the lock lets exactly
+    one of them send collect."""
+    h, counter = make_helper(tmp_path, delay=0.3)
+    server = Server(h, os.getuid())
+    dirs = [plugin_dir(tmp_path / "tmp", "ccc", str(n)) for n in range(8)]
+    script = str(HERE.parent / "src" / "cmax_trigger.py")
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-I", script, "get", "software.perf.installed"],
+            cwd=d,
+            env={"CMAX_TRIGGER_SOCKET": server.path},
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        for d in dirs
+    ]
+    outs = [p.communicate(timeout=30)[0].strip() for p in procs]
+    assert outs == ["FAIL observed=false"] * 8
+    assert counter.read_text() == "x"
+
+
+def test_a_failed_collect_is_not_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No helper: NOHELPER is printed and nothing is saved, so a later
+    plugin of the job tries again."""
+    monkeypatch.chdir(plugin_dir(tmp_path / "tmp", "ddd", "1"))
+    monkeypatch.setenv("CMAX_TRIGGER_SOCKET", str(tmp_path / "absent.sock"))
+    out = io.StringIO()
+    with redirect_stdout(out):
+        assert cmax_trigger.main(["get", "header"]) == 0
+    assert out.getvalue().startswith("NOHELPER ")
+    assert not (tmp_path / "tmp" / "bitscan-j-ddd" / "cmax-run").exists()
 
 
 def test_other_uid_is_refused(tmp_path: Path) -> None:
