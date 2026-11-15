@@ -32,8 +32,8 @@ PASSING = r"^(PASS|n/a)( |$)"
 
 POLICY_DESCRIPTION = (
     "The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y). "
-    "Needs the clustermax-collector package on the host (Technical Specification 3.8); "
-    "without it every plugin prints NOHELPER and fails. Every scan runs a fresh audit: the first "
+    "Uses the ClusterMAX collector that the bitscan-agent package installs and turns on "
+    "(Technical Specification 3.8); where root turned it off, every plugin prints NOHELPER and fails. Every scan runs a fresh audit: the first "
     "plugin of the scan's job on a host starts one root ClusterMAX audit through cmax-helper, and "
     "every plugin of that job reads its own line from that audit's report, which is kept only in "
     "the helper's memory. ClusterMAX PASS and SKIPPED (printed as n/a) "

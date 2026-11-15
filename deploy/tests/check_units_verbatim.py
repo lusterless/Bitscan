@@ -46,6 +46,12 @@ MANAGER: dict[str, tuple[int, int]] = {
     "bitscan-manager-maintain.service": (1552, 1580),
     "bitscan-manager-maintain.timer": (1582, 1593),
 }
+# The ClusterMAX collector units (TS §3.8), shipped in bitscan-agent since the
+# owner decision of 2026-11-15; their files are in collector/systemd/.
+CMAX: dict[str, tuple[int, int]] = {
+    "cmax-helper.socket": (549, 563),
+    "cmax-helper.service": (565, 584),
+}
 # D-Bus policy (TS §3.7): ```xml fence at L422, closing fence at L441
 DBUS: dict[str, tuple[int, int]] = {
     "bitscan-runner.conf": (422, 441),
@@ -163,6 +169,11 @@ def main() -> int:
     for name, (start, end) in units.items():
         want = apply_deviation(name, spec_block(spec_lines, start, end))
         failures += check_file(unit_dir / name, name, want, start, end, unit=True)
+    cmax = CMAX if args.which in ("agent", "all") else {}
+    cmax_dir = root / "collector" / "systemd"
+    for name, (start, end) in cmax.items():
+        want = spec_block(spec_lines, start, end)
+        failures += check_file(cmax_dir / name, name, want, start, end, unit=True)
     for name, (start, end) in policies.items():
         want = spec_block(spec_lines, start, end, b"xml")
         failures += check_file(dbus_dir / name, name, want, start, end, unit=False)
@@ -171,7 +182,9 @@ def main() -> int:
         failures += exact_set(unit_dir, set(units), "deploy/systemd")
     if policies:
         failures += exact_set(dbus_dir, set(policies), "deploy/dbus")
-    total = len(units) + len(policies)
+    if cmax:
+        failures += exact_set(cmax_dir, set(cmax), "collector/systemd")
+    total = len(units) + len(cmax) + len(policies)
     print("FAIL" if failures else "OK", f"{total} files checked, {failures} problems")
     return 1 if failures else 0
 

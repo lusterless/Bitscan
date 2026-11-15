@@ -67,6 +67,9 @@ VERSION=$(dpkg-parsechangelog -l "$ROOT/deploy/debian/changelog" -S Version 2>/d
 DEBNAME=bitscan-agent_${VERSION}_amd64.deb
 BINS="bitscan-agent bitscan-runner bitscan-capread"
 UNITS="bitscan-agent.service bitscan-runner.socket bitscan-runner.service bitscan-capread.socket bitscan-capread.service"
+# The ClusterMAX collector in the agent package (TS 3.1, 3.8; owner decision
+# 2026-11-15): its units come verbatim from collector/systemd/.
+CMAX_UNITS="cmax-helper.socket cmax-helper.service"
 
 build_once() { # build_once N -> $W/b$N/out (fresh copy at a distinct path, own Go caches)
     local n=$1
@@ -143,10 +146,15 @@ sub_contents() {
     dpkg-deb -c "$DEB" >"$W/list.txt"
     # non-directory entries: mode owner path
     local got want
-    got=$(awk '$1 !~ /^d/ {print $1, $2, $6}' "$W/list.txt" | sort)
+    # ClusterMAX itself (./usr/lib/clustermax/) is checked on its own below.
+    got=$(awk '$1 !~ /^d/ && $6 !~ /^\.\/usr\/lib\/clustermax\// {print $1, $2, $6}' "$W/list.txt" | sort)
     want=$( {
         for b in $BINS; do echo "-rwxr-xr-x root/root ./usr/sbin/$b"; done
-        for u in $UNITS; do echo "-rw-r--r-- root/root ./lib/systemd/system/$u"; done
+        for u in $UNITS $CMAX_UNITS; do echo "-rw-r--r-- root/root ./lib/systemd/system/$u"; done
+        echo "-rwxr-xr-x root/root ./usr/sbin/cmax-helper"
+        echo "-rwxr-xr-x root/root ./usr/bin/cmax-trigger"
+        echo "-rw-r--r-- root/root ./usr/share/doc/bitscan-agent/LICENSE.clustermax.gz"
+        echo "-rw-r--r-- root/root ./usr/share/doc/bitscan-agent/clustermax-SOURCE"
         echo "-rw-r--r-- root/root ./etc/dbus-1/system.d/bitscan-runner.conf"
         echo "-rw-r--r-- root/root ./usr/share/doc/bitscan-agent/changelog.Debian.gz"
         echo "-rw-r--r-- root/root ./usr/share/doc/bitscan-agent/copyright"
@@ -154,6 +162,13 @@ sub_contents() {
     } | sort)
     [ "$got" = "$want" ]; ok $? "dpkg-deb -c lists exactly the REQ-106 files with these modes and owners"
     [ "$got" = "$want" ] || diff <(echo "$want") <(echo "$got") | sed 's/^/     | /'
+    local cm cmbad
+    cm=$(awk '$1 !~ /^d/ && $6 ~ /^\.\/usr\/lib\/clustermax\// {print $1, $2, $6}' "$W/list.txt")
+    cmbad=$(echo "$cm" | grep -Ev '^-rw(-r--r--|xr-xr-x) root/root ' | head -3)
+    [ -z "$cmbad" ]; ok $? "ClusterMAX files are root/root 0644 or 0755 ($cmbad)"
+    echo "$cm" | grep -qx -- '-rwxr-xr-x root/root ./usr/lib/clustermax/bin/cmax'; ok $? "ClusterMAX entry point ./usr/lib/clustermax/bin/cmax is 0755"
+    is "$(echo "$cm" | grep -c '^-rwxr-xr-x root/root ./usr/lib/clustermax/site/cmax/')" 28 "ClusterMAX keeps upstream's 28 executable check scripts"
+    grep -qx 'ClusterMAX 0.3.0 (https://github.com/lusterless/clustermax @ f849f4620ca9a703fab4a6544e55031929f9844e), Apache-2.0' "$W/x/usr/share/doc/bitscan-agent/clustermax-SOURCE"; ok $? "clustermax-SOURCE names the pinned commit"
     local dirs bad
     dirs=$(awk '$1 ~ /^d/ {print $1, $2, $6}' "$W/list.txt")
     bad=$(echo "$dirs" | grep -v '^drwxr-xr-x root/root ' | head -3)
@@ -161,12 +176,15 @@ sub_contents() {
     local extra
     extra=$(echo "$dirs" | awk '{print $3}' | while read -r d; do
         [ "$d" = ./ ] && continue
-        echo "$got" | awk '{print $3}' | grep -q "^${d}" || echo "$d"
+        awk '$1 !~ /^d/ {print $6}' "$W/list.txt" | grep -q "^${d}" || echo "$d"
     done)
     [ -z "$extra" ]; ok $? "no directory without a packaged file under it ($extra)"
     local u
     for u in $UNITS; do
         cmp -s "$W/x/lib/systemd/system/$u" "$ROOT/deploy/systemd/$u"; ok $? "$u in the .deb is byte-identical to deploy/systemd/$u"
+    done
+    for u in $CMAX_UNITS; do
+        cmp -s "$W/x/lib/systemd/system/$u" "$ROOT/collector/systemd/$u"; ok $? "$u in the .deb is byte-identical to collector/systemd/$u"
     done
     cmp -s "$W/x/etc/dbus-1/system.d/bitscan-runner.conf" "$ROOT/deploy/dbus/bitscan-runner.conf"; ok $? "the D-Bus policy in the .deb is byte-identical to deploy/dbus/"
     if [ -f "$ROOT/deploy/tests/check_units_verbatim.py" ] && [ -f "$ROOT/docs/spec/Technical_Specification.md" ]; then
@@ -189,6 +207,7 @@ sub_contents() {
     is "$(dpkg-deb -f "$DEB" Version)" "$VERSION" "Version (from debian/changelog)"
     is "$(dpkg-deb -f "$DEB" Architecture)" amd64 "Architecture"
     dpkg-deb -f "$DEB" Depends | grep -q '\badduser\b'; ok $? "Depends has adduser ($(dpkg-deb -f "$DEB" Depends))"
+    dpkg-deb -f "$DEB" Depends | grep -q 'python3 (>= 3.10)'; ok $? "Depends has python3 (>= 3.10) for the ClusterMAX collector"
     is "$(basename "$DEB")" "$DEBNAME" "file name bitscan-agent_<version>_amd64.deb"
 }
 

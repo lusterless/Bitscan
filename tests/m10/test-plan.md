@@ -358,7 +358,8 @@ Each row was defined from its criterion; `agent/test/sandbox/sandbox.py` impleme
 | CHK-M10-221 | REQ-255 (4): `bitscan-runner.service` inactive until the first job | none (package rows CHK-M10-308/309) |
 | CHK-M10-222 | #143: every `bits/samples/` plugin under the sandbox, except `clustermax-*.bit` (CHK-M10-224): no error, no timeout, no exit 126/127, normalised stdout equal to root's outside the sandbox | none at unit level (recorded) |
 | CHK-M10-223 | `clone3` under the verbatim unit: ENOSYS or not (fact for the owner) | none |
-| CHK-M10-224 | TS §3.8, owner decision 2026-11-14: every `clustermax-*.bit` plugin under the sandbox with `/usr/bin/cmax-trigger` and no `cmax-helper`: exit 0, no error, no timeout, stdout starts `NOHELPER ` (its output comes from the root helper, so CHK-M10-222's comparison with root does not apply) | `collector/tests/test_cmax_helper.py` (client without helper prints NOHELPER, exit 0) |
+| CHK-M10-224 | TS §3.8, owner decisions 2026-11-14 and 2026-11-15: every `clustermax-*.bit` plugin under the sandbox with `cmax-helper.socket` stopped for the job (as on a host where root turned it off): exit 0, no error, no timeout, stdout starts `NOHELPER ` | `collector/tests/test_cmax_helper.py` (client without helper prints NOHELPER, exit 0) |
+| CHK-M10-225 | TS §3.1, §3.8, owner decision 2026-11-15: `cmax-helper.socket` enabled and active after the package install; every `clustermax-*.bit` plugin under the sandbox runs one real ClusterMAX 0.3.0 audit as installed: collect `started\|running <run-id>`, header `Command: cmax audit; …`, status `ok <age> 0.3.0`, every check a ClusterMAX verdict line; exit 0, no error, no timeout | `collector/tests/test_cmax_helper.py` (one audit per job, fresh audit per job) |
 
 ## TP-M10-21 Runner security suite (REQ-261; G78)
 

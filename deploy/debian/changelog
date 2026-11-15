@@ -11,12 +11,20 @@ bitscan-agent (0.5.0-1) unstable; urgency=medium
     directory /tmp/bitscan-j-<random>. The end of a job cleans only that
     job; the full cleanup of the runner's cgroups and of its private /tmp
     and /var/tmp runs when no job runs.
-  * The heartbeat reports "cmax" in runner_helpers while the optional
-    ClusterMAX collector socket /run/clustermax/collect.sock exists. The
-    agent never connects to it.
+  * The package now includes the ClusterMAX collector: cmax-helper, the
+    cmax-trigger client and ClusterMAX 0.3.0 (Apache-2.0) under
+    /usr/lib/clustermax, and depends on python3 (>= 3.10). postinst turns on
+    cmax-helper.socket on every host; a scan of the ClusterMAX policy then
+    runs "cmax audit -vvv -y" as root on the targeted host, once per scan,
+    with the report held only in memory. A root user can turn it off with
+    "systemctl disable --now cmax-helper.socket"; upgrades keep it off.
+  * The heartbeat reports "cmax" in runner_helpers while the collector
+    socket /run/clustermax/collect.sock exists. The agent never connects
+    to it.
   * New installs write max_parallel_jobs: 2 to agent.yaml. An upgraded host
     keeps its agent.yaml; without the key the agent uses 2.
-  * The units are unchanged.
+  * The agent and runner units are unchanged; cmax-helper.socket and
+    cmax-helper.service are new.
   * Supported with manager 0.5.0 and manager 0.4.1. Manager 0.5.0 supports
     agents 0.5.0-1 and 0.4.1-1.
   * Upgrades 0.4.1-1 and 0.4.0-1 in place and keeps their configuration,

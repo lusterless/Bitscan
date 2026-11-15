@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Policy formatVersion="1.0">
   <PolicyName>ClusterMAX 0.3.0 audit checks</PolicyName>
-  <PolicyDescription>The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y). Needs the clustermax-collector package on the host (Technical Specification 3.8); without it every plugin prints NOHELPER and fails. Every scan runs a fresh audit: the first plugin of the scan's job on a host starts one root ClusterMAX audit through cmax-helper, and every plugin of that job reads its own line from that audit's report, which is kept only in the helper's memory. ClusterMAX PASS and SKIPPED (printed as n/a) pass; WARNING and FAIL fail. With -y, ClusterMAX auto-detects standalone, Slurm or Kubernetes on each targeted host, so target only the hosts that should run it, for example with a dedicated tag.</PolicyDescription>
+  <PolicyDescription>The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y). Uses the ClusterMAX collector that the bitscan-agent package installs and turns on (Technical Specification 3.8); where root turned it off, every plugin prints NOHELPER and fails. Every scan runs a fresh audit: the first plugin of the scan's job on a host starts one root ClusterMAX audit through cmax-helper, and every plugin of that job reads its own line from that audit's report, which is kept only in the helper's memory. ClusterMAX PASS and SKIPPED (printed as n/a) pass; WARNING and FAIL fail. With -y, ClusterMAX auto-detects standalone, Slurm or Kubernetes on each targeted host, so target only the hosts that should run it, for example with a dedicated tag.</PolicyDescription>
   <PolicyStatus>enabled</PolicyStatus>
   <Family>
     <FamilyName>Clustermax</FamilyName>

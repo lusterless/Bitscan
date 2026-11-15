@@ -1,8 +1,9 @@
 name: collector
 
-# TS §8.3 "Collector helper": the clustermax-collector package (TS §3.8) and
-# its policy, on every PR. Unit-level rows here; the runner-sandbox row is
-# CHK-M10-224 in sandbox.yml.
+# TS §8.3 "Collector helper": the ClusterMAX collector (TS §3.8), which the
+# bitscan-agent package ships (owner decision 2026-11-15), and its policy, on
+# every PR. Unit-level rows here; the package rows are in package.yml and the
+# runner-sandbox rows are CHK-M10-224 and -225 in sandbox.yml.
 
 on:
   pull_request:
@@ -62,16 +63,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Two builds are byte-identical
+      - name: Two stagings are identical
         run: |
-          collector/packaging/build-deb.sh "$RUNNER_TEMP/a"
-          collector/packaging/build-deb.sh "$RUNNER_TEMP/b"
-          cmp "$RUNNER_TEMP"/a/*.deb "$RUNNER_TEMP"/b/*.deb
+          collector/packaging/stage.sh "$RUNNER_TEMP/a"
+          collector/packaging/stage.sh "$RUNNER_TEMP/b"
+          list() { (cd "$1" && find . -printf '%M %p\n' | sort && find . -type f -print0 | sort -z | xargs -0 sha256sum); }
+          diff <(list "$RUNNER_TEMP/a") <(list "$RUNNER_TEMP/b")
 
       - name: The vendored ClusterMAX runs on the system Python and lists 81 checks
         run: |
-          root="$RUNNER_TEMP/root"
-          dpkg-deb -x "$RUNNER_TEMP"/a/*.deb "$root"
+          root="$RUNNER_TEMP/a"
           /usr/bin/python3 --version
           /usr/bin/python3 -I -c "import sys; sys.path.insert(0, '$root/usr/lib/clustermax/site'); from cmax.cli import main; sys.argv = ['cmax', '-v']; sys.exit(main())" | tee "$RUNNER_TEMP/version"
           grep -qx 'cmax 0.3.0' "$RUNNER_TEMP/version"
@@ -81,7 +82,7 @@ jobs:
 
       - name: systemd-analyze verify with the programs installed
         run: |
-          root="$RUNNER_TEMP/root"
+          root="$RUNNER_TEMP/a"
           sudo install -m 0755 "$root/usr/sbin/cmax-helper" /usr/sbin/cmax-helper
           sudo groupadd --system bitscan-runner || true
-          systemd-analyze verify "$root/usr/lib/systemd/system/cmax-helper.socket" "$root/usr/lib/systemd/system/cmax-helper.service"
+          systemd-analyze verify "$root/systemd/cmax-helper.socket" "$root/systemd/cmax-helper.service"

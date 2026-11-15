@@ -133,7 +133,7 @@ write_ca() { mkdir -p /etc/ssl; printf '%s
 ' "$TEST_CA_PEM" >"$1"; chmod 0644 "$1"; }
 newtok() { echo "bse_CANARY-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')AAAAAAAAAAAAAAAAAAAA"; }
 canary_of() { echo "$1" | grep -o 'CANARY-[0-9a-f]\{16\}'; }
-UNITS="bitscan-agent.service bitscan-runner.socket bitscan-runner.service bitscan-capread.socket bitscan-capread.service"
+UNITS="bitscan-agent.service bitscan-runner.socket bitscan-runner.service bitscan-capread.socket bitscan-capread.service cmax-helper.socket cmax-helper.service"
 
 st() { stat -c '%U:%G %a' "$1" 2>/dev/null || echo absent; }
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
@@ -331,6 +331,12 @@ sub_install() {
     is "$(enabled bitscan-runner.socket)" enabled "bitscan-runner.socket enabled"
     is "$(active bitscan-runner.socket)" active "bitscan-runner.socket active"
     [ "$(enabled bitscan-runner.service)" != enabled ]; ok $? "bitscan-runner.service not enabled (got $(enabled bitscan-runner.service))"
+    # TS 3.1, 3.8 (owner decision 2026-11-15): the ClusterMAX collector socket
+    # is on after install; its service starts only on a request.
+    is "$(enabled cmax-helper.socket)" enabled "cmax-helper.socket enabled"
+    is "$(active cmax-helper.socket)" active "cmax-helper.socket active"
+    is "$(st /run/clustermax/collect.sock)" "root:bitscan-runner 660" "collect.sock owner and mode (TS 3.8)"
+    [ "$(enabled cmax-helper.service)" != enabled ]; ok $? "cmax-helper.service not enabled (got $(enabled cmax-helper.service))"
     for u in bitscan-capread.socket bitscan-capread.service; do
         [ "$(enabled $u)" != enabled ]; ok $? "$u not enabled (got $(enabled $u))"
         [ "$(active $u)" != active ]; ok $? "$u not active (got $(active $u))"
@@ -542,6 +548,13 @@ sub_reinstall() {
         is "$(status)" "install ok installed" "reinstall $i: configured"
     done
     wait_active; is "$(active bitscan-agent.service)" active "agent active after the reinstalls"
+    # TS 3.8: a host where root turned the collector off keeps it off.
+    systemctl disable --now cmax-helper.socket >/dev/null 2>&1
+    timeout 300 setsid apt-get install -y --reinstall --no-install-recommends "$DEB" </dev/null >"$W/reinstall-off.log" 2>&1
+    is "$?" 0 "reinstall with cmax-helper.socket turned off exits 0"
+    is "$(enabled cmax-helper.socket)" disabled "cmax-helper.socket stays disabled after the reinstall"
+    [ "$(active cmax-helper.socket)" != active ]; ok $? "cmax-helper.socket stays stopped after the reinstall"
+    systemctl enable --now cmax-helper.socket >/dev/null 2>&1
     for i in 1 2; do
         timeout 120 dpkg-reconfigure bitscan-agent </dev/null >"$W/reconf$i.log" 2>&1
         is "$?" 0 "dpkg-reconfigure $i without a new token exits 0"
@@ -573,6 +586,7 @@ sub_upgrade() {
         wait_active
         local inv1; inv1=$(inv)
         [ -n "$inv1" ] && [ "$inv1" != "$inv0" ]; ok $? "upgrade $i: bitscan-agent.service restarted (new InvocationID)"
+        is "$(active cmax-helper.socket)" active "upgrade $i: cmax-helper.socket active"
         is "$(active bitscan-runner.socket)" active "upgrade $i: runner socket active"
         ! grep -q '^bitscan-agent: ' "$W/upgrade$i.log"; ok $? "upgrade $i: no bitscan-agent error line"
     done

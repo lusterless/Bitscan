@@ -37,3 +37,16 @@ bitscan-agent: dbus-policy-without-send-destination <policy user="bitscan-runner
 bitscan-agent: dbus-policy-without-send-destination <policy user="bitscan-runner"><allow send_interface="org.freedesktop.DBus.Properties" send_member="Get"/> [etc/dbus-1/system.d/bitscan-runner.conf:3]
 bitscan-agent: dbus-policy-without-send-destination <policy user="bitscan-runner"><allow send_interface="org.freedesktop.DBus.Properties" send_member="GetAll"/> [etc/dbus-1/system.d/bitscan-runner.conf:4]
 bitscan-agent: dbus-policy-without-send-destination <policy user="bitscan-runner"><allow send_interface="org.freedesktop.DBus.Introspectable"/> [etc/dbus-1/system.d/bitscan-runner.conf:5]
+
+# The ClusterMAX collector (TS 3.1, 3.8; owner decision 2026-11-15) runs only
+# through its systemd socket and from plugins; the agent install runbook
+# documents both.
+bitscan-agent: no-manual-page [usr/sbin/cmax-helper]
+bitscan-agent: no-manual-page [usr/bin/cmax-trigger]
+
+# Upstream ClusterMAX (pinned commit) keeps these file modes, and its own
+# scripts feed the files to the interpreter ("bash -s <", "bash FILE",
+# "python3 FILE"), so the modes do not matter; the files are not changed.
+bitscan-agent: script-not-executable [usr/lib/clustermax/site/cmax/scripts/1-audit/pwnescape-host-facts.sh]
+bitscan-agent: script-not-executable [usr/lib/clustermax/site/cmax/scripts/1-audit/k8s-control.sh]
+bitscan-agent: executable-not-elf-or-script [usr/lib/clustermax/site/cmax/scripts/1-audit/host_fleet.py]

@@ -5,7 +5,8 @@
 #
 # Usage: deploy/debian/build-deb.sh [OUT_DIR]     (default: dist/ in the repo)
 # Needs: the Go version of agent/go.mod, build-essential (dpkg-checkbuilddeps
-# requires it), dpkg-dev, debhelper (compat 13) and the Go module proxy. Unsigned (-us -uc): v1 has no signing or APT repository.
+# requires it), dpkg-dev, debhelper (compat 13), the Go module proxy, and git,
+# python3 with pip and network access for the ClusterMAX collector. Unsigned (-us -uc): v1 has no signing or APT repository.
 set -euo pipefail
 umask 022
 export LC_ALL=C TZ=UTC
@@ -16,6 +17,9 @@ SBOM_MODULE=github.com/CycloneDX/cyclonedx-gomod
 SBOM_VERSION=v1.12.0
 SBOM_SUM=h1:OuFUYNhnjpju7RNArOVPPchFPWNobGfhrHODDPKcgZs=
 UNITS=(bitscan-agent.service bitscan-runner.socket bitscan-runner.service bitscan-capread.socket bitscan-capread.service)
+# The ClusterMAX collector (TS §3.1, §3.8; owner decision 2026-11-15) is staged
+# by collector/packaging/stage.sh, which fetches ClusterMAX at its pinned
+# commit and its hash-pinned dependencies.
 DEBIAN_FILES=(control rules changelog copyright templates config postinst postrm bitscan-agent.install bitscan-agent.lintian-overrides)
 BINARIES=(bitscan-agent bitscan-runner bitscan-capread)
 
@@ -41,6 +45,9 @@ mkdir -p "$STAGE/bin" "$STAGE/debian/source" "$STAGE/debian/systemd" "$STAGE/deb
         -o "$STAGE/bin/" ./cmd/bitscan-agent ./cmd/bitscan-runner ./cmd/bitscan-capread
 )
 
+# 1b. The ClusterMAX collector files (TS §3.8).
+collector/packaging/stage.sh "$STAGE/clustermax"
+
 # 2. SBOM tool, pinned by version and by its module checksum.
 sum=$(cd "$WORK" && GOFLAGS= go mod download -json "$SBOM_MODULE@$SBOM_VERSION" |
     grep -o '"Sum": "[^"]*"' | cut -d'"' -f4)
@@ -62,6 +69,7 @@ cp deploy/dbus/bitscan-runner.conf "$STAGE/debian/dbus/bitscan-runner.conf"
 # Fixed modes, whatever the source tree carries: Git on Windows keeps no
 # executable bit (TASK-092 carry-over), and a tree where every file is
 # executable makes dh_install run bitscan-agent.install as a program.
+cp "$STAGE"/clustermax/systemd/cmax-helper.socket "$STAGE"/clustermax/systemd/cmax-helper.service "$STAGE/debian/systemd/"
 find "$STAGE/debian" -type f -exec chmod 0644 {} +
 chmod 0755 "$STAGE/debian/rules" "$STAGE/debian/config" "$STAGE/debian/postinst" "$STAGE/debian/postrm"
 

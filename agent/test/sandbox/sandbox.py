@@ -1002,7 +1002,7 @@ def r344(ctx: Ctx) -> tuple[str, str]:
                     ("tail %r" % so[-12:], so.endswith("[REDAC") or "[REDACTED]" in so[-16:] or so.rstrip("a") == "")])
 
 
-@row("CHK-M10-222", "every bits/samples plugin under the sandbox: no error, timeout or 126/127; stdout equal to root's outside (#143); clustermax-*.bit is CHK-M10-224")
+@row("CHK-M10-222", "every bits/samples plugin under the sandbox: no error, timeout or 126/127; stdout equal to root's outside (#143); clustermax-*.bit is CHK-M10-224 and -225")
 def r222(ctx: Ctx) -> tuple[str, str]:
     sdir = getattr(ctx, "samples", None)
     if not sdir or not os.path.isdir(sdir):
@@ -1087,8 +1087,8 @@ def sample_plugins(files: list[Path]) -> list[tuple[str, str, int]]:
     return out
 
 
-@row("CHK-M10-224", "every clustermax-*.bit plugin under the sandbox with cmax-trigger and no cmax-helper: exit 0, no error or timeout, stdout NOHELPER (TS §3.8)")
-def r224(ctx: Ctx) -> tuple[str, str]:
+def clustermax_job(ctx: Ctx) -> tuple[list[tuple[str, str, int]], dict] | tuple[str, str]:
+    """The clustermax-*.bit plugins run as one job, or a NOT RUN verdict."""
     sdir = getattr(ctx, "samples", None)
     if not sdir or not os.path.isdir(sdir):
         return ("NOT RUN", "no samples directory given (--samples)")
@@ -1099,27 +1099,67 @@ def r224(ctx: Ctx) -> tuple[str, str]:
     files = sample_files(sdir, clustermax=True)
     if not files:
         return ("NOT RUN", "no %s in %s" % (CLUSTERMAX_GLOB, sdir))
-    if os.path.exists(CMAX_SOCKET):
-        return ("NOT RUN", "cmax-helper is installed on this host (%s exists); this row needs a host without it" % CMAX_SOCKET)
-    client = Path(sdir).resolve().parents[1] / "collector" / "src" / "cmax_trigger.py"
-    installed = not os.path.exists(CMAX_TRIGGER)
-    if installed:
-        shutil.copyfile(client, CMAX_TRIGGER)
-        os.chmod(CMAX_TRIGGER, 0o755)
+    if not os.path.exists(CMAX_TRIGGER):
+        return ("NOT RUN", "%s is not installed: the bitscan-agent package ships it (TS 3.1, 3.8)" % CMAX_TRIGGER)
+    plugins = sample_plugins(files)
+    return plugins, run_job(ctx, [plugin(e, t) for _, e, t in plugins], mpp=4, timeout=1800)
+
+
+@row("CHK-M10-224", "clustermax-*.bit under the sandbox with cmax-helper.socket stopped: every plugin exits 0, no error or timeout, stdout NOHELPER (TS §3.8)")
+def r224(ctx: Ctx) -> tuple[str, str]:
+    # The package installs the helper on (owner decision 2026-11-15); this row
+    # stops it for the job and starts it again, as a host where root turned
+    # it off would see.
+    stop = subprocess.run(["systemctl", "stop", "cmax-helper.socket", "cmax-helper.service"],
+                          capture_output=True, text=True)
     try:
-        plugins = sample_plugins(files)
-        res = run_job(ctx, [plugin(e, t) for _, e, t in plugins], mpp=4, timeout=1800)
+        got = clustermax_job(ctx)
     finally:
-        if installed:
-            os.unlink(CMAX_TRIGGER)
+        subprocess.run(["systemctl", "start", "cmax-helper.socket"], capture_output=True, text=True)
+    if isinstance(got[0], str):
+        return got  # type: ignore[return-value]
+    plugins, res = got  # type: ignore[misc]
     bad = []
     for (name, _ex, _to), it in zip(plugins, res["results"]):
         it = it or {}
         out = norm(it.get("stdout", ""))
         if it.get("error") or it.get("timed_out") or it.get("exit_code") != 0 or not out.startswith("NOHELPER "):
             bad.append("%s: exit %s timed_out %s error %s stdout %r" % (name, it.get("exit_code"), it.get("timed_out"), it.get("error"), mask(out)[:120]))
-    return verdict([("job done", ok_job(res, len(plugins))), ("%d plugins print NOHELPER with exit 0" % len(plugins), not bad)],
-                   "files %s; failing %s" % ([f.name for f in files], bad[:5]))
+    return verdict([("socket stopped (rc %d)" % stop.returncode, stop.returncode == 0),
+                    ("job done", ok_job(res, len(plugins))),
+                    ("%d plugins print NOHELPER with exit 0" % len(plugins), not bad)],
+                   "failing %s" % bad[:5])
+
+
+@row("CHK-M10-225", "clustermax-*.bit under the sandbox with cmax-helper on, as installed: one real ClusterMAX 0.3.0 audit; collect, header, status and every check line as the policy expects (TS §3.1, §3.8)")
+def r225(ctx: Ctx) -> tuple[str, str]:
+    active = subprocess.run(["systemctl", "is-active", "cmax-helper.socket"], capture_output=True, text=True).stdout.strip()
+    enabled = subprocess.run(["systemctl", "is-enabled", "cmax-helper.socket"], capture_output=True, text=True).stdout.strip()
+    got = clustermax_job(ctx)
+    if isinstance(got[0], str):
+        return got  # type: ignore[return-value]
+    plugins, res = got  # type: ignore[misc]
+    want = {
+        "collect": re.compile(r"^(started|running) [0-9a-f]{32}$"),
+        "header": re.compile(r"^Command: cmax audit; "),
+        "status": re.compile(r"^ok [0-9]+ 0\.3\.0$"),
+    }
+    verdict_line = re.compile(r"^(PASS|FAIL|WARNING|n/a)( |$)")
+    bad, counts = [], {}
+    for (name, _ex, _to), it in zip(plugins, res["results"]):
+        it = it or {}
+        out = norm(it.get("stdout", ""))
+        kind = name.split(" - ")[1] if " - " in name else name
+        rx = want.get(kind, verdict_line)
+        word = out.split(" ", 1)[0] if out else ""
+        if kind not in want:
+            counts[word] = counts.get(word, 0) + 1
+        if it.get("error") or it.get("timed_out") or it.get("exit_code") != 0 or not rx.search(out):
+            bad.append("%s: exit %s timed_out %s error %s stdout %r" % (name, it.get("exit_code"), it.get("timed_out"), it.get("error"), mask(out)[:120]))
+    return verdict([("cmax-helper.socket enabled and active after install (%s, %s)" % (enabled, active), enabled == "enabled" and active == "active"),
+                    ("job done", ok_job(res, len(plugins))),
+                    ("%d plugins print the expected collect, header, status and verdict lines" % len(plugins), not bad)],
+                   "check verdicts %s; failing %s" % (counts, bad[:5]))
 
 
 def norm(s: str) -> str:

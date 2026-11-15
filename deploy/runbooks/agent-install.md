@@ -2,7 +2,7 @@
 
 The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-runner`, and the optional `bitscan-capread` helper (installed but disabled). The agent opens every connection to the manager; the host needs no inbound port.
 
-**Release 0.5.0** (package `0.5.0-1`, git tag `v0.5.0`) runs compliance jobs of different policies at the same time, at most `max_parallel_jobs` at once (default 2), and reports the optional ClusterMAX collector helper as `cmax` (section 9). **Release 0.4.1** (package `0.4.1-1`, git tag `v0.4.1`) keeps checks from taking the tasks the runner needs on hosts with many CPUs (section 9). **Release 0.4.0** (package `0.4.0-1`, git tag `v0.4.0`) adds the `apparmor_profiles` request to the optional `bitscan-capread` helper (section 10). **Release 0.3.0** (package `0.3.0-1`, git tag `v0.3.0`) has the same agent code as 0.2.0; it is versioned with manager 0.3.0, which keeps web UI users signed in across a reload. **Release 0.2.0** (package `0.2.0-1`, git tag `v0.2.0`) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list) work as in 0.1.0. Sections 9 to 11 cover the runner, the optional helper and the spool.
+**Release 0.5.0** (package `0.5.0-1`, git tag `v0.5.0`) runs compliance jobs of different policies at the same time, at most `max_parallel_jobs` at once (default 2), and installs the ClusterMAX collector, on by default, which runs the ClusterMAX audit as root when a ClusterMAX scan targets the host (section 10). **Release 0.4.1** (package `0.4.1-1`, git tag `v0.4.1`) keeps checks from taking the tasks the runner needs on hosts with many CPUs (section 9). **Release 0.4.0** (package `0.4.0-1`, git tag `v0.4.0`) adds the `apparmor_profiles` request to the optional `bitscan-capread` helper (section 10). **Release 0.3.0** (package `0.3.0-1`, git tag `v0.3.0`) has the same agent code as 0.2.0; it is versioned with manager 0.3.0, which keeps web UI users signed in across a reload. **Release 0.2.0** (package `0.2.0-1`, git tag `v0.2.0`) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list) work as in 0.1.0. Sections 9 to 11 cover the runner, the optional helper and the spool.
 
 **Release 0.1.0** (package `0.1.0-1`) was the first supported release: enrolment, heartbeat, job pull and the mandatory inventory, with no compliance scans. Its runner and helper are installed but idle, no check command runs, and it reports every check of a compliance job as `runner_unavailable`. The pre-release builds (`0.1.0~preN-1` and `0.2.0~preN-1`) are not supported; upgrade them as in section 6.
 
@@ -280,6 +280,18 @@ ls /run/bitscan/capread.sock
 ```
 
 Stopping the socket also stops the helper and removes the socket file, so `ls` reports `No such file or directory`. The next heartbeat reports `[]`, with another alert.
+
+**The ClusterMAX collector (0.5.0, TS §3.8).** The package also installs `cmax-helper`, `cmax-trigger` and ClusterMAX 0.3.0 under `/usr/lib/clustermax/`, and turns on `cmax-helper.socket` (`/run/clustermax/collect.sock`, `root:bitscan-runner` 0660). When a scan of the ClusterMAX profile reaches the host, the helper runs `cmax audit -vvv -y` as root, once per scan, and keeps the report only in memory. With `-y`, ClusterMAX auto-detects standalone, Slurm or Kubernetes: on a Slurm or Kubernetes node it also starts `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace. Target the profile with a dedicated tag. The heartbeat reports `cmax` among the host's helpers while the socket exists. To check it, or to turn it off on a host (an upgrade keeps it off):
+
+```sh
+systemctl is-enabled cmax-helper.socket
+```
+
+```sh
+sudo systemctl disable --now cmax-helper.socket
+```
+
+With the helper off, every check of the ClusterMAX profile on that host prints `NOHELPER` and fails; other profiles are not affected. `sudo systemctl enable --now cmax-helper.socket` turns it on again.
 
 ## 11. The result spool
 
