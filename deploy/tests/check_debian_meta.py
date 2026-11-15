@@ -10,10 +10,12 @@ be published), PD-42 (M10: builds are versioned 0.2.0~pre1-1; decisions
 Checks:
 - rules: dh_installsystemd is called so that bitscan-agent.service and
   bitscan-runner.socket are enabled, started and restarted on upgrade (no
-  flags), bitscan-runner.service gets exactly --no-enable, and both capread
-  units get exactly --no-enable --no-start; each of the five units is named
+  flags), bitscan-runner.service gets exactly --no-enable, both capread
+  units get exactly --no-enable --no-start, cmax-helper.socket is enabled and
+  started (no flags) and cmax-helper.service gets exactly --no-enable (TS §3.8,
+  owner decision 2026-11-15); each of the seven units is named
   exactly once and no call without unit names exists.
-- rules: the five agent units are installed from debian/systemd/ with
+- rules: the seven agent units are installed from debian/systemd/ with
   mode 0644, unchanged (install -m 0644, no sed or cat).
 - control: source and package bitscan-agent, Architecture amd64 only,
   debhelper-compat (= 13), Rules-Requires-Root: no, Depends with adduser and
@@ -28,8 +30,10 @@ Checks:
 - copyright: DEP-5 1.0; every Files stanza has Copyright and License; every
   short licence name has its text (inline or a standalone License stanza).
 - bitscan-agent.install (TASK-096, CHK-M4-122): exactly the three binaries to
-  /usr/sbin and the D-Bus policy (from the verbatim dbus/ copy) to
-  /etc/dbus-1/system.d (TS §3.1 L158, L161); no globs.
+  /usr/sbin, the D-Bus policy (from the verbatim dbus/ copy) to
+  /etc/dbus-1/system.d (TS §3.1 L158, L161), and the ClusterMAX collector
+  (/usr/lib/clustermax, cmax-helper, cmax-trigger and its two doc files;
+  TS §3.8); no globs.
 - source/format: one line, 3.0 (native) or 3.0 (quilt) (PD-26).
 - no "arm64" anywhere in deploy/debian or deploy/dbus.
 """
@@ -51,6 +55,9 @@ UNITS = (
     "bitscan-runner.service",
     "bitscan-capread.socket",
     "bitscan-capread.service",
+    # The ClusterMAX collector (TS §3.1, §3.8; owner decision 2026-11-15).
+    "cmax-helper.socket",
+    "cmax-helper.service",
 )
 # TS §3.1 L159: the flag set each unit must get from dh_installsystemd
 EXPECTED_FLAGS: dict[str, frozenset[str]] = {
@@ -58,6 +65,9 @@ EXPECTED_FLAGS: dict[str, frozenset[str]] = {
     "bitscan-runner.socket": frozenset(),
     "bitscan-runner.service": frozenset({"--no-enable"}),
     "bitscan-capread.socket": frozenset({"--no-enable", "--no-start"}),
+    # On for every host; the service is started by its socket (TS §3.8).
+    "cmax-helper.socket": frozenset(),
+    "cmax-helper.service": frozenset({"--no-enable"}),
     "bitscan-capread.service": frozenset({"--no-enable", "--no-start"}),
 }
 # PD-42: a release X.Y.Z-R, or a pre-release build X.Y.Z~preN-R (N, R >= 1).
@@ -345,6 +355,13 @@ INSTALL_MAP = {
     "bitscan-runner": "usr/sbin",
     "bitscan-capread": "usr/sbin",
     "bitscan-runner.conf": "etc/dbus-1/system.d",
+    # The ClusterMAX collector staged by collector/packaging/stage.sh
+    # (TS §3.1, §3.8; owner decision 2026-11-15).
+    "clustermax": "usr/lib",
+    "cmax-helper": "usr/sbin",
+    "cmax-trigger": "usr/bin",
+    "LICENSE.clustermax": "usr/share/doc/bitscan-agent",
+    "clustermax-SOURCE": "usr/share/doc/bitscan-agent",
 }
 
 
@@ -371,7 +388,7 @@ def check_install(debian: Path, r: Report) -> None:
     names = sorted(src.rsplit("/", 1)[-1] for src, _ in entries)
     r.ok(
         names == sorted(INSTALL_MAP),
-        f"install: exactly the three binaries and the D-Bus policy (got {names})",
+        f"install: exactly the three binaries, the D-Bus policy and the ClusterMAX collector (got {names})",
     )
     for src, dest in entries:
         base = src.rsplit("/", 1)[-1]
