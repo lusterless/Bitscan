@@ -8,7 +8,7 @@ Rules-Requires-Root: no
 
 Package: bitscan-agent
 Architecture: amd64
-Depends: adduser, ${misc:Depends}
+Depends: adduser, python3 (>= 3.10), ${misc:Depends}
 Description: Bitscan inventory and compliance agent
  Pull-only agent for the Bitscan manager. It enrols with an enrolment
  token, sends a heartbeat, pulls the jobs addressed to its host over TLS
@@ -20,3 +20,10 @@ Description: Bitscan inventory and compliance agent
  the optional bitscan-capread helper, which is installed disabled. The
  runner returns the output of each check redacted on the host, and the
  helper stays off until an administrator enables it on the host.
+ .
+ It also holds the ClusterMAX collector: cmax-helper, which runs the one
+ fixed audit "cmax audit -vvv -y" as root when the runner asks over
+ /run/clustermax/collect.sock and keeps the report only in memory, the
+ cmax-trigger client, and ClusterMAX 0.3.0 (Apache-2.0) under
+ /usr/lib/clustermax. Its socket is on after install; a root user can
+ turn it off with "systemctl disable --now cmax-helper.socket".

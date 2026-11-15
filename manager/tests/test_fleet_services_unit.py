@@ -106,9 +106,16 @@ def test_heartbeat_answers_only_the_current_configuration() -> None:
     w = BeatWorld()
     w.settings.values |= {"job_pull_seconds": 120, "max_parallel_plugins": 4}
     out = w.beat(version="1.2.0")
-    assert out == hb_mod.HeartbeatAnswer(120, 4, NOW)
+    # 1.2.0 is 0.5.0 or later, so max_parallel_jobs is sent (TS §6.5).
+    assert out == hb_mod.HeartbeatAnswer(120, 4, NOW, 2)
     assert w.agents.recorded == [(w.row.agent_id, NOW, "1.2.0", [])]
     assert w.audit.alerts == [] and w.audit.entries == []
+
+
+def test_heartbeat_to_an_agent_before_0_5_0_has_no_max_parallel_jobs() -> None:
+    """Owner decision 2026-11-14: agents 0.3.0 to 0.4.1 refuse an unknown key."""
+    w = BeatWorld()
+    assert w.beat(version="0.4.1-1").max_parallel_jobs is None
 
 
 def test_a_helper_change_alerts_with_old_and_new() -> None:

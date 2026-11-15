@@ -262,10 +262,12 @@ jobs:
           x="$RUNNER_TEMP/x"
           dpkg-deb -x "$RUNNER_TEMP"/deb/bitscan-agent_*_amd64.deb "$x"
           sudo install -m 0755 "$x/usr/sbin/bitscan-agent" "$x/usr/sbin/bitscan-runner" \
-            "$x/usr/sbin/bitscan-capread" /usr/sbin/
+            "$x/usr/sbin/bitscan-capread" "$x/usr/sbin/cmax-helper" /usr/sbin/
+          sudo groupadd --system bitscan-runner || true
           mapfile -t units < <(find "$x" -path '*/systemd/system/*' -type f | sort)
-          if [ "${#units[@]}" -ne 5 ]; then
-            printf 'want the 5 agent units in the .deb, found %s:\n' "${#units[@]}"
+          # 5 agent units and the 2 ClusterMAX collector units (TS 3.8).
+          if [ "${#units[@]}" -ne 7 ]; then
+            printf 'want the 7 agent units in the .deb, found %s:\n' "${#units[@]}"
             printf '%s\n' "${units[@]}"
             exit 1
           fi
@@ -273,7 +275,7 @@ jobs:
           # (22.04) has no --recursive-errors=no and also reports on the
           # runner's own units (snapd, netplan). A line that names only a unit
           # outside the .deb is printed and ignored; any line naming one of
-          # our 5 units or a path under $x, or naming no unit, still fails.
+          # our 7 units or a path under $x, or naming no unit, still fails.
           rc=0
           out="$(sudo systemd-analyze verify "${units[@]}" 2>&1)" || rc=$?
           if [ "$rc" -ne 0 ]; then

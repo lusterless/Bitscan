@@ -15,6 +15,7 @@ the check needs no git history in CI.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -98,7 +99,15 @@ SCAN_ITEM = {
     "created_at",
     "finished_at",
 }
-HOST_JOB = {"job_id", "state", "retry_of", "dispatched_at", "started_at", "finished_at"}
+HOST_JOB = {
+    "job_id",
+    "state",
+    "retry_of",
+    "dispatched_at",
+    "started_at",
+    "finished_at",
+    "cancel_reason",  # owner decision 2026-11-14 (TS §4.4, §6.4)
+}
 HOST_SUMMARY = {
     "agent_id",
     "hostname",
@@ -141,6 +150,25 @@ REEVAL_ITEM = {
     "rows_added",
     "not_in_version",
 }
+
+
+# The one owner-approved change to a 6efe0fb component (decision 2026-11-14,
+# TS §6.5, §8.6): the max_parallel_jobs key in these three schemas. The pin
+# is checked with exactly that key taken out, so any other change still fails.
+PARALLEL_JOBS_SCHEMAS = ("HeartbeatResponse", "SettingsBody", "SettingsPatch")
+
+
+def without_parallel_jobs(schemas: dict[str, Any]) -> dict[str, Any]:
+    out = copy.deepcopy(schemas)
+    for name in PARALLEL_JOBS_SCHEMAS:
+        s = out[name]
+        assert "max_parallel_jobs" in s["properties"], name
+        del s["properties"]["max_parallel_jobs"]
+        if "max_parallel_jobs" in s.get("required", []):
+            s["required"].remove("max_parallel_jobs")
+        if "description" in s:
+            s["description"] = s["description"].replace("eight keys", "seven keys")
+    return out
 
 
 def digest(obj: Any) -> str:
@@ -383,7 +411,7 @@ def test_earlier_components_are_byte_identical(doc: dict[str, Any]) -> None:
     added = M11_SCHEMAS | SESSION_SCHEMAS
     old = {k: v for k, v in schemas.items() if k not in added}
     assert len(old) == BASE_SCHEMA_COUNT
-    assert digest(old) == BASE_SCHEMAS
+    assert digest(without_parallel_jobs(old)) == BASE_SCHEMAS
     assert set(schemas) & M11_SCHEMAS == M11_SCHEMAS
 
 

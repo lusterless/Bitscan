@@ -20,6 +20,7 @@ from typing import Any, Final, Protocol
 from uuid import UUID
 
 from bitscan_manager.repositories.agents import AgentRow
+from bitscan_manager.services.agents.versions import sends_parallel_jobs
 from bitscan_manager.services.settings.store import SettingsReader, read_settings
 
 log = logging.getLogger("bitscan_manager.agents")
@@ -67,6 +68,7 @@ class HeartbeatAnswer:
     job_pull_seconds: int
     max_parallel_plugins: int
     server_time: datetime
+    max_parallel_jobs: int | None  # None: the agent is older than 0.5.0
 
 
 class AgentGone(Exception):
@@ -114,4 +116,9 @@ def heartbeat(
     if beat.last_error is not None:  # #25 (a): logs only, at most 1,024 chars
         log.info("agent last_error", extra={"data": {"last_error": beat.last_error}})
     current = read_settings(settings)
-    return HeartbeatAnswer(current.job_pull_seconds, current.max_parallel_plugins, now)
+    parallel_jobs = (
+        current.max_parallel_jobs if sends_parallel_jobs(beat.agent_version) else None
+    )
+    return HeartbeatAnswer(
+        current.job_pull_seconds, current.max_parallel_plugins, now, parallel_jobs
+    )

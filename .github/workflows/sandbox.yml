@@ -18,6 +18,7 @@ on:
       - "deploy/dbus/**"
       - "deploy/debian/**"
       - "bits/samples/**"
+      - "collector/**"
       - ".github/workflows/sandbox.yml"
   push:
     paths:
@@ -26,6 +27,7 @@ on:
       - "deploy/dbus/**"
       - "deploy/debian/**"
       - "bits/samples/**"
+      - "collector/**"
       - ".github/workflows/sandbox.yml"
   workflow_dispatch:
     inputs:

@@ -42,10 +42,20 @@ function Fields({ rows }: { rows: readonly (readonly [string, string])[] }) {
   );
 }
 
+/** One job's state; a job not run because the policy was already running
+ * on the host says so (TS §4.4; owner decision 2026-11-14). */
+function jobText(job: HostJob): string {
+  return job.cancel_reason === "already_running"
+    ? "not run: already running on this host"
+    : job.state;
+}
+
 /** The unit's jobs, original first, then its retry (#145 (b)). */
 function jobsText(jobs: readonly HostJob[]): string {
   return jobs
-    .map((job) => (job.retry_of === null ? job.state : "retry " + job.state))
+    .map((job) =>
+      job.retry_of === null ? jobText(job) : "retry " + jobText(job),
+    )
     .join(", ");
 }
 

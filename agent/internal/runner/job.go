@@ -24,14 +24,20 @@ const captureGrace = time.Second
 
 // JobExecutor is the Executor of TASK-224 (plan TASK-215 §6).
 type JobExecutor struct {
-	CG    *Cgroups
-	Spawn func(*Plugin, string, func() time.Time) (*Spawned, error)
+	CG *Cgroups
+	// Spawn starts one plugin in its cgroup with a fresh working directory
+	// made inside the given job temp directory.
+	Spawn func(p *Plugin, jobDir, execute string, now func() time.Time) (*Spawned, error)
 	Now   func() time.Time
-	// TmpDirs are emptied after every job (#135 (c)): the runner's private
-	// /tmp and /var/tmp in production; never a shared directory.
+	// TmpDirs are emptied when no job runs (#135 (c); TS §3.5, owner
+	// decision 2026-11-14): the runner's private /tmp and /var/tmp in
+	// production; never a shared directory.
 	TmpDirs []string
-	Log     *slog.Logger
-	redMu   sync.Mutex // one plugin redacted at a time (#134 (h))
+	// JobTmp is where each job's temp directory bitscan-j-<random> is made;
+	// empty means /tmp.
+	JobTmp string
+	Log    *slog.Logger
+	redMu  sync.Mutex // one plugin redacted at a time (#134 (h))
 }
 
 // Run starts the plugins in payload order, at most MaxParallelPlugins at
@@ -45,6 +51,24 @@ func (e *JobExecutor) Run(ctx context.Context, req proto.Request, emit func(prot
 	plugins := req.Job.Plugins
 	var stopped atomic.Bool
 	started := 0
+	// The job's own cgroup and temp directory (TS §3.7): failing either,
+	// no plugin starts and all are reported runner_unavailable.
+	var job *Job
+	jobDir := ""
+	if err == nil {
+		if job, err = e.CG.NewJob(); err != nil {
+			e.Log.Error("runner: job cgroup not created")
+		}
+	}
+	if err == nil {
+		base := e.JobTmp
+		if base == "" {
+			base = tmpRoot
+		}
+		if jobDir, err = os.MkdirTemp(base, "bitscan-j-"); err != nil {
+			e.Log.Error("runner: job temp directory not created")
+		}
+	}
 	if err == nil {
 		sem := make(chan struct{}, req.MaxParallelPlugins)
 		var wg sync.WaitGroup
@@ -63,7 +87,7 @@ func (e *JobExecutor) Run(ctx context.Context, req proto.Request, emit func(prot
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
-				e.plugin(ctx, req.Job.JobID, set, p, &stopped, emit)
+				e.plugin(ctx, req.Job.JobID, job, jobDir, set, p, &stopped, emit)
 			}()
 		}
 		wg.Wait()
@@ -71,7 +95,7 @@ func (e *JobExecutor) Run(ctx context.Context, req proto.Request, emit func(prot
 	for _, p := range plugins[started:] {
 		e.unavailable(ctx, p.PluginUUID, emit)
 	}
-	return e.cleanup(ctx)
+	return e.cleanup(ctx, job, jobDir)
 }
 
 func (e *JobExecutor) unavailable(ctx context.Context, id wire.UUID, emit func(proto.Result) error) {
@@ -82,14 +106,14 @@ func (e *JobExecutor) unavailable(ctx context.Context, id wire.UUID, emit func(p
 
 // plugin runs one plugin: cgroup, start, capture, timeout, kill, wait empty,
 // remove, temp directory, then redaction and emit.
-func (e *JobExecutor) plugin(ctx context.Context, job wire.UUID, set *redact.Set, p wire.PluginSpec, stopped *atomic.Bool, emit func(proto.Result) error) {
-	cg, err := e.CG.NewPlugin()
+func (e *JobExecutor) plugin(ctx context.Context, job wire.UUID, jcg *Job, jobDir string, set *redact.Set, p wire.PluginSpec, stopped *atomic.Bool, emit func(proto.Result) error) {
+	cg, err := jcg.NewPlugin()
 	if err != nil {
 		stopped.Store(true)
 		e.unavailable(ctx, p.PluginUUID, emit)
 		return
 	}
-	s, err := e.Spawn(cg, p.Execute, e.Now)
+	s, err := e.Spawn(cg, jobDir, p.Execute, e.Now)
 	if errors.Is(err, ErrCgroup) {
 		stopped.Store(true)
 	}
@@ -192,9 +216,29 @@ func (e *JobExecutor) release(ctx context.Context, cg *Plugin) {
 	_ = cg.Remove()
 }
 
-// cleanup is the after-job step, also after a cancel: the subtree sweep,
-// then every entry of TmpDirs removed (#135 (c), #138 (a)).
-func (e *JobExecutor) cleanup(ctx context.Context) error {
+// cleanup is the after-job step, also after a cancel (TS §3.5, owner
+// decision 2026-11-14): the job's cgroup subtree and any stray process in
+// the runner's own cgroup or supervisor are killed, and the job's temp
+// directory is removed. Other running jobs are untouched; the full sweep
+// and the emptying of TmpDirs are Idle's.
+func (e *JobExecutor) cleanup(ctx context.Context, job *Job, jobDir string) error {
+	var errs []error
+	if job != nil {
+		errs = append(errs, job.JobSweep(context.WithoutCancel(ctx)))
+	}
+	if jobDir != "" {
+		errs = append(errs, RemoveTempDir(jobDir))
+	}
+	if err := errors.Join(errs...); err != nil {
+		e.Log.Error("runner: after-job cleanup failed")
+		return err
+	}
+	return nil
+}
+
+// Idle is the cleanup when no job runs (#135 (c), #138 (a)): the subtree
+// sweep, then every entry of TmpDirs removed.
+func (e *JobExecutor) Idle(ctx context.Context) error {
 	errs := []error{e.CG.Sweep(context.WithoutCancel(ctx))}
 	for _, dir := range e.TmpDirs {
 		entries, err := os.ReadDir(dir)
@@ -204,7 +248,7 @@ func (e *JobExecutor) cleanup(ctx context.Context) error {
 		}
 	}
 	if err := errors.Join(errs...); err != nil {
-		e.Log.Error("runner: after-job cleanup failed")
+		e.Log.Error("runner: idle cleanup failed")
 		return err
 	}
 	return nil

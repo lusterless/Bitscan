@@ -95,6 +95,9 @@ class HostJob(BaseModel):
     dispatched_at: UtcDatetime | None
     started_at: UtcDatetime | None
     finished_at: UtcDatetime | None
+    # TS §4.4, §6.4 (owner decision 2026-11-14): "already_running" when the
+    # job was not run because the same policy was running on the host.
+    cancel_reason: Literal["already_running"] | None
 
 
 class HostSummary(BaseModel):

@@ -46,6 +46,7 @@ NUMERIC = {
     "decommission_after_days": "7",
     "max_parallel_plugins": "2",
     "enrolment_alert_per_hour": "50",
+    "max_parallel_jobs": "2",  # m0007, owner decision 2026-11-14 (TS §8.6)
 }
 APP_RETENTION_ACL = {
     ("bitscan_app", "SELECT"),
@@ -93,7 +94,7 @@ def test_system_schedule_seeds(migrated_db: PgServer, app_conn: Conn) -> None:
 
 
 @pytest.mark.pg
-def test_setting_seeds_are_exactly_the_six_defaults(
+def test_setting_seeds_are_exactly_the_seven_defaults(
     migrated_db: PgServer, app_conn: Conn
 ) -> None:
     rows = {

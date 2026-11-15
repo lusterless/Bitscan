@@ -114,6 +114,7 @@ func run() int {
 		Log:                log,
 		JobPullSeconds:     cfg.JobPullSeconds,
 		MaxParallelPlugins: cfg.MaxParallelPlugins,
+		MaxParallelJobs:    cfg.MaxParallelJobs,
 		SpoolBytes:         spoolBytes,
 	})
 	inv := loops.NewInventory(r, inventory.CollectBody)

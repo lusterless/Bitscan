@@ -276,6 +276,7 @@ def test_scan_and_jobs_insert_in_one_statement_with_the_spec_payload(
         n = sq.insert_jobs(
             conn,
             scan_id=sid,
+            policy_id=pol.policy_id,
             agent_ids=agents,
             job_ids=jobs,
             created_at=created,
@@ -288,7 +289,7 @@ def test_scan_and_jobs_insert_in_one_statement_with_the_spec_payload(
         sts = statements(spy)
         monkeypatch.undo()
         conn.commit()
-    assert n == 3
+    assert n == sq.JobsInserted(queued=3, already_running=0)
     assert [s.split(None, 1)[0].upper() for s in sts] == ["INSERT"]
     with f.app(server) as conn:
         scan = f.scan_row(conn, sid)
@@ -364,6 +365,7 @@ def test_ten_thousand_jobs_are_still_one_insert(
         n = sq.insert_jobs(
             conn,
             scan_id=sid,
+            policy_id=pol.policy_id,
             agent_ids=agents,
             job_ids=jobs,
             created_at=f.T0,
@@ -381,7 +383,7 @@ def test_ten_thousand_jobs_are_still_one_insert(
             (sid,),
         ).fetchone()
         conn.rollback()
-    assert n == 10_000 and bad == (0,)
+    assert n == sq.JobsInserted(queued=10_000, already_running=0) and bad == (0,)
 
 
 def test_insert_jobs_refuses_mismatched_or_empty_ids_writing_nothing(
@@ -405,6 +407,7 @@ def test_insert_jobs_refuses_mismatched_or_empty_ids_writing_nothing(
         )
         kw: dict[str, Any] = {
             "scan_id": sid,
+            "policy_id": pol.policy_id,
             "created_at": f.T0,
             "pickup_by": f.T0 + timedelta(hours=24),
             "pickup_text": f.zsec(f.T0 + timedelta(hours=24)),

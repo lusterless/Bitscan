@@ -1,0 +1,10 @@
+# ClusterMAX 0.3.0 runtime dependencies (pyproject: prompt-toolkit>=3.0.52,<4, PyYAML>=6).
+# Installed with --require-hashes --no-deps into /usr/lib/clustermax/site.
+# PyYAML's compiled extension is removed after install, so its pure-Python
+# code runs on every supported Python (3.10 on Ubuntu 22.04, 3.12 on 24.04).
+prompt-toolkit==3.0.53 \
+    --hash=sha256:01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2
+PyYAML==6.0.3 \
+    --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc
+wcwidth==0.2.14 \
+    --hash=sha256:a7bb560c8aee30f9957e5f9895805edd20602f2d7f720186dfd906e82b4982e1

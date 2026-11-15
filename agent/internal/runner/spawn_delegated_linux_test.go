@@ -102,7 +102,7 @@ func runPlugin(t *testing.T, c *Cgroups, execute string) (string, string, int64,
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Spawn(p, execute, time.Now)
+	s, err := Spawn(p, tmpRoot, execute, time.Now)
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestDelegatedSpawn(t *testing.T) {
 				t.Errorf("%s = %q, want %q", k, got, want)
 			}
 		}
-		if pwd := field(out, "PWD"); !strings.HasPrefix(pwd, "/tmp/bitscan-p-") || pwd != s.TempDir {
+		if pwd := field(out, "PWD"); !strings.HasPrefix(pwd, "/tmp/p-") || pwd != s.TempDir {
 			t.Errorf("PWD %q (temp dir %q)", pwd, s.TempDir)
 		}
 		if os.Getuid() == 0 {
@@ -204,7 +204,7 @@ func TestDelegatedSpawn(t *testing.T) {
 						t.Error(err)
 						return
 					}
-					s, err := Spawn(p, "true", time.Now)
+					s, err := Spawn(p, tmpRoot, "true", time.Now)
 					if err != nil {
 						t.Error(err)
 						return
@@ -257,7 +257,7 @@ func TestDelegatedSpawn(t *testing.T) {
 			t.Fatal(err)
 		}
 		marker := filepath.Join(os.TempDir(), "spawn-should-not-run")
-		s, err := Spawn(p, "touch "+marker, time.Now)
+		s, err := Spawn(p, tmpRoot, "touch "+marker, time.Now)
 		if err == nil || s != nil {
 			t.Fatalf("Spawn into a removed cgroup: s %v err %v", s, err)
 		}
@@ -265,7 +265,7 @@ func TestDelegatedSpawn(t *testing.T) {
 		if _, err := os.Stat(marker); err == nil {
 			t.Fatal("a process ran without its cgroup")
 		}
-		ents, _ := filepath.Glob("/tmp/bitscan-p-*")
+		ents, _ := filepath.Glob("/tmp/p-*")
 		t.Logf("RECORDED: temp dirs left after the failed spawn: %d (%v)", len(ents), err)
 	})
 }

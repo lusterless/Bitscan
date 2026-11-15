@@ -23,6 +23,10 @@ import (
 // is enabled (#30; TS §3.7 L484). The agent never connects to it.
 const CapreadSock = "/run/bitscan/capread.sock"
 
+// CmaxSock is the ClusterMAX collector helper's socket (TS §3.8); while a
+// file exists there the heartbeat reports "cmax". The agent never connects.
+const CmaxSock = "/run/clustermax/collect.sock"
+
 // maxLastError is HeartbeatRequest.last_error's bound (#78 (e)).
 const maxLastError = 1024
 
@@ -65,7 +69,11 @@ type Deps struct {
 	Log                *slog.Logger
 	JobPullSeconds     int
 	MaxParallelPlugins int
-	CapreadSock        string // empty: CapreadSock
+	// MaxParallelJobs is agent.yaml's max_parallel_jobs, used until a
+	// heartbeat answer carries one (TS §3.3; owner decision 2026-11-14).
+	MaxParallelJobs int
+	CapreadSock     string // empty: CapreadSock
+	CmaxSock        string // empty: CmaxSock
 	// SpoolBytes is the spool's size on disk, the heartbeat's spool_bytes
 	// (#78 (d)); the spool's Size. Nil reports 0.
 	SpoolBytes func() int64
@@ -85,6 +93,8 @@ type Run struct {
 	stopped     atomic.Bool
 	pullSec     atomic.Int64
 	maxParallel atomic.Int64
+	maxJobs     atomic.Int64
+	jobsChanged chan struct{}
 	lastErr     atomic.Pointer[string]
 	lastPull    atomic.Pointer[time.Time]
 	current     atomic.Pointer[wire.UUID]
@@ -98,6 +108,9 @@ func NewRun(parent context.Context, d Deps) *Run {
 	if d.CapreadSock == "" {
 		d.CapreadSock = CapreadSock
 	}
+	if d.CmaxSock == "" {
+		d.CmaxSock = CmaxSock
+	}
 	log := d.Log
 	if log == nil {
 		log = slog.Default()
@@ -109,10 +122,16 @@ func NewRun(parent context.Context, d Deps) *Run {
 		log:         log.With("agent_id", string(d.AgentID)),
 		start:       d.Clock.Now(),
 		pullChanged: make(chan struct{}, 1),
+		jobsChanged: make(chan struct{}, 1),
 		firstBeat:   make(chan struct{}),
 	}
 	r.SetIntervals(d.JobPullSeconds, d.MaxParallelPlugins)
 	<-r.pullChanged // the initial value is not a change
+	r.SetMaxParallelJobs(d.MaxParallelJobs)
+	select { // the initial value is not a change either
+	case <-r.jobsChanged:
+	default:
+	}
 	return r
 }
 
@@ -203,6 +222,30 @@ func (r *Run) PullInterval() time.Duration {
 func (r *Run) PullChanged() <-chan struct{} { return r.pullChanged }
 
 func (r *Run) MaxParallelPlugins() int { return int(r.maxParallel.Load()) }
+
+// SetMaxParallelJobs applies max_parallel_jobs clamped to 1–4 (TS §3.3);
+// 0 (not configured) means the default 2. A change wakes the job scheduler.
+func (r *Run) SetMaxParallelJobs(n int) {
+	if n == 0 {
+		n = DefaultMaxParallelJobs
+	}
+	next := int64(min(max(n, 1), 4))
+	if old := r.maxJobs.Swap(next); old != next {
+		select {
+		case r.jobsChanged <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// DefaultMaxParallelJobs is max_parallel_jobs when nothing sets it.
+const DefaultMaxParallelJobs = 2
+
+// MaxParallelJobs is the most compliance jobs run at once.
+func (r *Run) MaxParallelJobs() int { return int(r.maxJobs.Load()) }
+
+// JobsChanged receives a value when max_parallel_jobs changed.
+func (r *Run) JobsChanged() <-chan struct{} { return r.jobsChanged }
 
 // FirstHeartbeat is closed once the first heartbeat was attempted; the first
 // pull waits for it (plan TASK-101).

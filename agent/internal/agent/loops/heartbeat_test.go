@@ -223,6 +223,7 @@ type harness struct {
 	logs  *logBuf
 	run   *loops.Run
 	sock  string
+	cmax  string
 	done  chan struct{}
 	stop  context.CancelFunc
 }
@@ -240,6 +241,7 @@ func newHarnessRand(t *testing.T, reply func(int, transport.Request) reply, rnd 
 		rot:   &fakeRotator{},
 		logs:  &logBuf{},
 		sock:  filepath.Join(t.TempDir(), "capread.sock"),
+		cmax:  filepath.Join(t.TempDir(), "collect.sock"),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	h.stop = cancel
@@ -248,7 +250,7 @@ func newHarnessRand(t *testing.T, reply func(int, transport.Request) reply, rnd 
 		Client: h.f, Tokens: token.NewHolder(state.Token{Value: canaryTok, IssuedAt: t0, ExpiresAt: t0.AddDate(1, 0, 0), TimesKnown: true}),
 		Rotator: h.rot, AgentID: agentID, Version: version, Clock: h.clock, Rand: rnd,
 		Log:            slog.New(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
-		JobPullSeconds: 300, MaxParallelPlugins: 2, CapreadSock: h.sock,
+		JobPullSeconds: 300, MaxParallelPlugins: 2, CapreadSock: h.sock, CmaxSock: h.cmax,
 	})
 	return h
 }
@@ -405,6 +407,37 @@ func TestHeartbeatRunnerHelpers(t *testing.T) {
 	}
 	if loops.CapreadSock != "/run/bitscan/capread.sock" {
 		t.Fatalf("production path %q", loops.CapreadSock)
+	}
+}
+
+// TS §3.8: "cmax" is reported while a file exists at the ClusterMAX
+// collector's socket path, after "capread" when both exist.
+func TestHeartbeatReportsCmaxHelper(t *testing.T) {
+	h := newHarness(t, okHeartbeat)
+	if err := os.WriteFile(h.cmax, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.start()
+	h.waitCalls(t, 1)
+	if _, m := decoded(t, h.f.req(0)); fmt.Sprint(m["runner_helpers"]) != "[cmax]" {
+		t.Fatalf("cmax only: %v", m["runner_helpers"])
+	}
+	if err := os.WriteFile(h.sock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.fire(t)
+	h.waitCalls(t, 2)
+	if _, m := decoded(t, h.f.req(1)); fmt.Sprint(m["runner_helpers"]) != "[capread cmax]" {
+		t.Fatalf("both: %v", m["runner_helpers"])
+	}
+	_ = os.Remove(h.cmax)
+	h.clock.fire(t)
+	h.waitCalls(t, 3)
+	if _, m := decoded(t, h.f.req(2)); fmt.Sprint(m["runner_helpers"]) != "[capread]" {
+		t.Fatalf("after removal: %v", m["runner_helpers"])
+	}
+	if loops.CmaxSock != "/run/clustermax/collect.sock" {
+		t.Fatalf("production path %q", loops.CmaxSock)
 	}
 }
 

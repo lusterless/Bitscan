@@ -9,6 +9,7 @@ __pycache__/
 coverage.xml
 htmlcov/
 *.egg-info/
+collector/dist/
 
 #Hooks
 .claude/hooks/

@@ -45,6 +45,7 @@ SEEDED: dict[str, Any] = {
     "redaction_patterns": [],
     "max_parallel_plugins": 2,
     "enrolment_alert_per_hour": 50,
+    "max_parallel_jobs": 2,  # owner decision 2026-11-14 (TS §8.6)
 }
 BSA_LEN = 47
 

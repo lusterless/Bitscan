@@ -19,9 +19,9 @@ The platform (working name **Bitscan**) is a manager + agent system that invento
 
 ### 1.2 Out of scope (v1)
 
-- Network/remote (agentless) scanning, Windows or macOS endpoints.
+- Network/remote (agentless) scanning, Windows or macOS endpoints. **Exception:** the ClusterMAX collector helper (§3.8) runs `cmax audit`, which in Slurm or Kubernetes mode starts jobs or pods on other hosts of that cluster. Bitscan itself still opens no connection to any host.
 - CVE vulnerability matching against packages (the inventory is designed so it can be added in v2, see §7.4).
-- Automatic remediation. Plugins only read and report state.
+- Automatic remediation. Plugins only read and report state. **Exception:** a plugin may ask the ClusterMAX collector helper (§3.8) to run its fixed audit, which changes some host state as part of its checks (§3.8, "Effects on the host").
 - A signed APT repository for the agent package. v1 ships the `.deb` file with a published SHA-256.
 
 ### 1.3 Terminology
@@ -72,6 +72,7 @@ flowchart LR
     RN["bitscan-runner<br/>user bitscan-runner<br/>CAP_DAC_READ_SEARCH only"]
     PL["Plugins<br/>sandboxed sh -c Execute"]
     CR["bitscan-capread<br/>optional, off by default"]
+    CMX["cmax-helper (in bitscan-agent)<br/>root, on by default<br/>fixed cmax audit -vvv -y"]
   end
 
   U --> UI --> UR
@@ -88,6 +89,7 @@ flowchart LR
   AG -- "/run/bitscan/runner.sock<br/>whole jobs only" --> RN
   RN --> PL
   RN -. "nft_ruleset / audit_rules" .-> CR
+  RN -. "collect / get" .-> CMX
 ```
 
 *Figure 1. System architecture: manager components and the agent. Every arrow into the manager is an outbound HTTPS call from its caller; the agent accepts no inbound connections.*
@@ -105,6 +107,7 @@ Agents poll the API; the scheduler writes jobs to the database; the evaluator sc
 | Result evaluator | Compare stdout with ExpectedResult using the Operator (§4.5), compute scores | In the API process, on result arrival |
 | Database | Single source of truth | PostgreSQL 16 (`pg_trgm`, `debversion`) |
 | Agent | Heartbeat, job pull, inventory; runner executes plugins | Go (a currently supported release), static binaries, `.deb`, systemd |
+| ClusterMAX collector helper | Runs the fixed ClusterMAX audit as root for the runner and returns its report (§3.8) | Part of the agent `.deb`, with pinned ClusterMAX (Python), systemd socket activation |
 
 ### 2.2 Design principles
 
@@ -149,14 +152,14 @@ Every call into the manager carries a bearer token over HTTPS (TLS 1.2+). User t
 
 ## 3. Agent (`bitscan-agent`)
 
-The agent is one `.deb`, `bitscan-agent_<version>_<arch>.deb` (amd64, arm64), for Ubuntu 22.04/24.04 and Debian 12. Hosts must use the unified cgroup v2 hierarchy, the default on these releases; on any other setup the runner refuses to start and the agent reports `runner_unavailable`. It contains two static binaries, `bitscan-agent` (network-facing, unprivileged) and `bitscan-runner` (runs plugins), plus the optional `bitscan-capread` helper (§3.7).
+The agent is one `.deb`, `bitscan-agent_<version>_<arch>.deb` (amd64, arm64), for Ubuntu 22.04/24.04 and Debian 12. Hosts must use the unified cgroup v2 hierarchy, the default on these releases; on any other setup the runner refuses to start and the agent reports `runner_unavailable`. It contains two static binaries, `bitscan-agent` (network-facing, unprivileged) and `bitscan-runner` (runs plugins), plus the optional `bitscan-capread` helper (§3.7) and the ClusterMAX collector helper `cmax-helper` with a pinned ClusterMAX (§3.8).
 
 ### 3.1 Packaging and install
 
 | Item | Value |
 | --- | --- |
-| Binaries | `/usr/sbin/bitscan-agent`, `/usr/sbin/bitscan-runner`, `/usr/sbin/bitscan-capread` |
-| Units | `bitscan-agent.service`, `bitscan-runner.socket`, `bitscan-runner.service`; `bitscan-capread.socket` and `.service` are installed but disabled. Installed with `dh_installsystemd`; `--no-enable` for `bitscan-runner.service` (started by its socket), and `--no-enable --no-start` for the capread units, so they stay off until enabled on the host. |
+| Binaries | `/usr/sbin/bitscan-agent`, `/usr/sbin/bitscan-runner`, `/usr/sbin/bitscan-capread`; the ClusterMAX collector: `/usr/sbin/cmax-helper`, `/usr/bin/cmax-trigger` and ClusterMAX under `/usr/lib/clustermax/` (§3.8) |
+| Units | `bitscan-agent.service`, `bitscan-runner.socket`, `bitscan-runner.service`; `bitscan-capread.socket` and `.service` are installed but disabled. Installed with `dh_installsystemd`; `--no-enable` for `bitscan-runner.service` (started by its socket), and `--no-enable --no-start` for the capread units, so they stay off until enabled on the host. `cmax-helper.socket` is enabled and started on install (owner decision 2026-11-15); `cmax-helper.service` is `--no-enable`, started by its socket (§3.8). |
 | Config | `/etc/bitscan/agent.yaml` (`root:bitscan`, 0640); written only by `postinst` or root, never by the agent |
 | D-Bus policy | `/etc/dbus-1/system.d/bitscan-runner.conf` (§3.7) |
 | State | `/var/lib/bitscan-agent/` (`bitscan:bitscan`, 0700): `agent_id`, `token`, `enroll.token` (until enrolled), result spool, seen job ids |
@@ -170,11 +173,13 @@ The agent is one `.deb`, `bitscan-agent_<version>_<arch>.deb` (amd64, arm64), fo
 1. Creates the system users `bitscan` and `bitscan-runner` (no shell, no home).
 2. Writes `agent.yaml` from the install inputs.
 3. Writes the enrolment token to `/var/lib/bitscan-agent/enroll.token` (`bitscan:bitscan`, 0600). The agent deletes it after enrolling; it is never written to `agent.yaml`. `postinst` then clears the debconf value (`db_set bitscan/enrol_token ""`).
-4. Enables and starts `bitscan-runner.socket` and `bitscan-agent.service`.
+4. Enables and starts `bitscan-runner.socket`, `cmax-helper.socket` and `bitscan-agent.service`.
 
 If the manager URL or enrolment token is missing, `postinst` fails with a clear message and the package stays unconfigured. On upgrade none are needed: config, token and agent id are kept, and the services restart. Maintainer scripts must be idempotent and pass `lintian`.
 
 **Distribution.** v1 ships the `.deb` file directly, with its SHA-256 published on the release page (a different origin from the download host). Builds are reproducible Go builds, and every release ships an SBOM. A signed APT repository is deferred (§1.2).
+
+**ClusterMAX collector in the agent package (owner decision 2026-11-15).** `bitscan-agent` also installs ClusterMAX at a pinned commit with hash-pinned, pure-Python dependencies under `/usr/lib/clustermax/`, the client `/usr/bin/cmax-trigger`, the server `/usr/sbin/cmax-helper`, the units `cmax-helper.socket` and `cmax-helper.service` (§3.8), and ClusterMAX's `LICENSE` (Apache-2.0) under `/usr/share/doc/bitscan-agent/`. The package depends on `python3 (>= 3.10)`. ClusterMAX is fetched at build time and pinned by commit and version, so the build stays reproducible. There is no separate collector package.
 
 ### 3.2 Enrolment
 
@@ -199,11 +204,11 @@ The agent runs two independent timers. The heartbeat only reports status; jobs a
 
 | Loop | Interval | Call | Purpose |
 | --- | --- | --- | --- |
-| Heartbeat | 300 s ± 30 s jitter | `POST /api/v1/agent/{id}/heartbeat` | Report health (§6.5). The response carries only configuration (`job_pull_seconds`, `max_parallel_plugins`) and the server time, never jobs or commands. |
+| Heartbeat | 300 s ± 30 s jitter | `POST /api/v1/agent/{id}/heartbeat` | Report health (§6.5). The response carries only configuration (`job_pull_seconds`, `max_parallel_plugins`, and `max_parallel_jobs` for agents of version 0.5.0 or later) and the server time, never jobs or commands. |
 | Job pull | `job_pull_seconds` ± 30 s (default 300, range 60–3,600) | `GET /api/v1/agent/{id}/jobs` | Fetch queued compliance and inventory jobs for this agent only |
 | Result return | During and after each job | `POST /api/v1/agent/{id}/jobs/{job_id}/results` | Send redacted plugin output in batches (§3.5) |
 
-`job_pull_seconds` and `max_parallel_plugins` are manager settings (§8.6). The values in the latest heartbeat response override `agent.yaml`, clamped to 60–3,600 s and 1–8.
+`job_pull_seconds`, `max_parallel_plugins` and `max_parallel_jobs` are manager settings (§8.6). The values in the latest heartbeat response override `agent.yaml`, clamped to 60–3,600 s, 1–8 and 1–4. An agent that has received no `max_parallel_jobs` uses its `agent.yaml` value (default 2).
 
 **Pull-only rules**
 
@@ -219,7 +224,7 @@ The agent runs two independent timers. The heartbeat only reports status; jobs a
 
 **Decommission.** A host offline for `decommission_after_days` (default 7; 0 = never) is marked `decommissioned` and its token is revoked. It must re-enrol (§3.2).
 
-**Jobs run one at a time,** in the order the pull returned them, except inventory jobs, which run as soon as they are pulled, alongside any compliance job (they need no runner). When the agent starts a compliance job it posts an empty results batch (`{"results": [], "final": false}`), which moves the job to `running` and starts its deadline (§4.4); only the first start notice counts.
+**Compliance jobs run at most `max_parallel_jobs` at a time** (default 2, 1–4; owner decision 2026-11-14), started in the order the pull returned them; the others wait on the agent. A waiting job does not start while a running job has a `plugin_uuid` in common with it: plugin ids belong to exactly one policy (SR BIT015), so two jobs of the same policy, or a job and its retry, never run at the same time on one host. A job that cannot start because of that waits; it never overtakes an older waiting job of the same policy, but a waiting job of another policy may start first. Inventory jobs run as soon as they are pulled, alongside any compliance job (they need no runner). When the agent starts a compliance job it posts an empty results batch (`{"results": [], "final": false}`), which moves the job to `running` and starts its deadline (§4.4); only the first start notice counts. The heartbeat's `current_job_id` is the running compliance job that started first.
 
 **Responses to result and inventory posts.** 400, 404, 409, 413 and 422, and 403 other than `pending_approval`, mean the manager will never accept that batch: the agent drops it from the spool, logs the reason locally and reports it as `last_error` in the next heartbeat. 401 stops the agent (§3.2 step 8); 403 `pending_approval` keeps it waiting. Only 429, 5xx and network errors are retried.
 
@@ -246,8 +251,8 @@ Inventory is a **system job**. Every `system_schedule.interval_s` for `inventory
 ### 3.5 Job execution (compliance plugins)
 
 - A compliance job carries the plugins to run (`{plugin_uuid, execute, timeout_s}`) and the redaction patterns (§6.5). Operator and ExpectedResult stay on the manager. The agent never stores plugin commands between jobs.
-- The agent passes the whole job to the runner (§3.7), which runs each plugin with `/bin/sh -c`: `PATH` set to `/usr/sbin:/usr/bin:/sbin:/bin`, empty environment, stdin from `/dev/null`, no inherited file descriptors other than its stdout and stderr pipes, `nice 10`, `ionice -c3`, its own cgroup, its own empty temp directory, and the per-plugin timeout. At most `max_parallel_plugins` run at once.
-- When a plugin exits or times out, every process left in its cgroup is killed (`cgroup.kill`) and its temp directory is deleted. After each job the runner also kills any other process in its cgroup subtree except itself. No plugin process outlives its job.
+- The agent passes the whole job to the runner (§3.7), which runs each plugin with `/bin/sh -c`: `PATH` set to `/usr/sbin:/usr/bin:/sbin:/bin`, empty environment, stdin from `/dev/null`, no inherited file descriptors other than its stdout and stderr pipes, `nice 10`, `ionice -c3`, its own cgroup inside its job's cgroup, its own empty temp directory inside its job's temp directory (§3.7), and the per-plugin timeout. At most `max_parallel_plugins` of one job run at once.
+- When a plugin exits or times out, every process left in its cgroup is killed (`cgroup.kill`) and its temp directory is deleted. When a job ends, the runner kills and removes that job's cgroup subtree, kills any process left in its own cgroup, `supervisor` or `plugins` other than itself, and deletes that job's temp directory. When no job is running (after the last running job ends, and at start-up), it also kills every other process in its cgroup subtree and empties its private `/tmp` and `/var/tmp`. A plugin process never outlives its job, except one that moved itself into another running job's cgroup: that one is killed when that other job ends, and never outlives the runner's busy period (§8.1, accepted).
 - The runner reads up to 1 MB of each stream, applies the job's redaction patterns (RE2; each match replaced with `[REDACTED]`; a `BEGIN … PRIVATE KEY` line with no matching end line is redacted to the end of the buffer), and only then truncates to 64 KB stdout and 16 KB stderr, so a secret cut by the cap is never partly returned. Unredacted output never leaves the host or reaches the spool. Redaction is best-effort: it removes only what the patterns match (§8.1). Checks must not depend on text the patterns would redact.
 - Captured per plugin: exit code, redacted stdout and stderr, start and end timestamps, timed-out flag, truncated flag. The agent does not judge PASS/FAIL.
 - Results are posted in batches of at most 50 results and at most 1.5 MB (gzip allowed, `Content-Encoding: gzip`). The last batch of a job carries `"final": true`.
@@ -262,6 +267,7 @@ state_dir: /var/lib/bitscan-agent              # agent_id, token, spool, seen jo
 heartbeat_seconds: 300                         # status report only
 job_pull_seconds: 300                          # used until the manager sends its value; 60-3600
 max_parallel_plugins: 2                        # used until the manager sends its value; 1-8
+max_parallel_jobs: 2                           # used until the manager sends its value; 1-4
 spool_max_mb: 50
 log_level: info
 ```
@@ -281,7 +287,9 @@ The agent is split into processes so that the part talking to the network has no
 - systemd creates the socket from `bitscan-runner.socket`: `/run/bitscan/runner.sock`, owned `root:bitscan`, mode 0660, in a directory owned by root (0755). Neither the runner nor a plugin can replace it.
 - The runner accepts connections only from uid `bitscan` (`SO_PEERCRED`), and accepts only whole jobs in the job format; it has no separate "run this string" call.
 - The listening socket and every other descriptor the runner holds are close-on-exec, so plugins never inherit them. The runner makes itself non-dumpable (`PR_SET_DUMPABLE` 0), and the unit's system-call filter blocks `ptrace` and `process_vm_readv` (`~@debug`), so plugins cannot read or change the runner's memory. A plugin running as the same user could still signal the runner; that only restarts it (`Restart=always`), and is accepted.
-- The runner moves itself into a leaf cgroup of its own (`supervisor`) and starts each plugin in a fresh child cgroup. After each job it kills every process in its cgroup subtree except itself, so a plugin that moves itself elsewhere in the subtree is still killed.
+- The runner moves itself into a leaf cgroup of its own (`supervisor`). Each job gets a cgroup `plugins/j-<n>` inside the `plugins` cgroup, which holds every job's plugins so they share one task limit, and each of its plugins a fresh child `plugins/j-<n>/p-<m>`. After each job it kills that job's subtree and any stray process or cgroup outside the running jobs' cgroups; when no job runs it kills every process in its subtree except itself, so a plugin that moves itself elsewhere in the subtree is still killed (§3.5).
+- One Unix connection carries one job. The runner serves at most 4 connections at once (the top of `max_parallel_jobs`); a fifth is refused `busy` without its request being read.
+- Each job gets a temp directory `/tmp/bitscan-j-<random>` (0700) in the runner's private `/tmp`; each plugin's working directory is a fresh `p-<random>` (0700) inside it. No `TMPDIR` is set.
 - The runner re-checks the `agent_id` (read from `/var/lib/bitscan-agent/agent_id`), `pickup_by` and the job id itself. These catch mistakes, not attacks: jobs are not signed, so the runner cannot tell a real job from one a compromised `bitscan-agent` process made up. Such a process can make the runner read any file on that host and return it, including password hashes, SSH and TLS private keys, the host's own agent token and service credentials. The runner itself still cannot write files or open IP connections, but those stolen credentials can be used to gain root on that host and to reach other systems that trust them. Treat a compromised `bitscan-agent` as a compromise of every secret stored on that host. This is an accepted risk (§8.1).
 
 **Runner socket (`bitscan-runner.socket`)**
@@ -507,6 +515,90 @@ Plugins call `bitscan-capread nft_ruleset`, `bitscan-capread audit_rules` or `bi
 - Write-like commands are rejected at import (BIT102), and the sandbox blocks writes even if one slips through.
 - **Local users.** Plugins must never execute, source or `cd` into files or directories that non-root users can write; they read them only as data. Otherwise a local user could get their own code run with the runner's read-any-file capability. BIT102 rejects the usual ways of doing so, and the runner can execute only system binaries.
 
+### 3.8 ClusterMAX collector helper (`cmax-helper`)
+
+Owner decisions 2026-11-14 and 2026-11-15. Part of the `bitscan-agent` package (§3.1) and on by default on every agent host: `postinst` enables and starts `cmax-helper.socket`. A root user can turn it off on a host with `systemctl disable --now cmax-helper.socket`; a later upgrade keeps it off (the package enables the socket only on first install).
+
+**Purpose.** Lets a compliance scan run the full ClusterMAX audit (`lusterless/clustermax`, `cmax audit`), which needs root, devices and, in cluster mode, cluster credentials, while `bitscan-agent` and `bitscan-runner` keep the privileges in §3.7 unchanged.
+
+**Who runs as what**
+
+| Process | Runs as | Does |
+| --- | --- | --- |
+| `cmax-trigger` | `bitscan-runner` (inside a plugin) | Sends one request name over the socket and prints the answer |
+| `cmax-helper` | root | Accepts requests, runs the fixed audit, keeps the report in memory |
+| `cmax audit -vvv -y` | root (child of the helper) | The ClusterMAX audit, run unmodified |
+
+**Protocol**
+
+- Socket `/run/clustermax/collect.sock`, `root:bitscan-runner`, 0660, in a root-owned 0755 directory.
+- The helper accepts only peers with uid `bitscan-runner` (`SO_PEERCRED`). It takes a request name, never a command line or arguments.
+- `collect`: if no audit is running, start `/usr/lib/clustermax/bin/cmax audit -vvv -y` with an empty environment except `PATH`, `HOME=/run/cmax-work` and `LANG=C.UTF-8`, and answer `started <run-id>`; if one is running, answer `running <run-id>` with that run's id and start nothing. Every `collect` that finds no running audit starts a new one; a finished report is never reused by a later `collect` (owner decision 2026-11-14).
+- `get <run-id> <check-id>`: wait for run `<run-id>` (up to 590 s), then return the report line whose trailing `[<check-id>]` matches, and its `Observed:` line. `get <run-id> header` returns that run's target block (command, target, host, system, selection). `get <run-id> status` returns `ok <age-seconds> <cmax-version>`, `running` or `failed <exit-code>`. An unknown or dropped run id returns `MISSING`.
+- `<run-id>` is 32 lowercase hexadecimal characters chosen by the helper. The helper keeps at most the 4 most recent runs' reports in memory.
+- **One audit per scan job.** `cmax-trigger get <check-id>` takes a lock on `cmax-run.lock` in its job's temp directory (the parent of its working directory, §3.7). The first plugin of the job sends `collect` and writes the returned run id to `cmax-run` there; every later plugin of the job reads it. The runner deletes the job's temp directory when the job ends, so the next scan starts a new audit.
+- One audit at a time; concurrent `collect` requests share the same run.
+- `<check-id>` must match `^[A-Za-z0-9_.-]{1,128}$`; any other request is refused.
+
+**Non-persistence.** The report text is held only in the helper's memory. ClusterMAX writes its own files under `HOME=/run/cmax-work` (`RuntimeDirectory=`, tmpfs) and its private `/tmp`, both removed by systemd when the service stops. The helper stops when no audit runs and no request has arrived for 30 minutes, which drops every report. The helper writes nothing to persistent storage. Results reach the manager through the normal result path (§3.5), including the agent's spool.
+
+**Effects on the host (accepted, §8.1).** `cmax audit -vvv -y` runs unmodified, so its normal effects apply: `nvidia-smi boost-slider --vboost 2`, `enroot import docker://hello-world` where Enroot exists, outbound HTTPS to `ipinfo.io`, and, when ClusterMAX auto-detects Slurm or Kubernetes, `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace that ClusterMAX does not delete. `-y` skips ClusterMAX's host role check, so the scan target alone decides which hosts audit a whole cluster.
+
+**Units**
+
+```ini
+# cmax-helper.socket
+[Unit]
+Description=ClusterMAX collector helper socket
+
+[Socket]
+ListenStream=/run/clustermax/collect.sock
+SocketUser=root
+SocketGroup=bitscan-runner
+SocketMode=0660
+DirectoryMode=0755
+
+[Install]
+WantedBy=sockets.target
+```
+
+```ini
+# cmax-helper.service
+[Unit]
+Description=ClusterMAX collector helper
+Requires=cmax-helper.socket
+
+[Service]
+ExecStart=/usr/sbin/cmax-helper --serve
+User=root
+RuntimeDirectory=cmax-work
+RuntimeDirectoryMode=0700
+PrivateTmp=yes
+UMask=0077
+NoNewPrivileges=yes
+CPUQuota=50%
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=1G
+TimeoutStopSec=30
+```
+
+No `ProtectSystem=`, `PrivateDevices=` or network restriction is set, because ClusterMAX needs devices, `/sys`, `/proc`, its tools and the network. They may be tightened after testing on real hosts, without losing checks.
+
+**File ownership**
+
+| Path | Owner | Mode |
+| --- | --- | --- |
+| `/usr/lib/clustermax/` | `root:root` | 0755 directories, 0644 files, 0755 executables |
+| `/usr/sbin/cmax-helper`, `/usr/bin/cmax-trigger` | `root:root` | 0755 |
+| `/run/clustermax/` | `root:root` | 0755 |
+| `/run/clustermax/collect.sock` | `root:bitscan-runner` | 0660 |
+| `/run/cmax-work/` | `root:root` | 0700 (tmpfs, removed on stop) |
+
+**Reporting.** The agent reports `"cmax"` in the heartbeat's `runner_helpers` (§6.5) when `/run/clustermax/collect.sock` exists. The manager shows it on the host page and audit-logs any change, as for `"capread"`.
+
+**The manager never installs, enables, disables or configures the helper.**
+
 ## 4. Compliance Engine
 
 Each `.bit` file becomes one compliance profile; users pick enabled profiles and run them on hosts, on a schedule or on demand.
@@ -559,6 +651,7 @@ Rebuild is the recovery path for a corrupted catalog. It does not truncate the c
 - **Manual:** "Run scan now" button or `POST /api/v1/scans`. Jobs are picked up at each agent's next job pull (≤ `job_pull_seconds` + 30 s). There is no way to push a job to an agent sooner.
 - **Scheduled:** a cron expression per `scan_schedule` row, evaluated in the schedule's `timezone` (default UTC). Runs missed while the manager was down are not back-filled. A run is skipped and logged if the previous scan from the same schedule is not yet finished (`finished_at IS NULL`), or if the policy is disabled. Users may enable or disable schedules (unlike inventory).
 - **One job per host and policy:** a newer queued job for the same agent and policy cancels the older queued one.
+- **No duplicate run (owner decision 2026-11-14):** when a scan is queued, a target agent that already has a `dispatched` or `running` compliance job of the same policy gets its job from this scan inserted as `cancelled` with `cancel_reason = 'already_running'` and `finished_at` = now; it is never sent. The agent's own rule (§3.3) also keeps two jobs of one policy from running at the same time.
 - **Refused:** a scan of a disabled policy returns 409.
 - **Version:** each scan records the `policy.version` it was built from.
 
@@ -573,7 +666,7 @@ Rebuild is the recovery path for a corrupted catalog. It does not truncate the c
 | `partial` | Final batch received, or deadline passed, with some plugins missing |
 | `failed` | Deadline passed with no results |
 | `expired` | Not picked up before `pickup_by` |
-| `cancelled` | Cancelled by an operator, or replaced by a newer job |
+| `cancelled` | Cancelled by an operator, replaced by a newer job, or not run because the same policy was already running on that host (`cancel_reason = 'already_running'`) |
 
 The deadline is the start time + ceil(Σ `timeout_s` ÷ `max_parallel_plugins`) + 10 min, using the manager's `max_parallel_plugins` setting. A dispatched job that never starts fails 24 h after dispatch and gets the same single retry as any failed job. `deadline_at` is set once, when the job moves from `dispatched` to `running`. The `offline_sweep` task (every 60 s) applies these timeouts: queued jobs past `pickup_by` become `expired`, and dispatched or running jobs past their deadline become `failed` or `partial`. The agent must start a job before `pickup_by` and may finish after it.
 
@@ -887,6 +980,7 @@ CREATE TABLE scan_job (                  -- compliance (one per scan and agent) 
   started_at    TIMESTAMPTZ,             -- first start notice from the agent
   deadline_at   TIMESTAMPTZ,
   finished_at   TIMESTAMPTZ,
+  cancel_reason VARCHAR(32) CHECK (cancel_reason IN ('already_running')), -- set only when a new scan's job is not run (§4.4); NULL otherwise
   CHECK ((kind = 'compliance') = (scan_id IS NOT NULL)),
   CHECK (kind = 'inventory' OR eval_spec IS NOT NULL)
 );
@@ -1128,7 +1222,7 @@ Users sign in with a local account and receive an opaque token. Scripts send it 
 | GET | `/packages/search`, `/packages/search.csv` | Fleet-wide package search (§7), JSON or CSV | viewer |
 | GET | `/scans` | List scans (filter by policy, host, state, date) | viewer |
 | POST | `/scans` | `{ policy_id, target }` → manual scan | operator |
-| GET | `/scans/{id}` | Scan state + per-host summary | viewer |
+| GET | `/scans/{id}` | Scan state + per-host summary; each host job carries `cancel_reason` (`"already_running"` or `null`) | viewer |
 | GET | `/scans/{id}/results`, `/results.csv` | Results, filterable by status and host. `stdout` and `stderr` are included only for operator and admin. | viewer |
 | POST | `/scans/{id}/cancel` | Cancel queued or running jobs | operator |
 | POST | `/scans/{id}/reevaluate` | Re-evaluate against the policy's current version | admin, TOTP session |
@@ -1172,7 +1266,7 @@ These are the field-level contracts for the agent routes. The OpenAPI document c
 
 **Enrol** — request `{ "hostname", "machine_id", "agent_version", "os_id", "os_version_id", "os_pretty_name" }` → `{ "agent_id", "agent_token", "issued_at", "expires_at", "status": "enrolled" | "awaiting_approval" }`.
 
-**Heartbeat** — request `{ "agent_version", "uptime_s", "last_pull_at", "current_job_id", "spool_bytes", "last_error", "runner_helpers": ["capread"], "clock": "<RFC 3339>" }` → `{ "job_pull_seconds": 300, "max_parallel_plugins": 2, "server_time": "<RFC 3339>" }`. Skew between `clock` and `server_time` over 5 minutes alerts.
+**Heartbeat** — request `{ "agent_version", "uptime_s", "last_pull_at", "current_job_id", "spool_bytes", "last_error", "runner_helpers": ["capread"], "clock": "<RFC 3339>" }` → `{ "job_pull_seconds": 300, "max_parallel_plugins": 2, "max_parallel_jobs": 2, "server_time": "<RFC 3339>" }`; `max_parallel_jobs` (1–4) is present only when the request's `agent_version` is 0.5.0 or later, because older agents refuse an unknown key. Skew between `clock` and `server_time` over 5 minutes alerts.
 
 **Job pull** → `{ "jobs": [ <Job> ] }`, where a Job is:
 
@@ -1255,7 +1349,7 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | Tampering with verdicts | Every import is validated, audit-logged and alerted; results snapshot what ran; re-evaluation only adds rows |
 | Plugin tries to change the host | Write-like commands rejected at import (BIT102); runner is non-root with only `CAP_DAC_READ_SEARCH`, a read-only filesystem, no devices, no IP sockets, execution limited to system binaries, no new privileges and a read-only D-Bus policy; sockets of Docker, snapd and journald blocked; live firewall and audit rules and the loaded AppArmor profiles only through the hardened fixed-command helper (§3.7) |
 | Compromise of the enabled `bitscan-capread` helper | Off by default and enabled per host; three fixed requests, never a command line or path; accepts only uid `bitscan-runner`; the full §3.7 sandbox; helper changes are shown and audit-logged. **Accepted risk:** the helper runs in the root group, so a compromise of the helper process could read files that group root can read (for example `/etc/sudoers`) on that host, in addition to what its two capabilities allow. |
-| Plugin outlives its job or interferes with the runner | Each plugin gets its own cgroup, killed when it ends; its temp directory is deleted; the socket and its directory are root-owned; descriptors are close-on-exec; the runner is non-dumpable and `ptrace` is blocked; the runner kills any stray process in its subtree after each job. **Accepted:** a plugin can signal the runner, which only restarts it. |
+| Plugin outlives its job or interferes with the runner | Each plugin gets its own cgroup, killed when it ends; its temp directory is deleted; the socket and its directory are root-owned; descriptors are close-on-exec; the runner is non-dumpable and `ptrace` is blocked; the runner kills its job's subtree and any stray process in its own cgroup or `supervisor` after each job, and its whole subtree when no job runs. **Accepted:** a plugin can signal the runner, which only restarts it. **Accepted (owner decision 2026-11-14):** with parallel jobs, a plugin that moves itself into another running job's cgroup is killed when that job ends, or by the full sweep when no job runs, not when its own job ends; all jobs share the runner unit's CPU, memory and task limits. |
 | Bug or compromise in the agent's network code | `bitscan-agent` runs as an unprivileged user with no capabilities and a system-call filter. **Accepted risk:** jobs are not signed, so a compromised agent process can make that host's runner read any file on that host, including its password hashes, private keys and credentials, which can be used to gain root there and to reach systems that trust them (§3.7). |
 | Tampered job in transit | TLS 1.2+ with server-certificate verification. Pinning (`ca_file` or `manager_spki_sha256`) is optional. **Accepted risk when pinning is off:** anyone with a publicly trusted certificate for the manager's hostname could impersonate the manager to that agent, read any file on that host (with the same credential exposure as above) and capture the agent's token. |
 | Rogue or hijacked agent | Enrolment held for approval unless the token allows auto-approval; optional source CIDRs and `max_uses`; re-enrolment onto an existing machine-id always needs approval; machine-id binding; rotation only inside its window, with reuse detection; results accepted only for the agent's own jobs; rate limits |
@@ -1270,6 +1364,9 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | Audit sink outage | Entries queue on disk, an alert fires at once, and sensitive actions are refused after 15 minutes of outage (§5.3) |
 | Flooding from one agent | Rate limits; at most one unscheduled inventory upload per 10 minutes; hard caps on every upload; unreferenced packages pruned; alert on bursts of new packages |
 | Install and supply chain | `.deb` published with its SHA-256 on a separate origin; debconf inputs (no secrets in shell history); reproducible builds; SBOM per release; hashed Python dependencies. A signed APT repository is deferred (§1.2). |
+| Root ClusterMAX run started by a scan | `cmax-helper` (§3.8) is installed and on by default on every agent host (owner decision 2026-11-15); one fixed command; no arguments; only uid `bitscan-runner` can connect; one run at a time; report in memory only; CPU, memory and I/O limits. **Accepted risk:** anyone who controls the manager, or holds an admin session or admin API token, can make every agent host where the helper is on (all hosts by default) run `cmax audit -vvv -y` as root, which changes the GPU vBoost setting, downloads an image, makes outbound HTTPS requests and, in cluster mode, starts jobs or privileged pods. A bug in ClusterMAX or its dependencies runs as root. |
+| Wrong host audits a whole cluster | **Accepted:** with `-y`, ClusterMAX's host role check is skipped, so the scan target alone decides which hosts run a cluster audit. Use a dedicated tag for ClusterMAX targets. |
+| Supply chain of the ClusterMAX collector | Pinned ClusterMAX commit and version, hash-pinned dependencies, recorded in the package (`/usr/share/doc/bitscan-agent/clustermax-SOURCE`); covered by the agent package's SHA-256; upgrades reviewed against the upstream diff |
 | Secrets in config | Manager secrets from a vault or root-only files (§8.6), never in the repo |
 
 ### 8.2 Coding standards
@@ -1289,12 +1386,13 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | Unit | Parser, normaliser, validators, version compare, evaluator, BIT102 lexer; redaction fixtures (a shadow line, a full and a cut-off private key, `key=value`, a `bsa_` token, and normal check output that must stay unchanged) | ≥ 85 % line coverage on `manager/services` |
 | Property / fuzz | `.bit` parser with random and malformed XML; inventory decoder with oversized and malformed input | No crash, no partial import |
 | Contract | JSON Schemas for all agent routes, shared by the Python manager and the Go agent | Both pass the same fixtures |
-| Integration | API + PostgreSQL (Testcontainers) | All endpoints, rebuild on a corrupted catalog, partition maintenance; grant probes: `bitscan_app` cannot update or delete results through the parent, the default partition or a newly created partition, and cannot delete scans, jobs, agents or the audit log, or move a job to another host or scan; `bitscan_retention` can delete only from tables with a retention rule |
-| Agent | Runner timeouts, output caps, redaction, spool overflow, back-off | Runs in CI on Ubuntu 22.04, 24.04 and Debian 12, on amd64 and arm64 |
-| Sandbox | Units pass `systemd-analyze verify` as written; a plugin cannot write files, open IP sockets, execute files outside system paths, reach the blocked local sockets, `ptrace` the runner, inherit the runner's socket, call state-changing D-Bus methods, replace the socket or outlive its job; the full CIS plugin set passes under the sandbox and BIT102 | Every PR touching units, runner or plugins; amd64 and arm64 |
+| Integration | API + PostgreSQL (Testcontainers) | All endpoints, rebuild on a corrupted catalog, partition maintenance; a scan queued while the same policy is dispatched or running on a host inserts that host's job `cancelled` with `already_running`, and other hosts' jobs `queued`; `max_parallel_jobs` is in the heartbeat response for agents 0.5.0 or later only; grant probes: `bitscan_app` cannot update or delete results through the parent, the default partition or a newly created partition, and cannot delete scans, jobs, agents or the audit log, or move a job to another host or scan; `bitscan_retention` can delete only from tables with a retention rule |
+| Agent | Runner timeouts, output caps, redaction, spool overflow, back-off; at most `max_parallel_jobs` compliance jobs at once, started in pull order; a job sharing a `plugin_uuid` with a running job waits; `max_parallel_jobs` from the heartbeat applied and clamped; runner: up to 4 jobs at once and a fifth refused `busy`; a job's end kills only its own cgroup subtree and temp directory while another job runs; the full sweep and `/tmp` emptying when the last job ends | Runs in CI on Ubuntu 22.04, 24.04 and Debian 12, on amd64 and arm64 |
+| Sandbox | Units pass `systemd-analyze verify` as written; a plugin cannot write files, open IP sockets, execute files outside system paths, reach the blocked local sockets, `ptrace` the runner, inherit the runner's socket, call state-changing D-Bus methods, replace the socket or outlive its job; two jobs at once: ending one never kills the other's plugins or deletes its temp directory, and a plugin moved into the other job's cgroup dies when that job ends; the full CIS plugin set passes under the sandbox and BIT102 | Every PR touching units, runner or plugins; amd64 and arm64 |
 | End-to-end | Enrol → approve enrolment → heartbeat → inventory → import → scan → results | Nightly, 3 VMs |
 | Load | 10,000 simulated agents heartbeating | p95 heartbeat < 200 ms |
 | Security | Expired, foreign and replayed jobs rejected by agent and runner; tokens rejected on the wrong route group; API tokens refused for sensitive actions, token creation and TOTP changes; non-admins refused for policy upload and delete; uploads with hostile file names stored safely; first result wins under concurrent retries; BIT015 / BIT102 rejections; agent refuses a manager certificate that fails verification or its pin | Every PR touching importer, auth, agent or runner |
+| Collector helper | The socket refuses any uid other than `bitscan-runner`; unknown request names and bad check ids are refused; only one audit runs under concurrent `collect`; every `collect` after a finished run starts a new one; plugins of one job share one run id through the job's temp directory; no report on persistent storage after the service stops (`/run/cmax-work` gone, no new files under `/root`, `/var` or `/tmp`); the helper exits after its idle timeout; `cmax-trigger` works from inside the runner sandbox; the ClusterMAX policy passes BIT102 | Every PR touching the collector or the agent package; Ubuntu 22.04 and 24.04, amd64 |
 
 ### 8.4 Observability
 
@@ -1337,6 +1435,7 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | `decommission_after_days` | 7 | 0 (never) – 365 |
 | `redaction_patterns` | the defaults below | RE2 patterns, max 50; removing a default needs a TOTP session and alerts |
 | `max_parallel_plugins` | 2 | 1–8; sent to agents in the heartbeat |
+| `max_parallel_jobs` | 2 | 1–4; compliance jobs an agent runs at once; sent in the heartbeat to agents 0.5.0 or later |
 | `enrolment_alert_per_hour` | 50 | 1–10,000 |
 | `inventory_interval_s` | 21,600 | 3,600–86,400; stored in `system_schedule` |
 

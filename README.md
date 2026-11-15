@@ -2,7 +2,7 @@
 
 Bitscan is a manager + agent platform that inventories Ubuntu endpoints and runs compliance checks defined in XML `.bit` policy files. Agents are pull-only: the manager never pushes commands. Supported agent hosts are Ubuntu 22.04 and Ubuntu 24.04 (amd64, cgroup v2). The manager host is Ubuntu 24.04 on amd64.
 
-**Status:** release 0.4.1 is the current release: manager `0.4.1` and agent package `0.4.1-1` (git tag `v0.4.1`). It stops checks from taking the tasks the runner needs on hosts with many CPUs: each plugin cgroup carries the runner unit's CPU limit, all plugins share the unit's task limit less 16, and the `bitscan-capread` client keeps to one P; the manager code is unchanged from 0.4.0. Release 0.4.0 (manager `0.4.0`, agent package `0.4.0-1`, git tag `v0.4.0`) let the `bitscan-capread` helper return the loaded AppArmor profiles (`bitscan-capread apparmor_profiles`); its manager code was unchanged from 0.3.0. Release 0.3.0 (manager `0.3.0`, agent package `0.3.0-1`, git tag `v0.3.0`) keeps web UI users signed in across a page reload (an `HttpOnly` session cookie) and adds the **My sessions** page; the agent code is unchanged from 0.2.0. Release 0.2.0 (manager `0.2.0`, agent package `0.2.0-1`, git tag `v0.2.0`) added compliance scans, their results and scores, and [retention](#retention) to release 0.1.0 (manager `0.1.0`, agent package `0.1.0-1`, git tag `v0.1.0`). 0.1.0 covers enrolment and approval, heartbeat, the mandatory inventory (`os_info` and the full `dpkg` package list), the host pages and fleet-wide package search; its runner and `bitscan-capread` helper are idle, and its agent answers every check of a compliance job with `runner_unavailable`. The pre-release agent builds (`0.1.0~preN-1` and `0.2.0~preN-1`) are not supported. Upgrade them to `0.4.1-1` as described in [Installing a release](#installing-a-release).
+**Status:** release 0.5.0 is the current release: manager `0.5.0` and agent package `0.5.0-1` (git tag `v0.5.0`). A host runs compliance jobs of different profiles at the same time (at most `max_parallel_jobs`, default 2) and never runs one profile twice at the same time; a scan that finds a profile already running on a host records that host's job as not run. The agent package now includes the ClusterMAX collector (`cmax-helper` and ClusterMAX 0.3.0, TS §3.8), on by default on every host, with its profile `bits/samples/clustermax-0.3.0.bit`; every ClusterMAX scan runs a fresh audit as root on the targeted host. Release 0.4.1 (manager `0.4.1`, agent package `0.4.1-1`, git tag `v0.4.1`) stopped checks from taking the tasks the runner needs on hosts with many CPUs: each plugin cgroup carries the runner unit's CPU limit, all plugins share the unit's task limit less 16, and the `bitscan-capread` client keeps to one P; its manager code was unchanged from 0.4.0. Release 0.4.0 (manager `0.4.0`, agent package `0.4.0-1`, git tag `v0.4.0`) let the `bitscan-capread` helper return the loaded AppArmor profiles (`bitscan-capread apparmor_profiles`); its manager code was unchanged from 0.3.0. Release 0.3.0 (manager `0.3.0`, agent package `0.3.0-1`, git tag `v0.3.0`) keeps web UI users signed in across a page reload (an `HttpOnly` session cookie) and adds the **My sessions** page; the agent code is unchanged from 0.2.0. Release 0.2.0 (manager `0.2.0`, agent package `0.2.0-1`, git tag `v0.2.0`) added compliance scans, their results and scores, and [retention](#retention) to release 0.1.0 (manager `0.1.0`, agent package `0.1.0-1`, git tag `v0.1.0`). 0.1.0 covers enrolment and approval, heartbeat, the mandatory inventory (`os_info` and the full `dpkg` package list), the host pages and fleet-wide package search; its runner and `bitscan-capread` helper are idle, and its agent answers every check of a compliance job with `runner_unavailable`. The pre-release agent builds (`0.1.0~preN-1` and `0.2.0~preN-1`) are not supported. Upgrade them to `0.5.0-1` as described in [Installing a release](#installing-a-release).
 
 The manager runs:
 
@@ -35,10 +35,10 @@ Production installs follow the runbooks in `deploy/runbooks/`:
 | [`agent-install.md`](deploy/runbooks/agent-install.md) | Installing, checking, upgrading, re-enrolling and removing the agent on each host |
 | [`manager-by-ip.md`](deploy/runbooks/manager-by-ip.md) | Moving agents from the manager's host name to its IP addresses, including an internal and a public address |
 
-**Release files.** Each release is published on the project's GitHub release page. For 0.4.1 it holds:
+**Release files.** Each release is published on the project's GitHub release page. For 0.5.0 it holds:
 
-- Manager: `bitscan_manager-0.4.1-py3-none-any.whl` (the built web UI is inside), `bitscan-manager-0.4.1-requirements.txt` (the hashed runtime dependencies), and the unit files `bitscan-manager.service`, `bitscan-manager-migrate.service`, `bitscan-manager-maintain.service` and `bitscan-manager-maintain.timer`.
-- Agent: `bitscan-agent_0.4.1-1_amd64.deb`.
+- Manager: `bitscan_manager-0.5.0-py3-none-any.whl` (the built web UI is inside), `bitscan-manager-0.5.0-requirements.txt` (the hashed runtime dependencies), and the unit files `bitscan-manager.service`, `bitscan-manager-migrate.service`, `bitscan-manager-maintain.service` and `bitscan-manager-maintain.timer`.
+- Agent: `bitscan-agent_0.5.0-1_amd64.deb`.
 - CycloneDX SBOMs.
 - `SHA256SUMS`, which lists every file above.
 
@@ -52,8 +52,8 @@ Each file you downloaded must show `OK`. Stop if any line says `FAILED`, if a do
 
 **Versions and compatibility.**
 
-- The manager and the agent use semantic versioning. The agent package version adds a Debian revision, for example `0.4.1-1`.
-- A manager supports agents of its own version and the one before. An agent supports a manager of its own version and the one before. So manager 0.4.1 supports agents `0.4.1-1` and `0.4.0-1`, and agent `0.4.1-1` supports managers 0.4.1 and 0.4.0. Hosts on `0.3.0-1` or older are not supported by manager 0.4.1: upgrade them to `0.4.0-1` or later before upgrading the manager. A fleet can also keep manager 0.4.0 and install agent `0.4.1-1` only on the hosts that need the runner fix. Pre-release builds (`X.Y.Z~preN-1`) are not supported by any manager.
+- The manager and the agent use semantic versioning. The agent package version adds a Debian revision, for example `0.5.0-1`.
+- A manager supports agents of its own version and the one before. An agent supports a manager of its own version and the one before. So manager 0.5.0 supports agents `0.5.0-1` and `0.4.1-1`, and agent `0.5.0-1` supports managers 0.5.0 and 0.4.1. Hosts on `0.4.0-1` or older are not supported by manager 0.5.0: upgrade them to `0.4.1-1` or later before upgrading the manager. Manager 0.5.0 sends `max_parallel_jobs` only to agents `0.5.0-1` or later; `0.4.1-1` agents keep running one job at a time. Pre-release builds (`X.Y.Z~preN-1`) are not supported by any manager.
 - Upgrade order: the manager first (migrate, then restart), then the agents. See [`manager-operations.md`](deploy/runbooks/manager-operations.md) section 1 and [`agent-install.md`](deploy/runbooks/agent-install.md) section 6.
 
 ## Prerequisites
@@ -297,6 +297,7 @@ Every route below is under `/api/v1` and needs `Authorization: Bearer <token>`, 
   | `decommission_after_days` | 7 | 0 (never) – 365 |
   | `redaction_patterns` | five built-in patterns | at most 50 RE2 patterns |
   | `max_parallel_plugins` | 2 | 1–8; sent to agents in the heartbeat |
+  | `max_parallel_jobs` | 2 | 1–4; compliance jobs of different profiles a host runs at once; sent in the heartbeat to agents 0.5.0 or later |
   | `enrolment_alert_per_hour` | 50 | 1–10,000 |
   | `inventory_interval_s` | 21,600 | 3,600–86,400 (1–24 h) |
 
@@ -475,6 +476,8 @@ curl -s https://manager.example:8443/api/v1/scans \
 - **The answer** is 202 `{scan_id, state: "queued", policy_version, jobs}`; `jobs` is the number of hosts.
 - **Refusals** (nothing is written): a malformed target or any other body key gets 400 (`Invalid request: target…`); an unknown profile 404; a disabled or deleted profile, or one with no active check, 409 `conflict`; a target with no eligible host 422; a body over 1 MiB 413.
 - **One job per host and profile.** A new scan cancels the still-queued jobs of earlier scans of the same profile on the same hosts. Jobs already handed out keep running, and inventory jobs are never touched.
+- **No duplicate run.** A host that already has a handed-out or running job of the profile does not run it again: the new scan's job for that host is saved as `cancelled` with `cancel_reason` `already_running` and is never sent. The scan page shows "not run: already running on this host" for it.
+- **Profiles in parallel.** A host runs jobs of different profiles at the same time, at most `max_parallel_jobs` at once (default 2); the others wait their turn in the order they were pulled. Agents before 0.5.0 run one job at a time.
 - **Commands are fixed when queued.** A job keeps the commands it was built with, even if the profile is imported again; scans queued afterwards use the new version. Disabling a profile blocks new scans; its queued and running jobs still run.
 - **`Idempotency-Key`** (optional, 1–255 printable ASCII characters, else 400): repeating the request with the same key and the same body returns the first 202 answer and starts no second scan. The same key with a different body gets 409. Keys are kept per user, in memory, for 24 hours, and are forgotten when the manager restarts. Only a 202 is remembered, so a refused request can be retried with the same key. A repeat sent while the first is still running waits for its answer.
 - **Alert:** an all-hosts scan (`{"all": true}`) started with an API token writes an `all_hosts_scan_api_token` alert. Every scan writes one `scan.create` audit entry.
@@ -624,7 +627,7 @@ The agent routes are under `/api/v1/agent/` and accept only agent tokens: `bse_`
 | Route | Purpose |
 | --- | --- |
 | `POST /agent/enroll` | Exchange a `bse_` token for `agent_id` and an agent token (`bsa_`), with `issued_at`, `expires_at` and `status` (`enrolled` or `awaiting_approval`) |
-| `POST /agent/{id}/heartbeat` | Report status; the answer is only `job_pull_seconds`, `max_parallel_plugins` and `server_time` |
+| `POST /agent/{id}/heartbeat` | Report status; the answer is only `job_pull_seconds`, `max_parallel_plugins` and `server_time`, plus `max_parallel_jobs` for agents 0.5.0 or later |
 | `GET /agent/{id}/jobs` | Pull up to 10 queued jobs, each handed out once |
 | `POST /agent/{id}/jobs/{job_id}/results` | Return results of a compliance job, at most 50 per batch; answers `{accepted, duplicates}` |
 | `PUT /agent/{id}/inventory[?job_id=...]` | Upload `os_info` and the package list, gzip-compressed; answers 204 |
@@ -732,8 +735,8 @@ The workflow `.github/workflows/e2e.yml` runs every night at 01:40 UTC and can a
 
 **Compatibility:** two more runs, in parallel, each on its own runner with its own guest and manager host:
 
-- `compat-a`: this manager with the previous release's agent (0.4.0);
-- `compat-b`: this agent with the previous release's manager (0.4.0).
+- `compat-a`: this manager with the previous release's agent (0.4.1);
+- `compat-b`: this agent with the previous release's manager (0.4.1).
 
 **Report and result:**
 - Each step is one row per host, PASS, FAIL or NOT RUN with its reason.

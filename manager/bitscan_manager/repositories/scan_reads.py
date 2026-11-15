@@ -60,7 +60,7 @@ _ONE: Final = sql.SQL(
 # The original before its retry (TS §4.4 L577), hosts by hostname.
 _JOBS: Final = (
     "SELECT j.job_id, j.agent_id, a.hostname, j.state::text, j.retry_of,"
-    " j.dispatched_at, j.started_at, j.finished_at FROM scan_job j"
+    " j.dispatched_at, j.started_at, j.finished_at, j.cancel_reason FROM scan_job j"
     " JOIN agent a ON a.agent_id = j.agent_id"
     " WHERE j.scan_id = %(scan_id)s AND j.kind = 'compliance'"
     " ORDER BY a.hostname, j.agent_id, j.retry_of IS NOT NULL, j.created_at, j.job_id"
@@ -103,6 +103,7 @@ class JobRow:
     dispatched_at: datetime | None
     started_at: datetime | None
     finished_at: datetime | None
+    cancel_reason: str | None  # 'already_running': not run, TS §4.4
 
 
 def _opt_int(value: object) -> int | None:
@@ -229,6 +230,7 @@ def scan_jobs(conn: Conn, scan_id: UUID) -> list[JobRow]:
             dispatched_at=r[5],
             started_at=r[6],
             finished_at=r[7],
+            cancel_reason=None if r[8] is None else str(r[8]),
         )
         for r in rows
     ]

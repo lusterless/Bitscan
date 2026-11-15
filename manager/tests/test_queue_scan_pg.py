@@ -27,11 +27,12 @@ import pytest
 
 from bitscan_manager.api.agent import schemas
 from bitscan_manager.db.pool import AppDatabase
-from bitscan_manager.repositories import scan_queue
+from bitscan_manager.repositories import scan_progress, scan_queue
 from bitscan_manager.repositories.results import host_counts
 from bitscan_manager.services.audit.metrics import REGISTRY
 from bitscan_manager.services.evaluator.eval_spec import parse_eval_spec
 from bitscan_manager.services.jobs import build, queue
+from bitscan_manager.services.jobs.scan_state import derive
 from bitscan_manager.services.jobs.targets import parse_target
 
 from . import scan_pg_fixtures as f
@@ -49,6 +50,7 @@ DETAIL_KEYS = {
     "target_kind",
     "jobs",
     "cancelled_older",
+    "already_running",
 }
 
 
@@ -228,6 +230,111 @@ def test_a_newer_scan_cancels_only_the_older_queued_jobs_it_replaces(
         (entry,) = f.audit_after(o, mark)
     assert [j["state"] for j in new] == ["queued", "queued"]
     assert entry["detail"]["cancelled_older"] == 2
+
+
+def _reasons(o: Any, scan_id: Any) -> dict[Any, tuple[str, Any, Any]]:
+    rows = o.execute(
+        "SELECT agent_id, state::text, cancel_reason, finished_at FROM scan_job"
+        " WHERE scan_id = %s",
+        (scan_id,),
+    ).fetchall()
+    return {r[0]: (r[1], r[2], r[3]) for r in rows}
+
+
+def test_a_host_already_running_the_policy_gets_its_job_not_run(
+    server: PgServer, db: AppDatabase, cat: f.Catalog
+) -> None:
+    """TS §4.4, §5.2, §8.3 Integration (owner decision 2026-11-14): a host with
+    a dispatched or running job of the same policy gets this scan's job
+    inserted cancelled with cancel_reason 'already_running' and finished_at =
+    the scan's time; a host running only another policy, one with a queued or
+    a finished job of the policy, and a fresh host get queued jobs with no
+    reason. The audit detail counts the jobs not run."""
+    pol, other = cat.policy(2), cat.policy(1)
+    with f.app(server) as c:
+        disp, run, oth, que, done, fresh = (f.make_agent(c).agent_id for _ in range(6))
+    earlier = NOW - timedelta(hours=1)
+    with f.owner(server) as o:
+        s0 = f.owner_scan(o, pol, state="running", created_at=earlier)
+        f.owner_job(
+            o,
+            s0,
+            disp,
+            pol,
+            state="dispatched",
+            created_at=earlier,
+            dispatched_at=earlier,
+        )
+        f.owner_job(
+            o,
+            s0,
+            run,
+            pol,
+            state="running",
+            created_at=earlier,
+            dispatched_at=earlier,
+            started_at=earlier,
+        )
+        f.owner_job(o, s0, que, pol, state="queued", created_at=earlier)
+        f.owner_job(
+            o, s0, done, pol, state="completed", created_at=earlier, finished_at=earlier
+        )
+        so = f.owner_scan(o, other, state="running", created_at=earlier)
+        f.owner_job(
+            o,
+            so,
+            oth,
+            other,
+            state="running",
+            created_at=earlier,
+            dispatched_at=earlier,
+            started_at=earlier,
+        )
+        mark = f.last_audit(o)
+    agents = [disp, run, oth, que, done, fresh]
+    queued = scan(db, pol, {"agents": [str(x) for x in agents]})
+    assert queued.jobs == 6 and queued.state == "queued"
+    with f.owner(server) as o:
+        got = _reasons(o, queued.scan_id)
+        (entry,) = f.audit_after(o, mark)
+    assert got[disp] == got[run] == ("cancelled", "already_running", NOW)
+    for x in (oth, que, done, fresh):
+        assert got[x] == ("queued", None, None), x
+    assert entry["detail"]["already_running"] == 2
+    assert entry["detail"]["jobs"] == 6
+    assert entry["detail"]["cancelled_older"] == 1  # que's older queued job
+
+
+def test_a_scan_whose_every_host_runs_the_policy_derives_cancelled(
+    server: PgServer, db: AppDatabase, cat: f.Catalog
+) -> None:
+    """Every job not run: no job is open or has results, so the scan derives
+    cancelled (TS §4.4 scan state), and the pull never sends the job."""
+    pol = cat.policy(2)
+    with f.app(server) as c:
+        a = f.make_agent(c).agent_id
+    earlier = NOW - timedelta(hours=1)
+    with f.owner(server) as o:
+        s0 = f.owner_scan(o, pol, state="running", created_at=earlier)
+        f.owner_job(
+            o,
+            s0,
+            a,
+            pol,
+            state="running",
+            created_at=earlier,
+            dispatched_at=earlier,
+            started_at=earlier,
+        )
+    queued = scan(db, pol, {"agents": [str(a)]})
+    with f.owner(server) as o:
+        units = scan_progress.unit_facts(o, [queued.scan_id])[queued.scan_id]
+        pending = o.execute(
+            "SELECT count(*) FROM scan_job WHERE scan_id = %s AND state = 'queued'",
+            (queued.scan_id,),
+        ).fetchone()
+    assert derive(units) == ("cancelled", True)
+    assert pending == (0,)
 
 
 # ------------------------------------------------------------ CHK-M9-156

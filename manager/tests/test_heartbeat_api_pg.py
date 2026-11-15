@@ -67,7 +67,11 @@ pytestmark = pytest.mark.pg
 
 T0 = datetime(2026, 10, 23, 12, 0, 0, 250_000, tzinfo=UTC)
 TEMPLATE = "/api/v1/agent/{id}/heartbeat"
-KEYS = ["job_pull_seconds", "max_parallel_plugins", "server_time"]
+# Agents below 0.5.0 get exactly the three keys; 0.5.0 and later also get
+# max_parallel_jobs (TS §6.5; owner decision 2026-11-14). The test agents
+# report 1.0.0.
+OLD_KEYS = ["job_pull_seconds", "max_parallel_plugins", "server_time"]
+KEYS = [*OLD_KEYS, "max_parallel_jobs"]
 MIB = 1_048_576
 HEARTBEAT_COLS = ("last_heartbeat_at", "agent_version", "runner_helpers", "status")
 
@@ -374,7 +378,8 @@ def ok(r: Any) -> dict[str, Any]:
     assert r.status_code == 200, (r.status_code, r.text)
     assert r.headers["content-type"].startswith("application/json")
     body: dict[str, Any] = r.json()
-    assert list(body) == KEYS, body  # exactly the three keys (REQ-070 (1))
+    want = KEYS if "max_parallel_jobs" in body else OLD_KEYS
+    assert list(body) == want, body  # exactly these keys (REQ-070 (1))
     assert not response_schema_errors(body)
     schemas.HeartbeatResponse.model_validate_json(r.content)
     return body
@@ -395,6 +400,37 @@ def test_response_is_exactly_the_three_configuration_keys(env: Env) -> None:
     assert parse(body["server_time"]) == T0
     for word in ("jobs", "job_id", "command", "execute", "plugins"):
         assert word not in body
+
+
+@pytest.mark.parametrize(
+    ("version", "sent"),
+    [
+        ("0.2.0-1", False),
+        ("0.4.1-1", False),
+        ("0.5.0~rc1-1", False),
+        ("dev", False),
+        ("0.5.0", True),
+        ("0.5.0-1", True),
+        ("0.10.0-1", True),
+        ("1.0.0", True),
+    ],
+)
+def test_max_parallel_jobs_only_for_agents_0_5_0_or_later(
+    env: Env, version: str, sent: bool
+) -> None:
+    """TS §3.3, §6.5, §8.3 Integration (owner decision 2026-11-14): agents
+    0.3.0 to 0.4.1 refuse an unknown key, so they get exactly the three
+    keys; 0.5.0 or later also get the max_parallel_jobs setting."""
+    a = env.agent()
+    body = ok(env.hb(a, env.body(agent_version=version)))
+    if not sent:
+        assert list(body) == OLD_KEYS
+        return
+    with env.conn() as c:
+        row = c.execute(
+            "SELECT value FROM setting WHERE key = 'max_parallel_jobs'"
+        ).fetchone()
+    assert row is not None and body["max_parallel_jobs"] == int(row[0]) == 2
 
 
 def test_seeded_defaults_are_answered(env: Env) -> None:
@@ -1098,7 +1134,13 @@ def test_openapi_documents_the_heartbeat_operation() -> None:
     assert resp == {"$ref": "#/components/schemas/HeartbeatResponse"}
     schema = doc["components"]["schemas"]["HeartbeatResponse"]
     assert sorted(schema["properties"]) == sorted(KEYS)
-    assert sorted(schema["required"]) == sorted(KEYS)
+    assert sorted(schema["required"]) == sorted(OLD_KEYS)  # max_parallel_jobs optional
+    assert schema["properties"]["max_parallel_jobs"] == {
+        "maximum": 4.0,
+        "minimum": 1.0,
+        "title": "Max Parallel Jobs",
+        "type": "integer",
+    }  # never null
     assert schema["additionalProperties"] is False
     assert "422" not in op["responses"]
     for status in ("400", "401", "403", "429", "503"):

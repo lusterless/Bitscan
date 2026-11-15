@@ -58,17 +58,33 @@ _RESOLVE: Final[Mapping[str, sql.Composed]] = {
 
 # One INSERT for every job of the scan; job_id and agent_id go into the
 # payload as lowercase hyphenated text, the rest is the scan's shared parts.
+# No duplicate run (TS §4.4, §5.2; owner decision 2026-11-14): an agent that
+# already has a dispatched or running compliance job of the same policy gets
+# this scan's job inserted cancelled, with cancel_reason 'already_running'
+# and finished_at = created_at, so it is never sent. It is decided at INSERT
+# because bitscan_app may not UPDATE cancel_reason. The policy queue lock
+# serialises scans of one policy; a job a concurrent pull dispatches just
+# after this check is caught by the agent's own rule (TS §3.3).
 _JOBS: Final = sql.SQL(
     "INSERT INTO scan_job (job_id, kind, scan_id, agent_id, state, payload,"
-    " eval_spec, created_at, pickup_by)"
-    " SELECT t.job_id, 'compliance', %(scan)s, t.agent_id, 'queued',"
+    " eval_spec, created_at, pickup_by, finished_at, cancel_reason)"
+    " SELECT t.job_id, 'compliance', %(scan)s, t.agent_id,"
+    " CASE WHEN b.busy THEN 'cancelled' ELSE 'queued' END::scan_state,"
     " jsonb_build_object('job_id', t.job_id::text, 'agent_id', t.agent_id::text,"
     " 'kind', 'compliance', 'pickup_by', CAST(%(text)s AS text),"
     " 'plugins', CAST(%(plugins)s AS jsonb),"
     " 'redaction_patterns', CAST(%(patterns)s AS jsonb)),"
-    " CAST(%(spec)s AS jsonb), %(created)s, %(pickup)s"
+    " CAST(%(spec)s AS jsonb), %(created)s, %(pickup)s,"
+    " CASE WHEN b.busy THEN CAST(%(created)s AS timestamptz) END,"
+    " CASE WHEN b.busy THEN 'already_running' END"
     " FROM unnest(CAST(%(jobs)s AS uuid[]), CAST(%(agents)s AS uuid[]))"
     " AS t(job_id, agent_id)"
+    " CROSS JOIN LATERAL (SELECT EXISTS (SELECT 1 FROM scan_job j"
+    " JOIN scan s ON s.scan_id = j.scan_id"
+    " WHERE j.agent_id = t.agent_id AND j.kind = 'compliance'"
+    " AND j.state IN ('dispatched', 'running') AND s.policy_id = %(policy)s)"
+    " AS busy) AS b"
+    " RETURNING (cancel_reason IS NOT NULL)"
 )
 
 
@@ -156,10 +172,17 @@ def insert_scan(
     return UUID(str(row[0]))
 
 
+@dataclass(frozen=True)
+class JobsInserted:
+    queued: int  # jobs that will be sent
+    already_running: int  # jobs inserted cancelled: the policy runs on that host
+
+
 def insert_jobs(
     conn: Conn,
     *,
     scan_id: UUID,
+    policy_id: int,
     agent_ids: Sequence[UUID],
     job_ids: Sequence[UUID],
     created_at: datetime,
@@ -168,13 +191,15 @@ def insert_jobs(
     plugins_json: Sequence[Mapping[str, Any]],
     patterns: Sequence[str],
     eval_spec_json: Mapping[str, Any],
-) -> int:
-    """One queued compliance job per (job_id, agent_id) pair, in one INSERT;
-    every job has the scan's created_at (#125 (f)). Returns the row count."""
+) -> JobsInserted:
+    """One compliance job per (job_id, agent_id) pair, in one INSERT; every
+    job has the scan's created_at (#125 (f)). A job for an agent that already
+    runs policy_id is inserted cancelled with 'already_running' (_JOBS)."""
     if not agent_ids or len(agent_ids) != len(job_ids):
         raise ValueError("one job id per agent is required")
     params = {
         "scan": scan_id,
+        "policy": policy_id,
         "text": pickup_text,
         "plugins": Jsonb([dict(p) for p in plugins_json]),
         "patterns": Jsonb(list(patterns)),
@@ -184,7 +209,9 @@ def insert_jobs(
         "jobs": list(job_ids),
         "agents": list(agent_ids),
     }
-    return conn.execute(_JOBS, params).rowcount
+    rows = conn.execute(_JOBS, params).fetchall()
+    skipped = sum(1 for r in rows if r[0])
+    return JobsInserted(queued=len(rows) - skipped, already_running=skipped)
 
 
 def cancel_older_queued(

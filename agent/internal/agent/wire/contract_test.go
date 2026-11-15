@@ -774,19 +774,28 @@ func TestContractNoOmitemptyAndExactKeys(t *testing.T) {
 	}
 	for _, p := range pairs {
 		want := map[string]bool{}
+		optional := map[string]bool{} // schema properties that are not required
 		for _, c := range p.components {
 			s, ok := doc.Components.Schemas[c]
 			if !ok {
 				t.Fatalf("component %s missing", c)
 			}
+			req := map[string]bool{}
+			for _, k := range s.Required {
+				req[k] = true
+			}
 			for k := range s.Properties {
 				want[k] = true
-			}
-			// every property is required in the agent contract (#60: nullable keys are required)
-			if len(s.Required) != len(s.Properties) {
-				t.Errorf("%s: %d required of %d properties", c, len(s.Required), len(s.Properties))
+				if !req[k] {
+					optional[k] = true
+				}
 			}
 		}
+		// Every property is required in the agent contract (#60: nullable keys
+		// are required), except a key the Go side marks with the wire rule
+		// "opt" (TS §6.5: max_parallel_jobs, sent only to agents 0.5.0 or
+		// later; owner decision 2026-11-14). Both sides must agree.
+		opt := map[string]bool{}
 		got := map[string]bool{}
 		for i := range p.goType.NumField() {
 			f := p.goType.Field(i)
@@ -807,9 +816,15 @@ func TestContractNoOmitemptyAndExactKeys(t *testing.T) {
 				continue
 			}
 			got[name] = true
+			if rule, _, _ := strings.Cut(f.Tag.Get("wire"), ","); rule == "opt" {
+				opt[name] = true
+			}
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s keys %v, schema %v has %v", p.goType.Name(), sortedKeys(got), p.components, sortedKeys(want))
+		}
+		if !reflect.DeepEqual(opt, optional) {
+			t.Errorf("%s optional keys %v, schema %v leaves %v not required", p.goType.Name(), sortedKeys(opt), p.components, sortedKeys(optional))
 		}
 	}
 	// source grep over the non-test files of the package

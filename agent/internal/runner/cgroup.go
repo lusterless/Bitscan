@@ -88,11 +88,15 @@ type Cgroups struct {
 	// tasksLimited is true when plugins/pids.max holds the shared limit, so
 	// plugins/pids.events counts the forks it refused.
 	tasksLimited bool
+	// live holds the cgroup names of the jobs now running (guarded by mu):
+	// a job's end sweeps every other cgroup that is not one of them.
+	live map[string]bool
 }
 
-func NewCgroups(d CgroupDeps) *Cgroups { return &Cgroups{d: d} }
+func NewCgroups(d CgroupDeps) *Cgroups { return &Cgroups{d: d, live: map[string]bool{}} }
 
-// Plugin is one plugin's cgroup, "plugins/p-<n>".
+// Plugin is one plugin's cgroup: "plugins/j-<n>/p-<m>" inside its job's
+// cgroup, or "plugins/p-<n>" from Cgroups.NewPlugin.
 type Plugin struct {
 	name string
 	c    *Cgroups
@@ -100,6 +104,44 @@ type Plugin struct {
 	// started; watch is false when there is no shared task limit.
 	limitHits uint64
 	watch     bool
+}
+
+// Job is one job's cgroup, "plugins/j-<n>" (TS §3.7; owner decision
+// 2026-11-14): its plugins' cgroups are its children, so they share the
+// plugins task limit with every other job's, and the job's end kills the
+// whole subtree (JobSweep).
+type Job struct {
+	name string
+	c    *Cgroups
+	next uint64
+}
+
+// NewJob makes a fresh job cgroup. When plugin cgroups carry the runner's
+// CPU limit, it passes the cpu controller on to them.
+func (c *Cgroups) NewJob() (*Job, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.next++
+	j := &Job{name: pluginsDir + "/j-" + strconv.FormatUint(c.next, 10), c: c}
+	if err := c.d.FS.Mkdir(j.name); err != nil {
+		return nil, fmt.Errorf("runner: create job cgroup: %w", err)
+	}
+	if c.cpuMax != nil {
+		if err := c.d.FS.WriteFile(j.name+"/cgroup.subtree_control", []byte("+cpu")); err != nil {
+			return nil, errors.Join(fmt.Errorf("runner: enable cpu for job cgroup: %w", err), c.d.FS.Remove(j.name))
+		}
+	}
+	c.live[j.name] = true
+	return j, nil
+}
+
+// NewPlugin makes a fresh plugin cgroup inside the job's cgroup.
+func (j *Job) NewPlugin() (*Plugin, error) {
+	c := j.c
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	j.next++
+	return c.newPlugin(path.Join(j.name, "p-"+strconv.FormatUint(j.next, 10)))
 }
 
 // parseSelfCgroup accepts exactly one "0::<path>" line (unified cgroup v2).
@@ -274,12 +316,18 @@ func (c *Cgroups) ensureSupervisor() error {
 	return nil
 }
 
-// NewPlugin makes a fresh plugin cgroup.
+// NewPlugin makes a fresh plugin cgroup outside any job.
 func (c *Cgroups) NewPlugin() (*Plugin, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.next++
-	p := &Plugin{name: pluginsDir + "/p-" + strconv.FormatUint(c.next, 10), c: c}
+	return c.newPlugin(pluginsDir + "/p-" + strconv.FormatUint(c.next, 10))
+}
+
+// newPlugin makes the plugin cgroup name with the runner's CPU limit and
+// notes the shared task-limit counter. Callers hold c.mu.
+func (c *Cgroups) newPlugin(name string) (*Plugin, error) {
+	p := &Plugin{name: name, c: c}
 	if err := c.d.FS.Mkdir(p.name); err != nil {
 		return nil, fmt.Errorf("runner: create plugin cgroup: %w", err)
 	}

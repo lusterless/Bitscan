@@ -83,11 +83,11 @@ class JobRepo:
         rows are skipped and the state re-checked, so two concurrent pulls
         never return one job. Only the stored payload is returned."""
         rows = self._conn.execute(
-            "UPDATE scan_job j SET state = 'dispatched', dispatched_at = %(now)s"
-            " FROM (SELECT job_id FROM scan_job WHERE agent_id = %(agent)s"
-            " AND state = 'queued' AND pickup_by > %(now)s"
-            " ORDER BY created_at, job_id LIMIT %(limit)s FOR UPDATE SKIP LOCKED) d"
-            " WHERE j.job_id = d.job_id AND j.state = 'queued'"
+            "WITH d AS MATERIALIZED (SELECT job_id FROM scan_job"
+            " WHERE agent_id = %(agent)s AND state = 'queued' AND pickup_by > %(now)s"
+            " ORDER BY created_at, job_id LIMIT %(limit)s FOR UPDATE SKIP LOCKED)"
+            " UPDATE scan_job j SET state = 'dispatched', dispatched_at = %(now)s"
+            " FROM d WHERE j.job_id = d.job_id AND j.state = 'queued'"
             " RETURNING j.created_at, j.job_id, j.payload",
             {"now": now, "agent": agent_id, "limit": PULL_LIMIT},
         ).fetchall()

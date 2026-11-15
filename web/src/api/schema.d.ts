@@ -1326,6 +1326,8 @@ export interface components {
     HeartbeatResponse: {
       /** Job Pull Seconds */
       job_pull_seconds: number;
+      /** Max Parallel Jobs */
+      max_parallel_jobs?: number;
       /** Max Parallel Plugins */
       max_parallel_plugins: number;
       /**
@@ -1348,6 +1350,8 @@ export interface components {
     };
     /** HostJob */
     HostJob: {
+      /** Cancel Reason */
+      cancel_reason: "already_running" | null;
       /** Dispatched At */
       dispatched_at: string | null;
       /** Finished At */
@@ -2462,6 +2466,8 @@ export interface components {
       inventory_interval_s: number;
       /** Job Pull Seconds */
       job_pull_seconds: number;
+      /** Max Parallel Jobs */
+      max_parallel_jobs: number;
       /** Max Parallel Plugins */
       max_parallel_plugins: number;
       /** Redaction Patterns */
@@ -2469,7 +2475,7 @@ export interface components {
     };
     /**
      * SettingsPatch
-     * @description Any non-empty subset of the seven keys; null is not a value.
+     * @description Any non-empty subset of the eight keys; null is not a value.
      */
     SettingsPatch: {
       /** Agent Token Ttl Days */
@@ -2482,6 +2488,8 @@ export interface components {
       inventory_interval_s?: number | null;
       /** Job Pull Seconds */
       job_pull_seconds?: number | null;
+      /** Max Parallel Jobs */
+      max_parallel_jobs?: number | null;
       /** Max Parallel Plugins */
       max_parallel_plugins?: number | null;
       /** Redaction Patterns */

@@ -666,9 +666,12 @@ def r209(ctx: Ctx) -> tuple[str, str]:
                     ("runner CapBnd %s" % st.get("CapBnd"), st.get("CapBnd") == "0000000000000004")])
 
 
-@row("CHK-M10-210", "cgroup layout: each plugin in its own plugins/p-<n> with the unit's cpu.max, plugins sharing the unit's task limit less 16, the runner in supervisor, only supervisor and plugins left (REQ-238 (2)-(4))")
+@row("CHK-M10-210", "cgroup layout: each plugin in its own plugins/j-<n>/p-<m> inside its job's cgroup, with the unit's cpu.max, plugins sharing the unit's task limit less 16, the runner in supervisor, only supervisor and plugins left (REQ-238 (2)-(4))")
 def r210(ctx: Ctx) -> tuple[str, str]:
-    # The runner hops through each new plugins/p-<n> while it starts a plugin
+    # Owner decision 2026-11-14 (TS §3.7): each job gets plugins/j-<n> and
+    # each of its plugins plugins/j-<n>/p-<m>, so all jobs' plugins still
+    # share plugins/pids.max. The runner hops through each new plugin cgroup
+    # while it starts a plugin
     # (#136 (a)), so its cgroup is read after the other starts are over. Each
     # plugin cgroup carries the unit's cpu.max (CPUQuota=), so a Go program a
     # plugin runs sizes GOMAXPROCS from it, and all plugins share
@@ -697,7 +700,8 @@ def r210(ctx: Ctx) -> tuple[str, str]:
     cpus = [d.get("CPUMAX", "") for d in ds]
     inner = sorted(p.name for p in (cg / "plugins").iterdir() if p.is_dir()) if cg and (cg / "plugins").is_dir() else ["<no plugins>"]
     return verdict([("job done", ok_job(res, 3)),
-                    ("plugin cgroups %s" % cgs, len(set(cgs)) == 3 and all(re.search(r"/bitscan-runner\.service/plugins/p-\d+$", c) for c in cgs)),
+                    ("plugin cgroups %s" % cgs, len(set(cgs)) == 3 and all(re.search(r"/bitscan-runner\.service/plugins/j-\d+/p-\d+$", c) for c in cgs)
+                     and len({c.rsplit("/", 1)[0] for c in cgs}) == 1),
                     ("runner in supervisor", all(d.get("RCG", "").endswith("/bitscan-runner.service/supervisor") for d in ds)),
                     ("forked child in the plugin's own cgroup", all(d.get("CH") == d.get("CG") for d in ds)),
                     ("plugin cpu.max %s equals the unit's %s" % (cpus, unit_cpu), unit_cpu[:3] != "max" and "_" in unit_cpu and all(c == unit_cpu for c in cpus)),
@@ -998,7 +1002,7 @@ def r344(ctx: Ctx) -> tuple[str, str]:
                     ("tail %r" % so[-12:], so.endswith("[REDAC") or "[REDACTED]" in so[-16:] or so.rstrip("a") == "")])
 
 
-@row("CHK-M10-222", "every bits/samples plugin under the sandbox: no error, timeout or 126/127; stdout equal to root's outside (#143)")
+@row("CHK-M10-222", "every bits/samples plugin under the sandbox: no error, timeout or 126/127; stdout equal to root's outside (#143); clustermax-*.bit is CHK-M10-224 and -225")
 def r222(ctx: Ctx) -> tuple[str, str]:
     sdir = getattr(ctx, "samples", None)
     if not sdir or not os.path.isdir(sdir):
@@ -1010,7 +1014,7 @@ def r222(ctx: Ctx) -> tuple[str, str]:
     except ImportError:
         return ("NOT RUN", "defusedxml is not installed on this host (run_vm.sh --samples installs python3-defusedxml)")
     plugins: list[tuple[str, str, int]] = []
-    for f in sorted(Path(sdir).glob("*.bit")):
+    for f in sample_files(sdir, clustermax=False):
         root = DET.parse(str(f), forbid_dtd=True).getroot()
         for p in root.iter():
             if p.tag.split("}")[-1] != "Plugin":
@@ -1045,7 +1049,117 @@ def r222(ctx: Ctx) -> tuple[str, str]:
             diff.append("%s: sandbox exit %s vs root %s; sandbox %r vs root %r" % (name, it.get("exit_code"), r.returncode, mask(n1)[:160], mask(n2)[:160]))
     st = "PASS" if ok_job(res, len(specs)) and not bad and not diff else "FAIL"
     return (st, "%d plugins from %d files; job %s; failing %s; differing from root %s" % (
-        len(specs), len(list(Path(sdir).glob("*.bit"))), "done" if ok_job(res, len(specs)) else res["kinds"][-3:], bad, diff))
+        len(specs), len(sample_files(sdir, clustermax=False)), "done" if ok_job(res, len(specs)) else res["kinds"][-3:], bad, diff))
+
+
+# The ClusterMAX policy (TS §3.8) reads its report from the root cmax-helper,
+# which serves only bitscan-runner, so its plugins cannot equal root's output
+# outside the sandbox (CHK-M10-222). Owner decision 2026-11-14.
+CLUSTERMAX_GLOB = "clustermax-*.bit"
+CMAX_TRIGGER = "/usr/bin/cmax-trigger"
+CMAX_SOCKET = "/run/clustermax/collect.sock"
+
+
+def sample_files(sdir: str, clustermax: bool) -> list[Path]:
+    cm = set(Path(sdir).glob(CLUSTERMAX_GLOB))
+    return sorted(f for f in Path(sdir).glob("*.bit") if (f in cm) == clustermax)
+
+
+def sample_plugins(files: list[Path]) -> list[tuple[str, str, int]]:
+    from defusedxml import ElementTree as DET
+    out: list[tuple[str, str, int]] = []
+    for f in files:
+        root = DET.parse(str(f), forbid_dtd=True).getroot()
+        for p in root.iter():
+            if p.tag.split("}")[-1] != "Plugin":
+                continue
+            name = ex = None
+            to = 30
+            for c in p:
+                t = c.tag.split("}")[-1]
+                if t == "PluginName":
+                    name = (c.text or "").strip()
+                elif t == "Execute":
+                    ex = c.text or ""
+                    to = int(c.get("timeout", "30"))
+            if name and ex:
+                out.append(("%s: %s" % (f.stem, name), ex.strip(), to))
+    return out
+
+
+def clustermax_job(ctx: Ctx) -> tuple[list[tuple[str, str, int]], dict] | tuple[str, str]:
+    """The clustermax-*.bit plugins run as one job, or a NOT RUN verdict."""
+    sdir = getattr(ctx, "samples", None)
+    if not sdir or not os.path.isdir(sdir):
+        return ("NOT RUN", "no samples directory given (--samples)")
+    try:
+        import defusedxml  # noqa: F401
+    except ImportError:
+        return ("NOT RUN", "defusedxml is not installed on this host (run_vm.sh --samples installs python3-defusedxml)")
+    files = sample_files(sdir, clustermax=True)
+    if not files:
+        return ("NOT RUN", "no %s in %s" % (CLUSTERMAX_GLOB, sdir))
+    if not os.path.exists(CMAX_TRIGGER):
+        return ("NOT RUN", "%s is not installed: the bitscan-agent package ships it (TS 3.1, 3.8)" % CMAX_TRIGGER)
+    plugins = sample_plugins(files)
+    return plugins, run_job(ctx, [plugin(e, t) for _, e, t in plugins], mpp=4, timeout=1800)
+
+
+@row("CHK-M10-224", "clustermax-*.bit under the sandbox with cmax-helper.socket stopped: every plugin exits 0, no error or timeout, stdout NOHELPER (TS §3.8)")
+def r224(ctx: Ctx) -> tuple[str, str]:
+    # The package installs the helper on (owner decision 2026-11-15); this row
+    # stops it for the job and starts it again, as a host where root turned
+    # it off would see.
+    stop = subprocess.run(["systemctl", "stop", "cmax-helper.socket", "cmax-helper.service"],
+                          capture_output=True, text=True)
+    try:
+        got = clustermax_job(ctx)
+    finally:
+        subprocess.run(["systemctl", "start", "cmax-helper.socket"], capture_output=True, text=True)
+    if isinstance(got[0], str):
+        return got  # type: ignore[return-value]
+    plugins, res = got  # type: ignore[misc]
+    bad = []
+    for (name, _ex, _to), it in zip(plugins, res["results"]):
+        it = it or {}
+        out = norm(it.get("stdout", ""))
+        if it.get("error") or it.get("timed_out") or it.get("exit_code") != 0 or not out.startswith("NOHELPER "):
+            bad.append("%s: exit %s timed_out %s error %s stdout %r" % (name, it.get("exit_code"), it.get("timed_out"), it.get("error"), mask(out)[:120]))
+    return verdict([("socket stopped (rc %d)" % stop.returncode, stop.returncode == 0),
+                    ("job done", ok_job(res, len(plugins))),
+                    ("%d plugins print NOHELPER with exit 0" % len(plugins), not bad)],
+                   "failing %s" % bad[:5])
+
+
+@row("CHK-M10-225", "clustermax-*.bit under the sandbox with cmax-helper on, as installed: one real ClusterMAX 0.3.0 audit; collect, header, status and every check line as the policy expects (TS §3.1, §3.8)")
+def r225(ctx: Ctx) -> tuple[str, str]:
+    active = subprocess.run(["systemctl", "is-active", "cmax-helper.socket"], capture_output=True, text=True).stdout.strip()
+    enabled = subprocess.run(["systemctl", "is-enabled", "cmax-helper.socket"], capture_output=True, text=True).stdout.strip()
+    got = clustermax_job(ctx)
+    if isinstance(got[0], str):
+        return got  # type: ignore[return-value]
+    plugins, res = got  # type: ignore[misc]
+    want = {
+        "collect": re.compile(r"^(started|running) [0-9a-f]{32}$"),
+        "header": re.compile(r"^Command: cmax audit; "),
+        "status": re.compile(r"^ok [0-9]+ 0\.3\.0$"),
+    }
+    verdict_line = re.compile(r"^(PASS|FAIL|WARNING|n/a)( |$)")
+    bad, counts = [], {}
+    for (name, _ex, _to), it in zip(plugins, res["results"]):
+        it = it or {}
+        out = norm(it.get("stdout", ""))
+        kind = name.split(" - ")[1] if " - " in name else name
+        rx = want.get(kind, verdict_line)
+        word = out.split(" ", 1)[0] if out else ""
+        if kind not in want:
+            counts[word] = counts.get(word, 0) + 1
+        if it.get("error") or it.get("timed_out") or it.get("exit_code") != 0 or not rx.search(out):
+            bad.append("%s: exit %s timed_out %s error %s stdout %r" % (name, it.get("exit_code"), it.get("timed_out"), it.get("error"), mask(out)[:120]))
+    return verdict([("cmax-helper.socket enabled and active after install (%s, %s)" % (enabled, active), enabled == "enabled" and active == "active"),
+                    ("job done", ok_job(res, len(plugins))),
+                    ("%d plugins print the expected collect, header, status and verdict lines" % len(plugins), not bad)],
+                   "check verdicts %s; failing %s" % (counts, bad[:5]))
 
 
 def norm(s: str) -> str:

@@ -677,12 +677,40 @@ def test_the_m9_scans_and_schedules_sections_behave_as_written(  # noqa: PLR0915
         len(queued_a1) == 1
         and all(p["execute"] == "cat /etc/hostname" for p in queued_a1[0]["plugins"]),
     )
+    # No duplicate run (owner decision 2026-11-14): A1 still has the job it
+    # pulled, so a scan of the same profile now is not run there.
     st, _, out = w.req(
         "POST",
         V1 + "/scans",
         token=OK,
         body={"policy_id": pid, "target": {"agents": [A1]}},
     )
+    busy_scan = json.loads(out)["scan_id"] if st == 202 else ""
+    busy_job = db(
+        "SELECT state::text, cancel_reason FROM scan_job WHERE scan_id = %s",
+        (busy_scan,),
+    )
+    w.check(
+        "a host already running the profile does not run it twice",
+        "POST /scans agents [A1] while A1's job is handed out, then pull",
+        "202; the job is cancelled with already_running; the pull has no job of it",
+        f"{st} {busy_job} {[j for j in pull('A1') if is_main(j)]}",
+        st == 202 and busy_job == [("cancelled", "already_running")],
+    )
+    # End A1's handed-out job, so the next scans run there.
+    old_scan = db(
+        "SELECT scan_id FROM scan_job WHERE job_id = %s",
+        (queued_a1[0]["job_id"] if queued_a1 else None,),
+    )
+    if old_scan:
+        w.req("POST", f"{V1}/scans/{old_scan[0][0]}/cancel", token=OK)
+    st, _, out = w.req(
+        "POST",
+        V1 + "/scans",
+        token=OK,
+        body={"policy_id": pid, "target": {"agents": [A1]}},
+    )
+    newer_scan = json.loads(out)["scan_id"] if st == 202 else ""
     newer = [j for j in pull("A1") if is_main(j)]
     w.check(
         "scans queued after a re-import use the new version",
@@ -841,6 +869,8 @@ def test_the_m9_scans_and_schedules_sections_behave_as_written(  # noqa: PLR0915
     )
 
     # ------------------------------------------------- cancelling
+    if newer_scan:  # A1's handed-out job of the profile ends first
+        w.req("POST", f"{V1}/scans/{newer_scan}/cancel", token=OK)
     st, _, out = w.req(
         "POST",
         V1 + "/scans",

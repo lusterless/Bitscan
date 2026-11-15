@@ -50,9 +50,12 @@ type HeartbeatRequest struct {
 }
 
 type HeartbeatResponse struct {
-	JobPullSeconds     int  `json:"job_pull_seconds" wire:"min=60,max=3600"`
-	MaxParallelPlugins int  `json:"max_parallel_plugins" wire:"min=1,max=8"`
-	ServerTime         Time `json:"server_time"`
+	JobPullSeconds     int `json:"job_pull_seconds" wire:"min=60,max=3600"`
+	MaxParallelPlugins int `json:"max_parallel_plugins" wire:"min=1,max=8"`
+	// MaxParallelJobs is sent only to agents 0.5.0 or later (TS §3.3,
+	// §6.5; owner decision 2026-11-14); absent from older managers.
+	MaxParallelJobs *int `json:"max_parallel_jobs" wire:"opt,min=1,max=4"`
+	ServerTime      Time `json:"server_time"`
 }
 
 type JobsResponse struct {

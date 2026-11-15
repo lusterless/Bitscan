@@ -156,6 +156,8 @@ BANNED_FIELDS = {"command", "commands", "cmd", "script", "execute", "plugins", "
 # a query parameter or setting that could switch inventory off or skip it
 INVENTORY_SWITCH = re2.compile(r"(?i)inventor|disable|enable|skip|pause|suspend")
 HEARTBEAT_KEYS = {"job_pull_seconds", "max_parallel_plugins", "server_time"}
+# Configuration too; optional, sent only to agents 0.5.0 or later (TS §6.5).
+HEARTBEAT_OPTIONAL = {"max_parallel_jobs"}
 SPEC_SETTINGS = {
     "agent_token_ttl_days",
     "job_pull_seconds",
@@ -164,6 +166,7 @@ SPEC_SETTINGS = {
     "max_parallel_plugins",
     "enrolment_alert_per_hour",
     "inventory_interval_s",
+    "max_parallel_jobs",
 }
 
 
@@ -403,11 +406,13 @@ def test_no_code_reads_an_inventory_switch() -> None:
 
 
 def test_the_heartbeat_response_is_only_configuration() -> None:
-    """TS §3.3 L202, §6.5 L1163: exactly three keys, nothing else allowed."""
-    assert set(schemas.HeartbeatResponse.model_fields) == HEARTBEAT_KEYS
+    """TS §3.3 L202, §6.5 L1163: exactly these keys, nothing else allowed;
+    max_parallel_jobs is the one optional key."""
+    every = HEARTBEAT_KEYS | HEARTBEAT_OPTIONAL
+    assert set(schemas.HeartbeatResponse.model_fields) == every
     doc = create_app().openapi()
     resp = doc["components"]["schemas"]["HeartbeatResponse"]
-    assert set(resp["properties"]) == HEARTBEAT_KEYS
+    assert set(resp["properties"]) == every
     assert set(resp["required"]) == HEARTBEAT_KEYS
     assert resp.get("additionalProperties") is False
     op = doc["paths"][V1 + "/agent/{id}/heartbeat"]["post"]

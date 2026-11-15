@@ -222,7 +222,8 @@ def test_no_object_open_or_forbidden_key_in_job_pull() -> None:
 def test_heartbeat_response_exact() -> None:
     schema = schemas.HeartbeatResponse.model_json_schema(mode="serialization")
     keys = {"job_pull_seconds", "max_parallel_plugins", "server_time"}
-    assert set(schema["properties"]) == keys
+    # max_parallel_jobs: optional, sent only to agents 0.5.0 or later (TS §6.5)
+    assert set(schema["properties"]) == keys | {"max_parallel_jobs"}
     assert set(schema.get("required", [])) == keys
     assert schema.get("additionalProperties") is False
 

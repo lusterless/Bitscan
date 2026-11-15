@@ -71,6 +71,7 @@ agent/internal/{agent,inventory,spool,runner,capread,redact}/
 agent/test/sandbox/   # sandbox and security suites run on VMs
 web/src/              # React + TypeScript UI
 bits/samples/         # sample .bit policies (owned by impl-bits)
+collector/            # ClusterMAX collector (TS §3.8), shipped in the bitscan-agent package; its policy is bits/samples/clustermax-0.3.0.bit
 bits/tests/           # .bit test fixtures: malformed, XXE, billion-laughs, oversize (owned by tester)
 deploy/{systemd,dbus,debian,runbooks,tests}/
 e2e/                  # nightly end-to-end and load tests

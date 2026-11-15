@@ -39,8 +39,11 @@ type Config struct {
 	HeartbeatSeconds   int
 	JobPullSeconds     int
 	MaxParallelPlugins int
-	SpoolMaxMB         int
-	LogLevel           string
+	// MaxParallelJobs is optional (default 2, 1–4; TS §3.6, owner decision
+	// 2026-11-14).
+	MaxParallelJobs int
+	SpoolMaxMB      int
+	LogLevel        string
 }
 
 var pinRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
@@ -51,6 +54,7 @@ func defaults() Config {
 		HeartbeatSeconds:   HeartbeatSeconds,
 		JobPullSeconds:     300,
 		MaxParallelPlugins: 2,
+		MaxParallelJobs:    2,
 		SpoolMaxMB:         50,
 		LogLevel:           "info",
 	}
@@ -153,6 +157,8 @@ func (c *Config) set(key string, val *yaml.Node) error {
 		return integer(val, &c.JobPullSeconds)
 	case "max_parallel_plugins":
 		return integer(val, &c.MaxParallelPlugins)
+	case "max_parallel_jobs":
+		return integer(val, &c.MaxParallelJobs)
 	case "spool_max_mb":
 		return integer(val, &c.SpoolMaxMB)
 	}
@@ -201,6 +207,8 @@ func (c *Config) check() error {
 		return errors.New("agent.yaml: job_pull_seconds: must be 60 to 3600")
 	case c.MaxParallelPlugins < 1 || c.MaxParallelPlugins > 8:
 		return errors.New("agent.yaml: max_parallel_plugins: must be 1 to 8")
+	case c.MaxParallelJobs < 1 || c.MaxParallelJobs > 4:
+		return errors.New("agent.yaml: max_parallel_jobs: must be 1 to 4")
 	case c.SpoolMaxMB < 1 || c.SpoolMaxMB > 50:
 		return errors.New("agent.yaml: spool_max_mb: must be 1 to 50")
 	case !slices.Contains([]string{"debug", "info", "warn", "error"}, c.LogLevel):

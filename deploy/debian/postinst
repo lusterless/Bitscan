@@ -149,7 +149,8 @@ write_conf() {
         printf "manager_url: '%s'\nca_file: '%s'\nmanager_spki_sha256: '%s'\n" \
             "$URL" "$CA" "$PIN" >/etc/bitscan/agent.yaml.tmp
         printf '%s\n' "state_dir: /var/lib/bitscan-agent" "heartbeat_seconds: 300" \
-            "job_pull_seconds: 300" "max_parallel_plugins: 2" "spool_max_mb: 50" \
+            "job_pull_seconds: 300" "max_parallel_plugins: 2" "max_parallel_jobs: 2" \
+            "spool_max_mb: 50" \
             "log_level: info" >>/etc/bitscan/agent.yaml.tmp
     )
     chown root:bitscan /etc/bitscan/agent.yaml.tmp

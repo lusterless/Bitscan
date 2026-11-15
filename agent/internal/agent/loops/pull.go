@@ -48,7 +48,7 @@ func (p *Puller) Loop() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); p.work(inv, func(j wire.Job) { p.Inventory.RunJob(r.Context(), j.JobID) }) }()
-	go func() { defer wg.Done(); p.work(comp, p.compliance) }()
+	go func() { defer wg.Done(); p.pool(comp, p.compliance) }()
 	defer wg.Wait()
 	back := schedule.NewBackoff(r.Rand())
 	for {

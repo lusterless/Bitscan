@@ -177,6 +177,23 @@ describe("CHK-M11-267 the summary (REQ-280 (1))", () => {
             ],
           }),
           host(3, { hostname: "app-3", score: 0.9996, errors: 0 }),
+          host(4, {
+            hostname: "gpu-4",
+            passed: 0,
+            failed: 0,
+            errors: 0,
+            not_run: 7,
+            score: null,
+            jobs: [
+              {
+                ...at(host(4).jobs, 0),
+                state: "cancelled",
+                dispatched_at: null,
+                started_at: null,
+                cancel_reason: "already_running",
+              },
+            ],
+          }),
         ],
       }),
     );
@@ -185,6 +202,15 @@ describe("CHK-M11-267 the summary (REQ-280 (1))", () => {
       ["web-2", "completed", "3", "1", "2", "75.0 % 5 errors"],
       ["db-1", "expired, retry running", "0", "0", "7", "n/a 1 error"],
       ["app-3", "completed", "3", "1", "2", "99.9 % 0 errors"],
+      // TS §4.4 (owner decision 2026-11-14): the same policy was running there.
+      [
+        "gpu-4",
+        "not run: already running on this host",
+        "0",
+        "0",
+        "7",
+        "n/a 0 errors",
+      ],
     ]);
   });
 

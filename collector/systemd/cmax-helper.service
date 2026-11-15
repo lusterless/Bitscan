@@ -1,0 +1,18 @@
+# cmax-helper.service
+[Unit]
+Description=ClusterMAX collector helper
+Requires=cmax-helper.socket
+
+[Service]
+ExecStart=/usr/sbin/cmax-helper --serve
+User=root
+RuntimeDirectory=cmax-work
+RuntimeDirectoryMode=0700
+PrivateTmp=yes
+UMask=0077
+NoNewPrivileges=yes
+CPUQuota=50%
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=1G
+TimeoutStopSec=30
