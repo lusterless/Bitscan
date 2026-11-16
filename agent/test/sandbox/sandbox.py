@@ -966,10 +966,10 @@ def r218(ctx: Ctx) -> tuple[str, str]:
                     ("file read works (%s lines)" % d.get("PASSWD"), int(d.get("PASSWD") or 0) > 0)])
 
 
-@row("CHK-M10-219a", "capread units disabled and inactive after install (REQ-254 (1), first part)")
+@row("CHK-M10-219a", "capread socket enabled and active, service started only by it, after install (TS 3.7, owner decision 2026-11-16)")
 def r219a(ctx: Ctx) -> tuple[str, str]:
     st = getattr(ctx, "capread_at_start", {})
-    return verdict([("socket %s" % st.get("socket"), st.get("socket") == "disabled inactive"),
+    return verdict([("socket %s" % st.get("socket"), st.get("socket") == "enabled active"),
                     ("service %s" % st.get("service"), st.get("service") in ("static inactive", "disabled inactive"))])
 
 
@@ -1375,6 +1375,10 @@ def setup(ctx: Ctx, args: argparse.Namespace) -> None:
 
 
 def cleanup(ctx: Ctx) -> None:
+    # the capread rows turn the socket off; give it back its state at start
+    # (on by default since 0.5.1, TS 3.7)
+    if getattr(ctx, "capread_at_start", {}).get("socket", "").startswith("enabled"):
+        _capread(True)
     for p in getattr(ctx, "planted", []):
         try:
             os.unlink(p)

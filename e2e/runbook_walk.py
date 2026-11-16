@@ -346,8 +346,8 @@ def run_walk(m: Manager, pki: Any, leaf_cert: Path, deb: Path, version: str, por
         rc, out = a.sh("systemctl is-enabled bitscan-agent.service bitscan-runner.socket; systemctl is-active bitscan-agent.service bitscan-runner.socket;"
                        " systemctl is-enabled bitscan-capread.socket; journalctl -u bitscan-agent -n 20 --no-pager | wc -l")
         lines = out.split()
-        row("4", "units enabled and active; capread disabled; journal readable", "systemctl is-enabled/is-active ...; journalctl -u bitscan-agent -n 20",
-            "enabled enabled active active disabled", " ".join(lines), lines[:5] == ["enabled", "enabled", "active", "active", "disabled"])
+        row("4", "units enabled and active; capread enabled; journal readable", "systemctl is-enabled/is-active ...; journalctl -u bitscan-agent -n 20",
+            "enabled enabled active active enabled", " ".join(lines), lines[:5] == ["enabled", "enabled", "active", "active", "enabled"])
         req = m.request_for(a.hostname)
         rc, out = a.sh("ls /var/lib/bitscan-agent | tr '\\n' ' '")
         row("4", "(observation) state files while the enrolment is still held", "ls /var/lib/bitscan-agent",

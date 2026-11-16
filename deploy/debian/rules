@@ -25,18 +25,19 @@ execute_after_dh_install:
 	install -m 0644 debian/systemd/cmax-helper.socket $(UNITDIR)/
 	install -m 0644 debian/systemd/cmax-helper.service $(UNITDIR)/
 
-# TS 3.1: --no-enable for the runner service (its socket starts it) and
-# --no-enable --no-start for both capread units. The ClusterMAX collector
-# socket is enabled and started on every host (TS 3.8, owner decision
-# 2026-11-15); its service is started by the socket. The first call adds the
-# postinst snippet that enables and starts bitscan-agent.service and
-# bitscan-runner.socket (TS 3.1 postinst step 4).
+# TS 3.1: --no-enable for the runner service (its socket starts it). The
+# ClusterMAX collector socket (TS 3.8, owner decision 2026-11-15) and the
+# capread socket (TS 3.7, owner decision 2026-11-16) are enabled and started
+# on every host; their services are started by the sockets. postinst snippets
+# run in call order, so the helper sockets start before bitscan-agent.service
+# and the agent's first heartbeat reports them (TS 3.1 postinst step 4).
 override_dh_installsystemd:
-	dh_installsystemd bitscan-agent.service bitscan-runner.socket
-	dh_installsystemd --no-enable bitscan-runner.service
-	dh_installsystemd --no-enable --no-start bitscan-capread.socket bitscan-capread.service
 	dh_installsystemd cmax-helper.socket
 	dh_installsystemd --no-enable cmax-helper.service
+	dh_installsystemd bitscan-capread.socket
+	dh_installsystemd --no-enable bitscan-capread.service
+	dh_installsystemd bitscan-agent.service bitscan-runner.socket
+	dh_installsystemd --no-enable bitscan-runner.service
 
 # Static Go binaries are built with -s -w: nothing to strip or compress.
 override_dh_strip:

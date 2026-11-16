@@ -353,7 +353,7 @@ Each row was defined from its criterion; `agent/test/sandbox/sandbox.py` impleme
 | CHK-M10-216 | REQ-235 (3): root and a member of group `bitscan` closed without a reply; a non-member gets EACCES | CHK-M10-118 |
 | CHK-M10-217 | REQ-252 (5), (6): capread with real `nft` and `auditctl`; helper `CapEff` 0x40001000; runner and plugins 0x4 | CHK-M10-137 to -141 |
 | CHK-M10-218 | REQ-253 (3): helper disabled → exit 1 and the fixed line; file-based checks still work | CHK-M10-176, -177 |
-| CHK-M10-219 | REQ-254 (1): capread units disabled and inactive after install; `runner_helpers` `[]` → `["capread"]` → `[]` | G17; M4 heartbeat suite (#30) |
+| CHK-M10-219 | REQ-254 (1), as changed by the owner decision 2026-11-16: after install the capread socket is enabled and active and the service is not enabled; `runner_helpers` `[]` → `["capread"]` → `[]` | G17; M4 heartbeat suite (#30) |
 | CHK-M10-220 | REQ-251 (3), (4): canary sweep over the journals; `ss -ltnup` shows no listener of theirs | CHK-M10-190, -122 |
 | CHK-M10-221 | REQ-255 (4): `bitscan-runner.service` inactive until the first job | none (package rows CHK-M10-308/309) |
 | CHK-M10-222 | #143: every `bits/samples/` plugin under the sandbox, except `clustermax-*.bit` (CHK-M10-224): no error, no timeout, no exit 126/127, normalised stdout equal to root's outside the sandbox | none at unit level (recorded) |

@@ -196,9 +196,11 @@ sub_contents() {
     fi
     local members
     members=$(ls "$W/ctl" | sort | tr '\n' ' ')
-    is "$members" "conffiles config control md5sums postinst postrm preinst prerm templates " "control archive members"
+    # no preinst since 0.5.1: its only snippet stopped the --no-start capread
+    # units before an upgrade (TS 3.7, owner decision 2026-11-16)
+    is "$members" "conffiles config control md5sums postinst postrm prerm templates " "control archive members"
     is "$(cat "$W/ctl/conffiles")" "/etc/dbus-1/system.d/bitscan-runner.conf" "conffiles is exactly the D-Bus policy"
-    for f in config postinst postrm preinst prerm; do
+    for f in config postinst postrm prerm; do
         is "$(stat -c '%a' "$W/ctl/$f")" 755 "control $f mode"
     done
     cmp -s "$W/ctl/templates" "$ROOT/deploy/debian/templates"; ok $? "templates equal deploy/debian/templates"

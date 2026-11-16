@@ -10,11 +10,12 @@ be published), PD-42 (M10: builds are versioned 0.2.0~pre1-1; decisions
 Checks:
 - rules: dh_installsystemd is called so that bitscan-agent.service and
   bitscan-runner.socket are enabled, started and restarted on upgrade (no
-  flags), bitscan-runner.service gets exactly --no-enable, both capread
-  units get exactly --no-enable --no-start, cmax-helper.socket is enabled and
-  started (no flags) and cmax-helper.service gets exactly --no-enable (TS §3.8,
-  owner decision 2026-11-15); each of the seven units is named
-  exactly once and no call without unit names exists.
+  flags), bitscan-runner.service gets exactly --no-enable, cmax-helper.socket
+  and bitscan-capread.socket are enabled and started (no flags; owner
+  decisions 2026-11-15 and 2026-11-16) and their services get exactly
+  --no-enable; each of the seven units is named exactly once, no call without
+  unit names exists, and both helper sockets are named before
+  bitscan-agent.service, so their postinst snippets start them first.
 - rules: the seven agent units are installed from debian/systemd/ with
   mode 0644, unchanged (install -m 0644, no sed or cat).
 - control: source and package bitscan-agent, Architecture amd64 only,
@@ -64,11 +65,12 @@ EXPECTED_FLAGS: dict[str, frozenset[str]] = {
     "bitscan-agent.service": frozenset(),
     "bitscan-runner.socket": frozenset(),
     "bitscan-runner.service": frozenset({"--no-enable"}),
-    "bitscan-capread.socket": frozenset({"--no-enable", "--no-start"}),
-    # On for every host; the service is started by its socket (TS §3.8).
+    # On for every host; the services are started by their sockets (TS §3.7,
+    # §3.8; owner decisions 2026-11-15 and 2026-11-16).
+    "bitscan-capread.socket": frozenset(),
     "cmax-helper.socket": frozenset(),
     "cmax-helper.service": frozenset({"--no-enable"}),
-    "bitscan-capread.service": frozenset({"--no-enable", "--no-start"}),
+    "bitscan-capread.service": frozenset({"--no-enable"}),
 }
 # PD-42: a release X.Y.Z-R, or a pre-release build X.Y.Z~preN-R (N, R >= 1).
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:~pre[1-9]\d*)?-[1-9]\d*$")
@@ -158,6 +160,16 @@ def check_rules(debian: Path, r: Report) -> None:
                 got[0] == want,
                 f"rules: {unit} flags {sorted(got[0]) or '(none)'} == {sorted(want) or '(none)'}",
             )
+    # postinst snippets run in call order: the helper sockets must start
+    # before the agent, so its first heartbeat reports them (TS §3.1 step 4).
+    order = [n for args in calls for n in args if not n.startswith("-")]
+    for helper in ("cmax-helper.socket", "bitscan-capread.socket"):
+        r.ok(
+            helper in order
+            and "bitscan-agent.service" in order
+            and order.index(helper) < order.index("bitscan-agent.service"),
+            f"rules: {helper} named before bitscan-agent.service",
+        )
 
     # units installed unchanged with mode 0644 from debian/systemd/
     recipe = "\n".join(line for lines in targets.values() for line in lines)

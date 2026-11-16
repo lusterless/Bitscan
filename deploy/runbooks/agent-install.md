@@ -1,8 +1,8 @@
 # Install, re-enrol and remove the Bitscan agent
 
-The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-runner`, and the optional `bitscan-capread` helper (installed but disabled). The agent opens every connection to the manager; the host needs no inbound port.
+The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-runner`, the `bitscan-capread` helper (on by default) and the ClusterMAX collector (on by default). The agent opens every connection to the manager; the host needs no inbound port.
 
-**Release 0.5.0** (package `0.5.0-1`, git tag `v0.5.0`) runs compliance jobs of different policies at the same time, at most `max_parallel_jobs` at once (default 2), and installs the ClusterMAX collector, on by default, which runs the ClusterMAX audit as root when a ClusterMAX scan targets the host (section 10). **Release 0.4.1** (package `0.4.1-1`, git tag `v0.4.1`) keeps checks from taking the tasks the runner needs on hosts with many CPUs (section 9). **Release 0.4.0** (package `0.4.0-1`, git tag `v0.4.0`) adds the `apparmor_profiles` request to the optional `bitscan-capread` helper (section 10). **Release 0.3.0** (package `0.3.0-1`, git tag `v0.3.0`) has the same agent code as 0.2.0; it is versioned with manager 0.3.0, which keeps web UI users signed in across a reload. **Release 0.2.0** (package `0.2.0-1`, git tag `v0.2.0`) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list) work as in 0.1.0. Sections 9 to 11 cover the runner, the optional helper and the spool.
+**Release 0.5.1** (package `0.5.1-1`, git tag `v0.5.1`) turns on the `bitscan-capread` helper on every host at install and upgrade, and starts the helpers before the agent, so the first heartbeat reports them (section 10). **Release 0.5.0** (package `0.5.0-1`, git tag `v0.5.0`) runs compliance jobs of different policies at the same time, at most `max_parallel_jobs` at once (default 2), and installs the ClusterMAX collector, on by default, which runs the ClusterMAX audit as root when a ClusterMAX scan targets the host (section 10). **Release 0.4.1** (package `0.4.1-1`, git tag `v0.4.1`) keeps checks from taking the tasks the runner needs on hosts with many CPUs (section 9). **Release 0.4.0** (package `0.4.0-1`, git tag `v0.4.0`) adds the `apparmor_profiles` request to the `bitscan-capread` helper (section 10). **Release 0.3.0** (package `0.3.0-1`, git tag `v0.3.0`) has the same agent code as 0.2.0; it is versioned with manager 0.3.0, which keeps web UI users signed in across a reload. **Release 0.2.0** (package `0.2.0-1`, git tag `v0.2.0`) runs compliance jobs. The runner runs each check in its sandbox and returns redacted output, which the agent keeps in an on-disk spool until the manager has answered. Enrolment, heartbeat, job pull and the mandatory inventory (`os_info` and the full `dpkg` package list) work as in 0.1.0. Sections 9 to 11 cover the runner, the helpers and the spool.
 
 **Release 0.1.0** (package `0.1.0-1`) was the first supported release: enrolment, heartbeat, job pull and the mandatory inventory, with no compliance scans. Its runner and helper are installed but idle, no check command runs, and it reports every check of a compliance job as `runner_unavailable`. The pre-release builds (`0.1.0~preN-1` and `0.2.0~preN-1`) are not supported; upgrade them as in section 6.
 
@@ -42,7 +42,7 @@ The `bitscan-agent` package installs two services, `bitscan-agent` and `bitscan-
 
 ## 2. Check the package
 
-Download `bitscan-agent_<version>_amd64.deb` (for 0.5.0, `bitscan-agent_0.5.0-1_amd64.deb`). The release page, which is served from a different origin than the download, shows the release's `SHA256SUMS` text in its notes. Copy that text from the release page into a file named `SHA256SUMS` next to the package. Never use a checksum file fetched from the same host as the package, including the `SHA256SUMS` file attached to the release.
+Download `bitscan-agent_<version>_amd64.deb` (for 0.5.1, `bitscan-agent_0.5.1-1_amd64.deb`). The release page, which is served from a different origin than the download, shows the release's `SHA256SUMS` text in its notes. Copy that text from the release page into a file named `SHA256SUMS` next to the package. Never use a checksum file fetched from the same host as the package, including the `SHA256SUMS` file attached to the release.
 
 `SHA256SUMS` lists every file of the release, so check only the files you downloaded:
 
@@ -141,7 +141,7 @@ systemctl is-active bitscan-agent.service bitscan-runner.socket
 sudo journalctl -u bitscan-agent -n 20
 ```
 
-Both units must be `enabled` and `active`. The capread units stay disabled. `bitscan-runner.service` itself stays `inactive` until the first compliance job connects to its socket (section 9).
+Both units must be `enabled` and `active`. `bitscan-capread.socket` and `cmax-helper.socket` are also `enabled` and `active` (section 10). `bitscan-runner.service` itself stays `inactive` until the first compliance job connects to its socket (section 9).
 
 The host then appears in the manager. Unless the enrolment token has `auto_approve` and the machine id is new, an admin must approve the enrolment request; until then the agent keeps retrying with back-off. After the agent's first enrolment call, even while the request still waits for approval, `/var/lib/bitscan-agent/` holds `agent_id` and `token` and `enroll.token` is gone, so these files do not show that the host is approved. The host is enrolled once an admin approves it in the manager (or at once with `auto_approve` and a new machine id). The first inventory follows the first inventory job.
 
@@ -167,7 +167,7 @@ For the interactive route, `dpkg --configure` asks again for a required answer t
 
 **Order:** upgrade the manager first (migrate, then restart, as the manager operations runbook `manager-operations.md` describes), then the agents.
 
-**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. So manager 0.5.0 supports agents `0.5.0-1` and `0.4.1-1`, and agent `0.5.0-1` supports managers 0.5.0 and 0.4.1. Manager 0.5.0 does not support `0.4.0-1` or older: upgrade such a host to `0.4.1-1` or later before the manager is upgraded. The pre-release builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade every such host to `0.5.0-1`.
+**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. So manager 0.5.1 supports agents `0.5.1-1` and `0.5.0-1`, and agent `0.5.1-1` supports managers 0.5.1 and 0.5.0. Manager 0.5.1 does not support `0.4.1-1` or older: upgrade such a host to `0.5.0-1` or later before the manager is upgraded. The pre-release builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade every such host to `0.5.1-1`.
 
 Check the new package as in section 2, then:
 
@@ -175,7 +175,7 @@ Check the new package as in section 2, then:
 sudo apt install ./bitscan-agent_<new version>_amd64.deb
 ```
 
-An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A `0.1.0-1`, `0.2.0~pre1-1`, `0.2.0~pre2-1`, `0.2.0-1`, `0.3.0-1`, `0.4.0-1` or `0.4.1-1` host upgrades to `0.5.0-1` in place the same way, since `0.5.0-1` sorts above all seven. An upgraded host keeps its `agent.yaml`; without a `max_parallel_jobs` line the agent uses 2, and manager 0.5.0 sends its own value in the heartbeat.
+An upgrade asks nothing. It keeps `agent.yaml`, the token and the agent id, and restarts the services. A `0.1.0-1`, `0.2.0~pre1-1`, `0.2.0~pre2-1`, `0.2.0-1`, `0.3.0-1`, `0.4.0-1`, `0.4.1-1` or `0.5.0-1` host upgrades to `0.5.1-1` in place the same way, since `0.5.1-1` sorts above all eight. An upgraded host keeps its `agent.yaml`; without a `max_parallel_jobs` line the agent uses 2, and managers from 0.5.0 send their own value in the heartbeat. The upgrade to `0.5.1-1` from `0.5.0-1` or older turns on `bitscan-capread.socket`, also on a host where it was off; turn it off again as section 10 shows, and later upgrades keep it off.
 
 Check the result:
 
@@ -253,33 +253,33 @@ The first line is `48`, and each check's line is `25000 100000`. A changed unit 
 
 **Mount checks.** Checks see the runner's private `/tmp` and `/dev`, so `findmnt /tmp` describes the sandbox, not the host. Checks of mount options must read the host's view with `findmnt --task 1` or `/proc/1/mountinfo`. For example, `findmnt --task 1 -n -o OPTIONS --mountpoint /tmp` prints the host's options for `/tmp`, or nothing if `/tmp` is not a separate mount. A host shell shows the same result without `--task 1`.
 
-## 10. The capread helper (optional)
+## 10. The capread helper
 
-Live firewall and audit rules need capabilities the runner never has, and the list of loaded AppArmor profiles (`/sys/kernel/security/apparmor/profiles`) can be read only by uid or gid 0. Checks that want them call `bitscan-capread nft_ruleset` (`nft -j list ruleset`), `bitscan-capread audit_rules` (`auditctl -l`) or `bitscan-capread apparmor_profiles` (that file, one `name (mode)` line per loaded profile), and the helper answers. The helper runs as a throwaway non-root user in the root group with two capabilities, so on a host where it is enabled, a compromise of the helper could read files that group root can read (TS §8.1). The helper is installed disabled. While it is off, the call exits 1 with `bitscan-capread: not enabled`, and checks read the rule files on disk instead.
+Live firewall and audit rules need capabilities the runner never has, and the list of loaded AppArmor profiles (`/sys/kernel/security/apparmor/profiles`) can be read only by uid or gid 0. Checks that want them call `bitscan-capread nft_ruleset` (`nft -j list ruleset`), `bitscan-capread audit_rules` (`auditctl -l`) or `bitscan-capread apparmor_profiles` (that file, one `name (mode)` line per loaded profile), and the helper answers. The helper runs as a throwaway non-root user in the root group with two capabilities, so a compromise of the helper could read files that group root can read (TS §8.1). From `0.5.1-1` the package turns on `bitscan-capread.socket` on every host (owner decision 2026-11-16). While it is off, the call exits 1 with `bitscan-capread: not enabled`, and checks read the rule files on disk instead.
 
-Only an administrator on the host enables the helper, by hand or with configuration management. The manager has no route, setting or job that can enable it, and the agent and runner never change a unit.
+The manager has no route, setting or job that can turn the helper on or off, and the agent and runner never change a unit. Only a root user on the host turns it off or on again.
 
-Enable it:
+Check it:
 
 ```sh
-sudo systemctl enable --now bitscan-capread.socket
+systemctl is-enabled bitscan-capread.socket
 systemctl is-active bitscan-capread.socket
 ls -l /run/bitscan/capread.sock
 sudo -u bitscan-runner /usr/sbin/bitscan-capread nft_ruleset
 ```
 
-The socket is `active`, and the socket file is `srw-rw----`, owned by `root bitscan-runner`. The last command prints the ruleset as JSON. If `nft` or `auditctl` is not installed, or AppArmor is not enabled (no profile list), the answer is `bitscan-capread: not_installed`. `sudo -u bitscan-runner /usr/sbin/bitscan-capread apparmor_profiles` prints the loaded profiles. The helper accepts only the `bitscan-runner` user.
+The socket is `enabled` and `active`, and the socket file is `srw-rw----`, owned by `root bitscan-runner`. The last command prints the ruleset as JSON. If `nft` or `auditctl` is not installed, or AppArmor is not enabled (no profile list), the answer is `bitscan-capread: not_installed`. `sudo -u bitscan-runner /usr/sbin/bitscan-capread apparmor_profiles` prints the loaded profiles. The helper accepts only the `bitscan-runner` user.
 
-The next heartbeat (within about 5 minutes) reports `runner_helpers` as `["capread"]`. The manager shows that in `GET /agents` and writes a `runner_helper_changed` alert.
+The heartbeat reports `capread` in `runner_helpers`. The manager shows that in `GET /agents` and writes a `runner_helper_changed` alert on each change.
 
-Disable it:
+Turn it off (an upgrade keeps it off):
 
 ```sh
 sudo systemctl disable --now bitscan-capread.socket
 ls /run/bitscan/capread.sock
 ```
 
-Stopping the socket also stops the helper and removes the socket file, so `ls` reports `No such file or directory`. The next heartbeat reports `[]`, with another alert.
+Stopping the socket also stops the helper and removes the socket file, so `ls` reports `No such file or directory`. The next heartbeat (within about 5 minutes) no longer reports `capread`, with an alert. To turn it on again, run `sudo systemctl enable --now bitscan-capread.socket`.
 
 **The ClusterMAX collector (0.5.0, TS §3.8).** The package also installs `cmax-helper`, `cmax-trigger` and ClusterMAX 0.3.0 under `/usr/lib/clustermax/`, and turns on `cmax-helper.socket` (`/run/clustermax/collect.sock`, `root:bitscan-runner` 0660). When a scan of the ClusterMAX profile reaches the host, the helper runs `cmax audit -vvv -y` as root, once per scan, and keeps the report only in memory. With `-y`, ClusterMAX auto-detects standalone, Slurm or Kubernetes: on a Slurm or Kubernetes node it also starts `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace. Target the profile with a dedicated tag. The heartbeat reports `cmax` among the host's helpers while the socket exists. To check it, or to turn it off on a host (an upgrade keeps it off):
 
