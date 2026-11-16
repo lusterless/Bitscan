@@ -179,7 +179,7 @@ If the manager URL or enrolment token is missing, `postinst` fails with a clear 
 
 **Distribution.** v1 ships the `.deb` file directly, with its SHA-256 published on the release page (a different origin from the download host). Builds are reproducible Go builds, and every release ships an SBOM. A signed APT repository is deferred (§1.2).
 
-**ClusterMAX collector in the agent package (owner decision 2026-11-15).** `bitscan-agent` also installs ClusterMAX at a pinned commit with hash-pinned, pure-Python dependencies under `/usr/lib/clustermax/`, the client `/usr/bin/cmax-trigger`, the server `/usr/sbin/cmax-helper`, the units `cmax-helper.socket` and `cmax-helper.service` (§3.8), and ClusterMAX's `LICENSE` (Apache-2.0) under `/usr/share/doc/bitscan-agent/`. The package depends on `python3 (>= 3.10)`. ClusterMAX is fetched at build time and pinned by commit and version, so the build stays reproducible. There is no separate collector package.
+**ClusterMAX collector in the agent package (owner decision 2026-11-15).** `bitscan-agent` also installs ClusterMAX at a pinned commit with hash-pinned, pure-Python dependencies under `/usr/lib/clustermax/`, the client `/usr/bin/cmax-trigger`, the server `/usr/sbin/cmax-helper`, the units `cmax-helper.socket` and `cmax-helper.service` (§3.8), and ClusterMAX's `LICENSE` (Apache-2.0) under `/usr/share/doc/bitscan-agent/`. The package depends on `python3 (>= 3.10)` and `jq`, which ClusterMAX needs (owner decision 2026-11-16). ClusterMAX is fetched at build time and pinned by commit and version, so the build stays reproducible. There is no separate collector package.
 
 ### 3.2 Enrolment
 

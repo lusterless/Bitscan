@@ -8,7 +8,7 @@ Rules-Requires-Root: no
 
 Package: bitscan-agent
 Architecture: amd64
-Depends: adduser, python3 (>= 3.10), ${misc:Depends}
+Depends: adduser, jq, python3 (>= 3.10), ${misc:Depends}
 Description: Bitscan inventory and compliance agent
  Pull-only agent for the Bitscan manager. It enrols with an enrolment
  token, sends a heartbeat, pulls the jobs addressed to its host over TLS
