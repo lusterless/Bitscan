@@ -210,6 +210,7 @@ sub_contents() {
     is "$(dpkg-deb -f "$DEB" Architecture)" amd64 "Architecture"
     dpkg-deb -f "$DEB" Depends | grep -q '\badduser\b'; ok $? "Depends has adduser ($(dpkg-deb -f "$DEB" Depends))"
     dpkg-deb -f "$DEB" Depends | grep -q 'python3 (>= 3.10)'; ok $? "Depends has python3 (>= 3.10) for the ClusterMAX collector"
+    dpkg-deb -f "$DEB" Depends | grep -q '\bjq\b'; ok $? "Depends has jq, which ClusterMAX needs"
     is "$(basename "$DEB")" "$DEBNAME" "file name bitscan-agent_<version>_amd64.deb"
 }
 

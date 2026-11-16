@@ -1,3 +1,16 @@
+bitscan-agent (0.5.2-1) unstable; urgency=medium
+
+  * Release 0.5.2 of the Bitscan agent, with manager 0.5.2 (its code is
+    unchanged from 0.5.0).
+  * The package depends on jq, which ClusterMAX needs. apt installs it
+    with the agent.
+  * The binaries and units are unchanged from 0.5.1-1. cmax-helper.socket
+    and bitscan-capread.socket stay on by default.
+  * Supported with manager 0.5.2 and manager 0.5.1. Manager 0.5.2 supports
+    agents 0.5.2-1 and 0.5.1-1.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Mon, 16 Nov 2026 05:00:00 +0000
+
 bitscan-agent (0.5.1-1) unstable; urgency=medium
 
   * Release 0.5.1 of the Bitscan agent, with manager 0.5.1 (its code is
