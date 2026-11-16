@@ -34,15 +34,16 @@ Spec: TS §3.1 (agent package), §3.7 (agent units and the D-Bus policy), §8.6 
 - **Owner decision 2026-11-15 (TS §3.1, §3.8):** it also contains the ClusterMAX collector: `/usr/sbin/cmax-helper`, `/usr/bin/cmax-trigger`, ClusterMAX at the pinned commit with hash-pinned pure-Python dependencies under `/usr/lib/clustermax/`, and `cmax-helper.socket` and `cmax-helper.service` verbatim from TS §3.8. It depends on `python3 (>= 3.10)`. There is no separate collector package.
 - `dh_installsystemd`:
   - `--no-enable` for `bitscan-runner.service`, which its socket starts;
-  - `--no-enable --no-start` for both capread units;
-  - enable and start `cmax-helper.socket` (on for every host, owner decision 2026-11-15) and `--no-enable` for `cmax-helper.service`, which its socket starts.
+  - enable and start `cmax-helper.socket` (on for every host, owner decision 2026-11-15) and `--no-enable` for `cmax-helper.service`, which its socket starts;
+  - enable and start `bitscan-capread.socket` (on for every host, owner decision 2026-11-16) and `--no-enable` for `bitscan-capread.service`, which its socket starts;
+  - the helper sockets come before `bitscan-agent.service` in `debian/rules`, so they start first and the agent's first heartbeat reports them.
 - Install inputs come from debconf (preseedable: `bitscan/manager_url`, `bitscan/enrol_token`, optional `bitscan/ca_file` and `bitscan/manager_spki_sha256`) or a root-only `/etc/bitscan/install.env` (0600), which `postinst` deletes. Never from command-line environment variables.
 - `bitscan/enrol_token` is a `password`-type debconf question; `postinst` clears it after use (`db_set bitscan/enrol_token ""`).
 - `postinst` on first install:
   1. Creates system users `bitscan` and `bitscan-runner`, with no shell and no home.
   2. Writes `agent.yaml` (`root:bitscan`, 0640) from the inputs.
   3. Writes `enroll.token` (`bitscan:bitscan`, 0600), never into `agent.yaml`.
-  4. Enables and starts `bitscan-runner.socket` and `bitscan-agent.service`.
+  4. Enables and starts `cmax-helper.socket`, `bitscan-capread.socket`, `bitscan-runner.socket` and `bitscan-agent.service`, in that order.
 
   It fails clearly, leaving the package unconfigured, if the manager URL or enrolment token is missing. On upgrade it needs no inputs, keeps the existing config, token and agent id, and restarts the services. All maintainer scripts must be idempotent and pass `lintian`.
 - `apt remove` stops and disables the units. `postrm purge` removes `/etc/bitscan` and `/var/lib/bitscan-agent`. The host then goes `offline` and is decommissioned under TS §3.3 (`decommission_after_days`, default 7; 0 = never). None of the agent endpoints in TS §6.1 deregisters a host (TS §3.1, §3.3, §6.1).
