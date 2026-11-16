@@ -337,17 +337,19 @@ sub_install() {
     is "$(active cmax-helper.socket)" active "cmax-helper.socket active"
     is "$(st /run/clustermax/collect.sock)" "root:bitscan-runner 660" "collect.sock owner and mode (TS 3.8)"
     [ "$(enabled cmax-helper.service)" != enabled ]; ok $? "cmax-helper.service not enabled (got $(enabled cmax-helper.service))"
-    for u in bitscan-capread.socket bitscan-capread.service; do
-        [ "$(enabled $u)" != enabled ]; ok $? "$u not enabled (got $(enabled $u))"
-        [ "$(active $u)" != active ]; ok $? "$u not active (got $(active $u))"
-        # never started, not even briefly (a static unit started by the
-        # debhelper snippet may exit at once and look inactive)
-        local inv_id act_ts exit_ts
-        inv_id=$(systemctl show -p InvocationID --value "$u" 2>/dev/null)
-        act_ts=$(systemctl show -p ActiveEnterTimestampMonotonic --value "$u" 2>/dev/null)
-        exit_ts=$(systemctl show -p InactiveExitTimestampMonotonic --value "$u" 2>/dev/null)
-        [ -z "$inv_id" ] && [ "${act_ts:-0}" = 0 ] && [ "${exit_ts:-0}" = 0 ]
-        ok $? "$u was never started (InvocationID '$inv_id', ActiveEnter $act_ts, InactiveExit $exit_ts)"
+    # TS 3.1, 3.7 (owner decision 2026-11-16): the capread socket is on after
+    # install; its service starts only on a request.
+    is "$(enabled bitscan-capread.socket)" enabled "bitscan-capread.socket enabled"
+    is "$(active bitscan-capread.socket)" active "bitscan-capread.socket active"
+    is "$(st /run/bitscan/capread.sock)" "root:bitscan-runner 660" "capread.sock owner and mode (TS 3.7)"
+    [ "$(enabled bitscan-capread.service)" != enabled ]; ok $? "bitscan-capread.service not enabled (got $(enabled bitscan-capread.service))"
+    # postinst step 4: the helper sockets start before the agent
+    local t_agent t_h h
+    t_agent=$(systemctl show -p ActiveEnterTimestampMonotonic --value bitscan-agent.service 2>/dev/null)
+    for h in cmax-helper.socket bitscan-capread.socket; do
+        t_h=$(systemctl show -p ActiveEnterTimestampMonotonic --value "$h" 2>/dev/null)
+        [ "${t_h:-0}" -gt 0 ] && [ "${t_h:-0}" -le "${t_agent:-0}" ]
+        ok $? "$h active before bitscan-agent.service ($t_h <= $t_agent)"
     done
     sleep 5
     is "$(systemctl show -p NRestarts --value bitscan-agent.service)" 0 "the agent accepts the agent.yaml postinst wrote (no restart within 5 s)"
@@ -555,6 +557,13 @@ sub_reinstall() {
     is "$(enabled cmax-helper.socket)" disabled "cmax-helper.socket stays disabled after the reinstall"
     [ "$(active cmax-helper.socket)" != active ]; ok $? "cmax-helper.socket stays stopped after the reinstall"
     systemctl enable --now cmax-helper.socket >/dev/null 2>&1
+    # TS 3.7: a host where root turned capread off keeps it off.
+    systemctl disable --now bitscan-capread.socket >/dev/null 2>&1
+    timeout 300 setsid apt-get install -y --reinstall --no-install-recommends "$DEB" </dev/null >"$W/reinstall-capoff.log" 2>&1
+    is "$?" 0 "reinstall with bitscan-capread.socket turned off exits 0"
+    is "$(enabled bitscan-capread.socket)" disabled "bitscan-capread.socket stays disabled after the reinstall"
+    [ "$(active bitscan-capread.socket)" != active ]; ok $? "bitscan-capread.socket stays stopped after the reinstall"
+    systemctl enable --now bitscan-capread.socket >/dev/null 2>&1
     for i in 1 2; do
         timeout 120 dpkg-reconfigure bitscan-agent </dev/null >"$W/reconf$i.log" 2>&1
         is "$?" 0 "dpkg-reconfigure $i without a new token exits 0"
@@ -587,6 +596,7 @@ sub_upgrade() {
         local inv1; inv1=$(inv)
         [ -n "$inv1" ] && [ "$inv1" != "$inv0" ]; ok $? "upgrade $i: bitscan-agent.service restarted (new InvocationID)"
         is "$(active cmax-helper.socket)" active "upgrade $i: cmax-helper.socket active"
+        is "$(active bitscan-capread.socket)" active "upgrade $i: bitscan-capread.socket active"
         is "$(active bitscan-runner.socket)" active "upgrade $i: runner socket active"
         ! grep -q '^bitscan-agent: ' "$W/upgrade$i.log"; ok $? "upgrade $i: no bitscan-agent error line"
     done
@@ -620,7 +630,10 @@ sub_upgradefrom() {
     [ -n "$inv1" ] && [ "$inv1" != "$inv0" ]; ok $? "bitscan-agent.service restarted by the upgrade (new InvocationID)"
     is "$(active bitscan-runner.socket)" active "runner socket active"
     is "$(enabled bitscan-runner.service)" disabled "runner service still not enabled"
-    is "$(enabled bitscan-capread.socket)" disabled "capread socket still not enabled"
+    # TS 3.7 (owner decision 2026-11-16): an upgrade from a package that left
+    # capread off turns it on.
+    is "$(enabled bitscan-capread.socket)" enabled "capread socket enabled by the upgrade"
+    is "$(active bitscan-capread.socket)" active "capread socket active after the upgrade"
     ! grep -q '^bitscan-agent: ' "$W/upgradefrom.log"; ok $? "no bitscan-agent error line in the upgrade log"
     local bins b; bins=
     for b in bitscan-agent bitscan-runner bitscan-capread; do

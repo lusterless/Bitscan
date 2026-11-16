@@ -17,9 +17,10 @@ Description: Bitscan inventory and compliance agent
  .
  The package holds three static binaries: bitscan-agent, bitscan-runner,
  which runs compliance checks in a sandbox as an unprivileged user, and
- the optional bitscan-capread helper, which is installed disabled. The
- runner returns the output of each check redacted on the host, and the
- helper stays off until an administrator enables it on the host.
+ the bitscan-capread helper, which reads the firewall, audit and AppArmor
+ state for the checks and is on by default. The runner returns the output
+ of each check redacted on the host. A root user can turn the helper off
+ with "systemctl disable --now bitscan-capread.socket".
  .
  It also holds the ClusterMAX collector: cmax-helper, which runs the one
  fixed audit "cmax audit -vvv -y" as root when the runner asks over

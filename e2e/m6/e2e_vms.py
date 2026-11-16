@@ -460,11 +460,13 @@ def install_agent(r: Run, vm: str) -> None:
           f"preseeded install ({'ca_file + pin' if pin else 'ca_file only'}): {out.strip()[-200:]}")
     rc, out = r.on(vm, "for u in bitscan-agent.service bitscan-runner.socket bitscan-runner.service bitscan-capread.socket bitscan-capread.service; do "
                    "echo \"$u $(systemctl is-enabled $u 2>/dev/null) $(systemctl is-active $u 2>/dev/null)\"; done")
-    want = {"bitscan-agent.service": ("enabled", "active"), "bitscan-runner.socket": ("enabled", "active")}
+    # capread socket on since 0.5.1 (TS 3.7, owner decision 2026-11-16)
+    want = {"bitscan-agent.service": ("enabled", "active"), "bitscan-runner.socket": ("enabled", "active"),
+            "bitscan-capread.socket": ("enabled", "active")}
     states = {ln.split()[0]: ln.split()[1:] for ln in out.strip().split("\n") if ln.strip()}
     good = (all(tuple(states.get(u, [])) == w for u, w in want.items())
             and all(states.get(u, ["x", "x"])[0] != "enabled" and states.get(u, ["x", "x"])[1] != "active"
-                    for u in ("bitscan-runner.service", "bitscan-capread.socket", "bitscan-capread.service")))
+                    for u in ("bitscan-runner.service", "bitscan-capread.service")))
     r.row("CHK-M6-203", vm, None if r.dry else good, f"unit states: {states}")
     # the files appear after the agent's first enrolment call (agent runbook section 4)
     r.wait(f"{vm} agent_id and token written", lambda: "token" in r.on(vm, "sudo ls /var/lib/bitscan-agent")[1], 120, 5)
