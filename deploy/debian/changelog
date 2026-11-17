@@ -1,3 +1,16 @@
+bitscan-agent (0.5.4-1) unstable; urgency=medium
+
+  * Release 0.5.4 of the Bitscan agent, with manager 0.5.4 (its code is
+    unchanged from 0.5.0).
+  * cmax-helper now returns the text of each ClusterMAX check under the
+    first line: the description, Reproduce and Recommendation. References
+    are left out. The first line is unchanged, so the policy grades as
+    before.
+  * Supported with manager 0.5.4 and manager 0.5.2. Manager 0.5.4 supports
+    agents 0.5.4-1 and 0.5.2-1.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Tue, 17 Nov 2026 00:00:00 +0000
+
 bitscan-agent (0.5.2-1) unstable; urgency=medium
 
   * Release 0.5.2 of the Bitscan agent, with manager 0.5.2 (its code is
