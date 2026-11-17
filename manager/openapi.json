@@ -5027,7 +5027,7 @@
   },
   "info": {
     "title": "Bitscan",
-    "version": "0.5.4"
+    "version": "0.5.3"
   },
   "openapi": "3.1.0",
   "paths": {

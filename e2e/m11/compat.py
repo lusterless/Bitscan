@@ -1,7 +1,7 @@
 """M11 N / N−1 rows (TP-M11-19, REQ-287, REQ-288; #153; CHK-M11-304..309, plant -372).
 
 N = the tree under test (manager wheel and agent .deb built from it); N−1 = the
-previous release (`--prev`: since 0.5.4 the v0.5.2 release,
+previous release (`--prev`: since 0.5.3 the v0.5.2 release,
 `bitscan-agent_0.5.2-1_amd64.deb` and the manager files), each file checked
 against the SHA256SUMS text of the release page (#153 (a)). Same machines and
 helpers as nightly.py (the manager host by the install walk, QEMU/KVM guests);
