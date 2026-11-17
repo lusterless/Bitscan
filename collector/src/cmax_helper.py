@@ -69,25 +69,37 @@ def audit_environment(work_dir: str = WORK_DIR) -> dict[str, str]:
 
 
 def parse_check(report: str, check_id: str) -> str:
-    """Return '<VERDICT> observed=<value>' for one check, or MISSING."""
+    """Return '<VERDICT> observed=<value>' for one check, then the check's own
+    text (description, Reproduce, Recommendation) on the next lines, or
+    MISSING. References are left out. The first line keeps a space after the
+    verdict, so the policy's `^(PASS|n/a)( |$)` grading is unchanged."""
     lines = report.splitlines()
     for index, line in enumerate(lines):
         match = VERDICT.match(line)
         if match is None or match.group(2) != check_id:
             continue
         observed = ""
+        details: list[str] = []
+        in_refs = False
         for detail in lines[index + 1 :]:
             if VERDICT.match(detail) or not detail.startswith(" "):
                 break
             stripped = detail.strip()
-            if stripped.startswith("Observed:"):
+            if not stripped:
+                continue
+            if stripped.startswith("References:"):
+                in_refs = True
+                continue
+            if in_refs and stripped.startswith("["):
+                continue
+            in_refs = False
+            if stripped.startswith("Observed:") and not observed:
                 observed = stripped[len("Observed:") :].strip()
-                break
-        reply = (
-            f"{TOKEN[match.group(1)]} observed={observed}"
-            if observed
-            else TOKEN[match.group(1)]
-        )
+                continue
+            details.append(stripped)
+        reply = f"{TOKEN[match.group(1)]} observed={observed}"
+        if details:
+            reply += "\n" + "\n".join(details)
         return reply[:MAX_REPLY]
     return f"MISSING {check_id} is not in the ClusterMAX report"
 

@@ -110,7 +110,19 @@ def test_environment_is_minimal_and_home_is_the_tmpfs_dir() -> None:
     ],
 )
 def test_parse_check_maps_verdicts(check_id: str, expected: str) -> None:
-    assert helper_mod.parse_check(REPORT.read_text(), check_id) == expected
+    assert (
+        helper_mod.parse_check(REPORT.read_text(), check_id).split("\n")[0] == expected
+    )
+
+
+def test_parse_check_adds_the_check_text_without_references() -> None:
+    lines = helper_mod.parse_check(
+        REPORT.read_text(), "access.externalIdp.detected"
+    ).split("\n")
+    assert lines[0] == "WARNING observed=false"
+    assert "Check failed" in lines
+    assert any(line.startswith("Recommendation: ") for line in lines)
+    assert not any(line.startswith(("References:", "[", "Observed:")) for line in lines)
 
 
 def test_every_check_in_the_report_parses() -> None:
@@ -179,7 +191,10 @@ def test_collect_starts_a_run_and_get_returns_its_lines(tmp_path: Path) -> None:
     assert h.handle("collect") == f"started {rid(1)}"
     assert h.handle("collect") == f"running {rid(1)}"
     assert h.handle(f"get {rid(1)} status") == "running"
-    assert h.handle(f"get {rid(1)} access.sudoAvailable") == "PASS observed=true"
+    assert (
+        h.handle(f"get {rid(1)} access.sudoAvailable").split("\n")[0]
+        == "PASS observed=true"
+    )
     assert h.handle(f"get {rid(1)} status").startswith("ok ")
     assert h.handle(f"get {rid(1)} status").endswith(" 0.3.0")
     assert counter.read_text() == "x"
@@ -194,8 +209,14 @@ def test_every_collect_after_a_run_starts_a_new_audit(tmp_path: Path) -> None:
     assert h.handle("collect") == f"started {rid(2)}"
     wait_done(h, rid(2))
     assert counter.read_text() == "xx"
-    assert h.handle(f"get {rid(1)} software.perf.installed") == "FAIL observed=false"
-    assert h.handle(f"get {rid(2)} software.perf.installed") == "FAIL observed=false"
+    assert (
+        h.handle(f"get {rid(1)} software.perf.installed").split("\n")[0]
+        == "FAIL observed=false"
+    )
+    assert (
+        h.handle(f"get {rid(2)} software.perf.installed").split("\n")[0]
+        == "FAIL observed=false"
+    )
 
 
 def test_only_the_last_four_runs_are_kept(tmp_path: Path) -> None:
@@ -309,7 +330,10 @@ def test_trigger_round_trip(tmp_path: Path) -> None:
     server = Server(h, os.getuid())
     assert server.ask(["collect"]) == f"started {rid(1)}"
     wait_done(h, rid(1))
-    assert server.ask(["get", "software.perf.installed"]) == "FAIL observed=false"
+    assert (
+        server.ask(["get", "software.perf.installed"]).split("\n")[0]
+        == "FAIL observed=false"
+    )
     assert server.ask(["get", "header"]).startswith("Command: cmax audit;")
 
 
@@ -328,7 +352,10 @@ def test_one_audit_per_job_and_a_new_audit_per_job(
     server = Server(h, os.getuid())
     jobs = tmp_path / "tmp"
     monkeypatch.chdir(plugin_dir(jobs, "aaa", "1"))
-    assert server.ask(["get", "software.perf.installed"]) == "FAIL observed=false"
+    assert (
+        server.ask(["get", "software.perf.installed"]).split("\n")[0]
+        == "FAIL observed=false"
+    )
     monkeypatch.chdir(plugin_dir(jobs, "aaa", "2"))
     assert server.ask(["collect"]) == f"started {rid(1)}"  # the saved answer
     assert server.ask(["get", "status"]).startswith("ok ")
@@ -357,7 +384,7 @@ def test_parallel_plugins_of_one_job_start_one_audit(tmp_path: Path) -> None:
         )
         for d in dirs
     ]
-    outs = [p.communicate(timeout=30)[0].strip() for p in procs]
+    outs = [p.communicate(timeout=30)[0].strip().split("\n")[0] for p in procs]
     assert outs == ["FAIL observed=false"] * 8
     assert counter.read_text() == "x"
 
