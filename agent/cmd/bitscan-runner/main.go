@@ -4,7 +4,7 @@
 // bitscan-agent hands over on the systemd socket /run/bitscan/runner.sock,
 // and returns redacted results (TS §3.5, §3.7). It has no network client,
 // opens no socket of its own, takes no command but a whole job, and holds
-// no capability beyond CAP_DAC_READ_SEARCH.
+// no capability beyond CAP_DAC_READ_SEARCH, CAP_DAC_OVERRIDE and CAP_SYS_RAWIO (TS §3.7, §8.1).
 package main
 
 import (

@@ -41,6 +41,11 @@ func TestCheckStartup(t *testing.T) {
 	if err := CheckStartup(p); err != nil {
 		t.Fatalf("CapEff 0 (a subset) refused: %v", err)
 	}
+	// The 0.5.4 set (CAP_DAC_READ_SEARCH, CAP_DAC_OVERRIDE, CAP_SYS_RAWIO) starts (owner decision 2026-11-18).
+	p.Status = withStatus("0000000000020006", "0000000000020006")
+	if err := CheckStartup(p); err != nil {
+		t.Fatalf("0.5.4 capability set refused: %v", err)
+	}
 	type tc struct {
 		name string
 		mod  func(*StartupProbe)
@@ -51,7 +56,8 @@ func TestCheckStartup(t *testing.T) {
 		{"CapBnd full", func(p *StartupProbe) { p.Status = withStatus("0000000000000004", "000001ffffffffff") }, "CapBnd"},
 		{"CapEff + CAP_SYS_ADMIN", func(p *StartupProbe) { p.Status = withStatus("0000000000200004", "0000000000200004") }, "CapEff"},
 		{"CapEff CAP_NET_ADMIN only", func(p *StartupProbe) { p.Status = withStatus("0000000000001000", "0000000000000004") }, "CapEff"},
-		{"CapBnd + CAP_DAC_OVERRIDE", func(p *StartupProbe) { p.Status = withStatus("0000000000000004", "0000000000000006") }, "CapBnd"},
+		{"CapBnd + CAP_SYS_PTRACE", func(p *StartupProbe) { p.Status = withStatus("0000000000000004", "0000000000080004") }, "CapBnd"},
+		{"CapEff allowed + CAP_SYS_ADMIN", func(p *StartupProbe) { p.Status = withStatus("0000000000220006", "0000000000020006") }, "CapEff"},
 		{"no CapEff line", func(p *StartupProbe) {
 			p.Status = func() ([]byte, error) { return []byte("CapBnd:\t0000000000000004\n"), nil }
 		}, "CapEff"},

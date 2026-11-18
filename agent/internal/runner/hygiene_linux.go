@@ -10,9 +10,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// capDacReadSearch is the only capability the runner may hold (TS §3.7
-// L276; the unit's AmbientCapabilities= and CapabilityBoundingSet=).
-const capDacReadSearch = 1 << unix.CAP_DAC_READ_SEARCH
+// allowedCaps is the only capability set the runner may hold: the unit's
+// AmbientCapabilities= and CapabilityBoundingSet= (TS §3.7). Owner decision
+// 2026-11-18 (release 0.5.4) added CAP_DAC_OVERRIDE and CAP_SYS_RAWIO to
+// CAP_DAC_READ_SEARCH for the GPU baseline (TS §8.1).
+const allowedCaps = 1<<unix.CAP_DAC_READ_SEARCH | 1<<unix.CAP_DAC_OVERRIDE | 1<<unix.CAP_SYS_RAWIO
 
 // Harden is the first call in main: it makes the runner non-dumpable, so a
 // plugin running as the same user cannot read its memory or attach to it
@@ -52,7 +54,7 @@ func SystemProbe() StartupProbe {
 }
 
 // CheckStartup refuses to start (#137) when the runner is root, holds any
-// capability beyond CAP_DAC_READ_SEARCH in its effective or bounding set,
+// capability outside allowedCaps in its effective or bounding set,
 // or the host is not on the unified cgroup v2 hierarchy (TS §3 L152). The
 // error names the failed check and nothing else. The delegation checks are
 // Cgroups.Setup's and the socket checks are sdsock's.
@@ -69,8 +71,8 @@ func CheckStartup(p StartupProbe) error {
 		if !ok {
 			return fmt.Errorf("runner: refusing to start: no readable %s line", key)
 		}
-		if set&^capDacReadSearch != 0 {
-			return fmt.Errorf("runner: refusing to start: %s holds capabilities beyond CAP_DAC_READ_SEARCH", key)
+		if set&^allowedCaps != 0 {
+			return fmt.Errorf("runner: refusing to start: %s holds capabilities beyond CAP_DAC_READ_SEARCH, CAP_DAC_OVERRIDE and CAP_SYS_RAWIO", key)
 		}
 	}
 	if magic, err := p.StatfsCgroup(); err != nil || magic != unix.CGROUP2_SUPER_MAGIC {

@@ -652,7 +652,7 @@ def r208(ctx: Ctx) -> tuple[str, str]:
     return verdict(checks)
 
 
-@row("CHK-M10-209", "a plugin can read /etc/shadow (CAP_DAC_READ_SEARCH); its CapEff and CapBnd are 0x4")
+@row("CHK-M10-209", "a plugin can read /etc/shadow; its CapEff and CapBnd are 0x20006 (CAP_DAC_READ_SEARCH, CAP_DAC_OVERRIDE, CAP_SYS_RAWIO; owner decision 2026-11-18)")
 def r209(ctx: Ctx) -> tuple[str, str]:
     ex = ("echo SHADOWLINES=$(wc -l < /etc/shadow); echo EFF=$(grep CapEff /proc/$$/status | cut -f2); "
           "echo BND=$(grep CapBnd /proc/$$/status | cut -f2); echo AMB=$(grep CapAmb /proc/$$/status | cut -f2)")
@@ -660,10 +660,10 @@ def r209(ctx: Ctx) -> tuple[str, str]:
     d = kv(res["results"][0])
     st = proc_status(runner_pid())
     return verdict([("job done", ok_job(res, 1)), ("shadow lines %s" % d.get("SHADOWLINES"), (d.get("SHADOWLINES") or "0").isdigit() and int(d.get("SHADOWLINES") or 0) > 0),
-                    ("plugin CapEff %s" % d.get("EFF"), d.get("EFF") == "0000000000000004"),
-                    ("plugin CapBnd %s" % d.get("BND"), d.get("BND") == "0000000000000004"),
-                    ("runner CapEff %s" % st.get("CapEff"), st.get("CapEff") == "0000000000000004"),
-                    ("runner CapBnd %s" % st.get("CapBnd"), st.get("CapBnd") == "0000000000000004")])
+                    ("plugin CapEff %s" % d.get("EFF"), d.get("EFF") == "0000000000020006"),
+                    ("plugin CapBnd %s" % d.get("BND"), d.get("BND") == "0000000000020006"),
+                    ("runner CapEff %s" % st.get("CapEff"), st.get("CapEff") == "0000000000020006"),
+                    ("runner CapBnd %s" % st.get("CapBnd"), st.get("CapBnd") == "0000000000020006")])
 
 
 @row("CHK-M10-210", "cgroup layout: each plugin in its own plugins/j-<n>/p-<m> inside its job's cgroup, with the unit's cpu.max, plugins sharing the unit's task limit less 16, the runner in supervisor, only supervisor and plugins left (REQ-238 (2)-(4))")
@@ -890,7 +890,7 @@ def _capread(enable: bool) -> None:
         sh("systemctl disable --now bitscan-capread.socket bitscan-capread.service")
 
 
-@row("CHK-M10-217", "capread with the real nft and auditctl; helper CapEff 0x40001000 under a dynamic uid; runner and plugins 0x4")
+@row("CHK-M10-217", "capread with the real nft and auditctl; helper CapEff 0x40001000 under a dynamic uid; runner and plugins 0x20006 (owner decision 2026-11-18)")
 def r217(ctx: Ctx) -> tuple[str, str]:
     if not os.path.exists("/usr/sbin/nft"):
         return ("NOT RUN", "nft is not installed on this host (run_vm.sh installs nftables); cover CHK-M10-137 to -141")
@@ -919,8 +919,8 @@ def r217(ctx: Ctx) -> tuple[str, str]:
         uid = int((hst.get("Uid") or "0").split()[0])
         checks += [("helper CapEff %s" % hst.get("CapEff"), hst.get("CapEff") == "0000000040001000"),
                    ("helper uid %d is dynamic (61184-65519)" % uid, 61184 <= uid <= 65519),
-                   ("plugin CapEff %s" % d.get("EFF"), d.get("EFF") == "0000000000000004"),
-                   ("runner CapEff %s" % proc_status(runner_pid()).get("CapEff"), proc_status(runner_pid()).get("CapEff") == "0000000000000004")]
+                   ("plugin CapEff %s" % d.get("EFF"), d.get("EFF") == "0000000000020006"),
+                   ("runner CapEff %s" % proc_status(runner_pid()).get("CapEff"), proc_status(runner_pid()).get("CapEff") == "0000000000020006")]
         # The helper's command gets an empty environment: an env probe bound
         # over /usr/sbin/auditctl on this throwaway host for one request.
         envd = _capread_env_probe(ctx)
