@@ -498,3 +498,4 @@
 | 2026-11-16 | **jq in the agent package (owner: "I need jq inside cmax as it is a prerequisite and package together as part of 0.5.2").** `bitscan-agent` depends on `jq`, so `apt` installs it with the agent; the helper sockets stay on by default. Release 0.5.2 (agent `0.5.2-1`, manager 0.5.2 with no code change); N−1 is v0.5.1. |
 | 2026-11-17 | **ClusterMAX check text in results (owner: "yes"; release "0.5.3").** `cmax-helper` returns `<verdict> observed=<value>` and then the check's description, `Reproduce:` and `Recommendation:` lines; `References:` are left out. The first line is unchanged, so the policy's `^(PASS|n/a)( |$)` grading is unchanged. Release 0.5.3 (agent `0.5.3-1`, manager 0.5.3 with no code change); N−1 is v0.5.2. |
 - 2026-11-18: release 0.5.4 widens the runner sandbox for the GPU baseline (TS §3.7, §8.1).
+- 2026-11-18: release 0.5.5 fixes the 0.5.4 runner start (startup check accepts CAP_DAC_OVERRIDE and CAP_SYS_RAWIO).

@@ -40,8 +40,8 @@ This runbook covers a manager installed with `manager-install.md`: the venv `/op
    The migration must return without an error, and its log ends with the new head revision id. The manager starts listening a moment after `systemctl start` returns, so the loop tries `curl` up to 10 times, a second apart. `curl` must print `{"status":"ok"}`; a 503 with `migrations` means the migration did not run. Agents keep their tokens: while the manager is down they retry with back-off, and they need no re-enrolment.
 5. Upgrade the agents with `agent-install.md` section 6.
 
-**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. For release 0.5.4 (manager `0.5.4`, agent package `0.5.4-1`, git tag `v0.5.4`): manager 0.5.4 supports agents `0.5.4-1` and `0.5.3-1`, and agent `0.5.4-1` supports managers 0.5.4 and 0.5.3. Manager 0.5.4 has the same code and migrations as 0.5.0; agent `0.5.4-1` widens the runner sandbox (TS §8.1); agent `0.5.2-1` added the `jq` dependency; agent `0.5.1-1` turns on the `bitscan-capread` helper on every host. Manager 0.5.0 added migration `m0007` (the `scan_job.cancel_reason` column and the `max_parallel_jobs` setting). It sends `max_parallel_jobs` only to agents `0.5.0-1` or later; agents `0.4.1-1` keep running one job at a time. Agent `0.5.0-1` with manager 0.4.1 runs up to 2 jobs at once (its `agent.yaml` default) and still never runs one policy twice at the same time. So between step 4 and the end of step 5, hosts still on the previous agent version keep enrolling, sending heartbeats, uploading inventory and running scans as before.
-- Manager 0.5.4 does not support agents `0.5.2-1` or older. Upgrade them to `0.5.3-1` or later before step 2 (see the query below).
+**Compatibility:** a manager supports agents of its own version and the one before, and an agent supports a manager of its own version and the one before. For release 0.5.5 (manager `0.5.5`, agent package `0.5.5-1`, git tag `v0.5.5`): manager 0.5.5 supports agents `0.5.5-1` and `0.5.4-1`, and agent `0.5.5-1` supports managers 0.5.5 and 0.5.4. Manager 0.5.5 has the same code and migrations as 0.5.0; agent `0.5.5-1` fixes the runner start of `0.5.4-1`; agent `0.5.4-1` widens the runner sandbox (TS §8.1); agent `0.5.2-1` added the `jq` dependency; agent `0.5.1-1` turns on the `bitscan-capread` helper on every host. Manager 0.5.0 added migration `m0007` (the `scan_job.cancel_reason` column and the `max_parallel_jobs` setting). It sends `max_parallel_jobs` only to agents `0.5.0-1` or later; agents `0.4.1-1` keep running one job at a time. Agent `0.5.0-1` with manager 0.4.1 runs up to 2 jobs at once (its `agent.yaml` default) and still never runs one policy twice at the same time. So between step 4 and the end of step 5, hosts still on the previous agent version keep enrolling, sending heartbeats, uploading inventory and running scans as before.
+- Manager 0.5.5 does not support agents `0.5.3-1` or older. Upgrade them to `0.5.4-1` or later before step 2 (see the query below).
 - Upgrading a manager from 0.2.0 to 0.3.0 or later signs web UI users out once (their old in-memory sessions are gone); from then on they stay signed in across reloads.
 - An agent more than one version behind the new manager is not supported by it. Before step 2, list the agent versions in the fleet (on the database host), and upgrade any such host to at least the version before the new one first:
 
@@ -49,7 +49,7 @@ This runbook covers a manager installed with `manager-install.md`: the venv `/op
   sudo -u postgres psql -X -d bitscan -c "SELECT agent_version, count(*) FROM agent WHERE status <> 'decommissioned' GROUP BY agent_version ORDER BY count(*) DESC"
   ```
 
-- Pre-release agent builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade them to a release (`0.5.4-1`, `agent-install.md` section 6).
+- Pre-release agent builds (`X.Y.Z~preN-1`, for example `0.2.0~pre2-1`) are not supported by any manager; upgrade them to a release (`0.5.5-1`, `agent-install.md` section 6).
 
 ## 2. Replace the TLS certificate
 
@@ -313,8 +313,8 @@ A release changes the version in a release pull request, tests that exact build,
 
 1. Check that nothing planned for the release is still open, including the deferred review of the importer's BIT102 command rules and the CIS control numbers in `bits/samples/`.
 2. In a release pull request, set the versions:
-   - `deploy/debian/changelog`: a new top entry `bitscan-agent (0.5.4-1)`, dated after the entry below it, describing the release;
-   - `manager/pyproject.toml` (`version`) and `manager/bitscan_manager/__init__.py` (`__version__`): `0.5.4`;
+   - `deploy/debian/changelog`: a new top entry `bitscan-agent (0.5.5-1)`, dated after the entry below it, describing the release;
+   - `manager/pyproject.toml` (`version`) and `manager/bitscan_manager/__init__.py` (`__version__`): `0.5.5`;
    - the runbooks and `README.md`: replace the pre-release notes with the release, and update **Compatibility** in section 1.
 3. On that pull request's branch, run the end-to-end workflow by hand and wait for it. It must be green: every row of the nightly chain and of the compatibility rows (this manager with the previous release's agent, this agent with the previous release's manager) is PASS. Read the uploaded report, not only the result:
 
@@ -323,13 +323,13 @@ A release changes the version in a release pull request, tests that exact build,
    gh run list --workflow e2e.yml --branch <release branch> --limit 1
    ```
 
-4. Run the `release` workflow by hand with version `0.5.4` on the same branch. It checks that the given version, `pyproject.toml` and the changelog agree, builds the agent package twice and checks both builds are identical, builds the manager files and writes the SHA-256 sums, without creating a release.
+4. Run the `release` workflow by hand with version `0.5.5` on the same branch. It checks that the given version, `pyproject.toml` and the changelog agree, builds the agent package twice and checks both builds are identical, builds the manager files and writes the SHA-256 sums, without creating a release.
 5. Merge the pull request once it is approved and every check is green.
 6. The release owner tags the merge commit and pushes the tag. The `release` workflow then builds the files and creates a draft release:
 
    ```sh
-   git tag -a v0.5.4 -m "Bitscan 0.5.4" <merge commit>
-   git push origin v0.5.4
+   git tag -a v0.5.5 -m "Bitscan 0.5.5" <merge commit>
+   git push origin v0.5.5
    ```
 
 7. Check the draft (the files, and the `SHA256SUMS` text in its notes), then publish it.
