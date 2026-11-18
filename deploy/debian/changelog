@@ -1,3 +1,16 @@
+bitscan-agent (0.5.4-1) unstable; urgency=medium
+
+  * Release 0.5.4 of the Bitscan agent, with manager 0.5.4 (its code is
+    unchanged from 0.5.0).
+  * The plugin runner can open NVIDIA, InfiniBand (umad, verbs) and mst
+    devices, has CAP_DAC_OVERRIDE and CAP_SYS_RAWIO, may use @raw-io system
+    calls and can reach the docker and containerd sockets (TS 3.7, 8.1,
+    owner decision 2026-11-18). Every plugin is root-equivalent on the host.
+  * Supported with manager 0.5.4 and manager 0.5.3. Manager 0.5.4 supports
+    agents 0.5.4-1 and 0.5.3-1.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Wed, 18 Nov 2026 00:00:00 +0000
+
 bitscan-agent (0.5.3-1) unstable; urgency=medium
 
   * Release 0.5.3 of the Bitscan agent, with manager 0.5.3 (its code is
