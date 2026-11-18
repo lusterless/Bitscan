@@ -26,10 +26,10 @@ SPEC = Path("docs/spec/Technical_Specification.md")
 # moved down 2 lines with the runner unit change, decisions 2026-11-03)
 AGENT: dict[str, tuple[int, int]] = {
     "bitscan-runner.socket": (297, 310),
-    "bitscan-runner.service": (316, 373),
-    "bitscan-agent.service": (379, 418),
-    "bitscan-capread.socket": (447, 459),
-    "bitscan-capread.service": (461, 493),
+    "bitscan-runner.service": (316, 382),
+    "bitscan-agent.service": (388, 427),
+    "bitscan-capread.socket": (456, 468),
+    "bitscan-capread.service": (470, 502),
 }
 # The manager blocks moved down 3 lines with the TS §5.2 index lines (68d3881,
 # TASK-261, 2026-11-11; before: 1354, 1407, 1441, 1471), then 7 more with the
@@ -41,20 +41,22 @@ AGENT: dict[str, tuple[int, int]] = {
 # the D-Bus policy moved down 8 lines with the same amendments (before: 289,
 # 308, 371, 439, 453 and 414).
 MANAGER: dict[str, tuple[int, int]] = {
-    "bitscan-manager.service": (1465, 1514),
-    "bitscan-manager-migrate.service": (1518, 1548),
-    "bitscan-manager-maintain.service": (1552, 1580),
-    "bitscan-manager-maintain.timer": (1582, 1593),
+    "bitscan-manager.service": (1476, 1525),
+    "bitscan-manager-migrate.service": (1529, 1559),
+    "bitscan-manager-maintain.service": (1563, 1591),
+    "bitscan-manager-maintain.timer": (1593, 1604),
 }
 # The ClusterMAX collector units (TS §3.8), shipped in bitscan-agent since the
+# (2026-11-18: §3 blocks after the runner unit moved down 9 lines and the manager
+# blocks 11 with the runner sandbox change, TS §3.7, §8.1.)
 # owner decision of 2026-11-15; their files are in collector/systemd/.
 CMAX: dict[str, tuple[int, int]] = {
-    "cmax-helper.socket": (549, 563),
-    "cmax-helper.service": (565, 584),
+    "cmax-helper.socket": (558, 572),
+    "cmax-helper.service": (574, 593),
 }
-# D-Bus policy (TS §3.7): ```xml fence at L422, closing fence at L441
+# D-Bus policy (TS §3.7): ```xml fence at L431, closing fence at L450
 DBUS: dict[str, tuple[int, int]] = {
-    "bitscan-runner.conf": (422, 441),
+    "bitscan-runner.conf": (431, 450),
 }
 
 # Recorded deviations from the verbatim TS blocks: file name -> (the spec line
