@@ -321,11 +321,11 @@ After=bitscan-runner.socket
 
 [Service]
 ExecStart=/usr/sbin/bitscan-runner
-# Non-root user that can read every file but change nothing
+# Non-root user; owner decision 2026-11-18 adds GPU/IB/mst devices, CAP_DAC_OVERRIDE, CAP_SYS_RAWIO, @raw-io and the docker/containerd sockets (TS §8.1)
 User=bitscan-runner
 Group=bitscan-runner
-AmbientCapabilities=CAP_DAC_READ_SEARCH
-CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_SYS_RAWIO
 NoNewPrivileges=yes
 # Lets the runner put each plugin in its own cgroup and kill it afterwards
 Delegate=yes
@@ -339,7 +339,16 @@ NoExecPaths=/ /tmp /var/tmp
 ExecPaths=/usr /bin /sbin /lib -/lib64
 ProtectHome=read-only
 UMask=0077
-PrivateDevices=yes
+# GPU/IB baseline (owner decision 2026-11-18): host /dev, but only the devices below can be opened
+PrivateDevices=no
+DevicePolicy=closed
+DeviceAllow=char-nvidia-frontend rw
+DeviceAllow=char-nvidia-uvm rw
+DeviceAllow=char-nvidia-caps r
+DeviceAllow=char-infiniband_mad rw
+DeviceAllow=char-infiniband_verbs rw
+DeviceAllow=char-mst_pciconf rw
+DeviceAllow=char-mst_pci rw
 PrivateIPC=yes
 RemoveIPC=yes
 ProtectHostname=yes
@@ -352,15 +361,15 @@ RestrictNamespaces=yes
 RestrictRealtime=yes
 LockPersonality=yes
 SystemCallArchitectures=native
-SystemCallFilter=@system-service
-SystemCallFilter=~@debug @mount @module @raw-io @reboot @swap @obsolete @cpu-emulation
+SystemCallFilter=@system-service @raw-io
+SystemCallFilter=~@debug @mount @module @reboot @swap @obsolete @cpu-emulation
 SystemCallErrorNumber=EPERM
 # Netlink lets ss and ip read socket and route tables; changing them needs CAP_NET_ADMIN
 RestrictAddressFamilies=AF_UNIX AF_NETLINK
 # No IP networking at all
 IPAddressDeny=any
 # Local sockets plugins must not reach
-InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/run/containerd -/run/snapd.socket -/run/snapd-snap.socket
+InaccessiblePaths=-/run/snapd.socket -/run/snapd-snap.socket
 InaccessiblePaths=-/run/systemd/journal/socket -/run/systemd/journal/stdout -/run/systemd/journal/syslog -/run/systemd/journal/dev-log
 MemoryMax=256M
 TasksMax=64
@@ -1339,6 +1348,8 @@ The `package` table (name, version, source\_name) is the join point for v2 CVE m
 Because `.bit` files run shell commands that can read every file on every endpoint, the trust chain for those commands is the highest-risk part of the system and gets the strictest controls.
 
 ### 8.1 Security controls
+
+**Accepted risk (owner decision 2026-11-18).** For the GPU baseline, the runner can open NVIDIA, InfiniBand MAD (umad, verbs) and mst devices, has `CAP_DAC_OVERRIDE` and `CAP_SYS_RAWIO`, may use `@raw-io` system calls and can reach the docker and containerd sockets. Every plugin of every policy is therefore root-equivalent on agent hosts (for example `docker run --privileged`) and can send InfiniBand management packets that change the fabric. Mitigations are the same as for unsigned jobs: admin TOTP, import alerts and the audit log.
 
 | Risk | Control |
 | --- | --- |
