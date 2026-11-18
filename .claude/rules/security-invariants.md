@@ -19,6 +19,7 @@ These apply to all code. Each line is a hard rule from the approved spec; breaki
 - A compromised `bitscan-agent` can make its host's runner read any file there; treat it as a compromise of every secret on that host (TS §3.7). The agent and runner job checks catch mistakes, not attacks.
 - Without pinning, a holder of a publicly trusted certificate for the manager's hostname can impersonate the manager to that agent. Pinning stays optional.
 - Redaction removes only what its patterns match; every operator and admin can see raw output from every host.
+- Owner decision 2026-11-18: the runner can open GPU, InfiniBand MAD and mst devices, has CAP_DAC_OVERRIDE, CAP_SYS_RAWIO and @raw-io, and can reach the docker and containerd sockets, so every plugin is root-equivalent on agent hosts (TS §8.1).
 - Plugins can read any file and connect to local Unix sockets that accept any user, except those blocked in the runner unit, and to abstract Unix sockets (TS §3.7).
 
 ## Secrets and output
