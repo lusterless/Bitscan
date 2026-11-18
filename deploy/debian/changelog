@@ -9,7 +9,7 @@ bitscan-agent (0.5.5-1) unstable; urgency=medium
   * Supported with manager 0.5.5 and manager 0.5.4. Manager 0.5.5 supports
     agents 0.5.5-1 and 0.5.4-1.
 
- -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Wed, 18 Nov 2026 12:00:00 +0000
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Wed, 18 Nov 2026 06:00:00 +0000
 
 bitscan-agent (0.5.4-1) unstable; urgency=medium
 
