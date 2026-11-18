@@ -1,3 +1,16 @@
+bitscan-agent (0.5.5-1) unstable; urgency=medium
+
+  * Release 0.5.5 of the Bitscan agent, with manager 0.5.5 (its code is
+    unchanged from 0.5.0).
+  * Fix: the runner's startup check accepts CAP_DAC_OVERRIDE and
+    CAP_SYS_RAWIO, which 0.5.4-1 added to the runner unit (TS 3.7, 8.1).
+    Under 0.5.4-1 the runner refused to start and every check reported
+    runner_unavailable.
+  * Supported with manager 0.5.5 and manager 0.5.4. Manager 0.5.5 supports
+    agents 0.5.5-1 and 0.5.4-1.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Wed, 18 Nov 2026 12:00:00 +0000
+
 bitscan-agent (0.5.4-1) unstable; urgency=medium
 
   * Release 0.5.4 of the Bitscan agent, with manager 0.5.4 (its code is
