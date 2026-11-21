@@ -23,6 +23,7 @@ import os
 import pwd
 import re
 import secrets
+import shutil
 import socket
 import struct
 import subprocess
@@ -63,7 +64,15 @@ def audit_command(cmax: str = CMAX) -> list[str]:
 # Where cluster tools and configs live when they are not on the default PATH
 # (RKE2, Slurm built from source, snap), so the audit finds Slurm or
 # Kubernetes as a root shell on the host would (owner decision 2026-11-21).
-EXTRA_PATH = ("/var/lib/rancher/rke2/bin", "/opt/slurm/bin", "/snap/bin")
+EXTRA_PATH = (
+    "/var/lib/rancher/rke2/bin",
+    "/opt/slurm/bin",
+    "/snap/bin",
+    "/usr/local/cuda/bin",
+)
+# The check scripts run with the system python3, so they find the vendored
+# packages (PyYAML) only through PYTHONPATH (owner decision 2026-11-21).
+SITE = "/usr/lib/clustermax/site"
 KUBECONFIGS = (
     "/root/.kube/config",
     "/etc/rancher/k3s/k3s.yaml",
@@ -75,8 +84,13 @@ SLURM_CONFS = ("/etc/slurm-llnl/slurm.conf", "/opt/slurm/etc/slurm.conf")
 
 
 def audit_environment(
-    work_dir: str = WORK_DIR, exists: Callable[[str], bool] = os.path.isfile
+    work_dir: str = WORK_DIR,
+    exists: Callable[[str], bool] = os.path.isfile,
+    home: str = "/root",
 ) -> dict[str, str]:
+    """HOME is root's, as under `sudo cmax`, so cloud, Docker and enroot
+    credentials are found; ClusterMAX writes its report files to work_dir
+    (CLUSTERMAX_RUNS_ROOT, tmpfs), which is emptied after each run."""
     env = {
         "PATH": ":".join(
             (
@@ -89,8 +103,10 @@ def audit_environment(
             )
             + EXTRA_PATH
         ),
-        "HOME": work_dir,
+        "HOME": home,
         "LANG": "C.UTF-8",
+        "CLUSTERMAX_RUNS_ROOT": work_dir,
+        "PYTHONPATH": SITE,
     }
     kubeconfig = next((p for p in KUBECONFIGS if exists(p)), None)
     if kubeconfig:
@@ -151,6 +167,19 @@ def parse_header(report: str) -> str:
                 break
             block.append(line.strip())
     return ("; ".join(block) or "MISSING no target block in the report")[:MAX_REPLY]
+
+
+def clear_dir(path: str) -> None:
+    """Remove what the finished audit wrote under path; the report text is
+    already held in memory."""
+    for entry in os.scandir(path):
+        if entry.is_dir(follow_symlinks=False):
+            shutil.rmtree(entry.path, ignore_errors=True)
+        else:
+            try:
+                os.unlink(entry.path)
+            except OSError:
+                pass
 
 
 @dataclass
@@ -226,6 +255,7 @@ class Helper:
             )
         except OSError as exc:
             text, code = f"cmax could not start: {exc.strerror}", 127
+        clear_dir(self.work_dir)
         s = self.state
         with s.lock:
             run = s.runs.get(run_id)
