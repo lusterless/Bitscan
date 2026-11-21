@@ -93,8 +93,10 @@ def test_the_only_command_is_cmax_audit_vvv_y() -> None:
 
 def test_environment_is_minimal_and_home_is_the_tmpfs_dir() -> None:
     env = helper_mod.audit_environment(exists=lambda _p: False)
-    assert set(env) == {"PATH", "HOME", "LANG"}
-    assert env["HOME"] == "/run/cmax-work"
+    assert set(env) == {"PATH", "HOME", "LANG", "CLUSTERMAX_RUNS_ROOT", "PYTHONPATH"}
+    assert env["HOME"] == "/root"
+    assert env["CLUSTERMAX_RUNS_ROOT"] == "/run/cmax-work"
+    assert env["PYTHONPATH"] == "/usr/lib/clustermax/site"
 
 
 # -- parsing the real report --------------------------------------------------
@@ -147,14 +149,23 @@ def test_audit_environment_finds_cluster_configs() -> None:
     env = helper_mod.audit_environment("/w", exists=present.__contains__)
     assert env["KUBECONFIG"] == "/etc/rancher/k3s/k3s.yaml"
     assert env["SLURM_CONF"] == "/opt/slurm/etc/slurm.conf"
-    assert env["PATH"].split(":")[-3:] == list(helper_mod.EXTRA_PATH)
+    assert env["PATH"].split(":")[-4:] == list(helper_mod.EXTRA_PATH)
     root = helper_mod.audit_environment(
         "/w", exists={"/root/.kube/config", "/etc/slurm/slurm.conf"}.__contains__
     )
     assert root["KUBECONFIG"] == "/root/.kube/config"
     assert "SLURM_CONF" not in root
     none = helper_mod.audit_environment("/w", exists=lambda _p: False)
-    assert set(none) == {"PATH", "HOME", "LANG"}
+    assert "KUBECONFIG" not in none and "SLURM_CONF" not in none
+
+
+def test_run_files_are_removed_after_the_run(tmp_path: Path) -> None:
+    h, _ = make_helper(tmp_path)
+    (Path(h.work_dir) / "old" / "audit").mkdir(parents=True)
+    (Path(h.work_dir) / "audit.out").write_text("x")
+    assert h.handle("collect") == f"started {rid(1)}"
+    wait_done(h, rid(1))
+    assert list(Path(h.work_dir).iterdir()) == []
 
 
 def test_unknown_check_is_missing() -> None:

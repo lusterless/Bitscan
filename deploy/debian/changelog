@@ -1,3 +1,22 @@
+bitscan-agent (0.5.7-1) unstable; urgency=medium
+
+  * Release 0.5.7 of the Bitscan agent, with manager 0.5.7 (its code is
+    unchanged from 0.5.0).
+  * cmax-helper runs the ClusterMAX audit with HOME=/root, as sudo would,
+    so cloud, Docker and enroot credentials are found. ClusterMAX writes
+    its report files to /run/cmax-work (CLUSTERMAX_RUNS_ROOT), which the
+    helper empties after each run.
+  * PYTHONPATH=/usr/lib/clustermax/site, so check scripts that run with the
+    system python3 find the bundled PyYAML (k8s_scheduling.status).
+  * /usr/local/cuda/bin is on PATH, so the ncu and nvcc checks find the
+    CUDA tools.
+  * cmax-helper.service: MemoryMax=4G and CPUQuota=200% (were 1G and 50%),
+    for large Slurm and Kubernetes clusters.
+  * Supported with manager 0.5.7 and manager 0.5.6. Manager 0.5.7 supports
+    agents 0.5.7-1 and 0.5.6-1.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Sat, 21 Nov 2026 06:00:00 +0000
+
 bitscan-agent (0.5.6-1) unstable; urgency=medium
 
   * Release 0.5.6 of the Bitscan agent, with manager 0.5.6 (its code is

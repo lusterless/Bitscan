@@ -542,14 +542,14 @@ Owner decisions 2026-11-14 and 2026-11-15. Part of the `bitscan-agent` package (
 
 - Socket `/run/clustermax/collect.sock`, `root:bitscan-runner`, 0660, in a root-owned 0755 directory.
 - The helper accepts only peers with uid `bitscan-runner` (`SO_PEERCRED`). It takes a request name, never a command line or arguments.
-- `collect`: if no audit is running, start `/usr/lib/clustermax/bin/cmax audit -vvv -y` with an empty environment except `PATH` (the system directories plus `/var/lib/rancher/rke2/bin`, `/opt/slurm/bin` and `/snap/bin`), `HOME=/run/cmax-work`, `LANG=C.UTF-8`, `KUBECONFIG` (the first of `/root/.kube/config`, `/etc/rancher/k3s/k3s.yaml`, `/etc/rancher/rke2/rke2.yaml` and `/etc/kubernetes/admin.conf` that exists) and `SLURM_CONF` (when `slurm.conf` is only in `/etc/slurm-llnl` or `/opt/slurm/etc`; owner decision 2026-11-21), and answer `started <run-id>`; if one is running, answer `running <run-id>` with that run's id and start nothing. Every `collect` that finds no running audit starts a new one; a finished report is never reused by a later `collect` (owner decision 2026-11-14).
+- `collect`: if no audit is running, start `/usr/lib/clustermax/bin/cmax audit -vvv -y` with an empty environment except `PATH` (the system directories plus `/var/lib/rancher/rke2/bin`, `/opt/slurm/bin`, `/snap/bin` and `/usr/local/cuda/bin`), `HOME=/root` (as under `sudo`), `CLUSTERMAX_RUNS_ROOT=/run/cmax-work`, `PYTHONPATH=/usr/lib/clustermax/site` (the check scripts run with the system `python3`), `LANG=C.UTF-8`, `KUBECONFIG` (the first of `/root/.kube/config`, `/etc/rancher/k3s/k3s.yaml`, `/etc/rancher/rke2/rke2.yaml` and `/etc/kubernetes/admin.conf` that exists) and `SLURM_CONF` (when `slurm.conf` is only in `/etc/slurm-llnl` or `/opt/slurm/etc`; owner decision 2026-11-21), and answer `started <run-id>`; if one is running, answer `running <run-id>` with that run's id and start nothing. Every `collect` that finds no running audit starts a new one; a finished report is never reused by a later `collect` (owner decision 2026-11-14).
 - `get <run-id> wait` waits for the run (up to 590 s) and answers `done` or `running`; the ClusterMAX policy's 10 wait plugins use it, so a long audit on a large cluster has about one hour (owner decision 2026-11-21). `get <run-id> <check-id>`: wait for run `<run-id>` (up to 590 s), then return the report line whose trailing `[<check-id>]` matches, and its `Observed:` line as `<verdict> observed=<value>`, followed on the next lines by the check's own text (description, `Reproduce:`, `Recommendation:`; `References:` are left out; owner decision 2026-11-17). `get <run-id> header` returns that run's target block (command, target, host, system, selection). `get <run-id> status` returns `ok <age-seconds> <cmax-version>`, `running` or `failed <exit-code>`. An unknown or dropped run id returns `MISSING`.
 - `<run-id>` is 32 lowercase hexadecimal characters chosen by the helper. The helper keeps at most the 4 most recent runs' reports in memory.
 - **One audit per scan job.** `cmax-trigger get <check-id>` takes a lock on `cmax-run.lock` in its job's temp directory (the parent of its working directory, §3.7). The first plugin of the job sends `collect` and writes the returned run id to `cmax-run` there; every later plugin of the job reads it. The runner deletes the job's temp directory when the job ends, so the next scan starts a new audit.
 - One audit at a time; concurrent `collect` requests share the same run.
 - `<check-id>` must match `^[A-Za-z0-9_.-]{1,128}$`; any other request is refused.
 
-**Non-persistence.** The report text is held only in the helper's memory. ClusterMAX writes its own files under `HOME=/run/cmax-work` (`RuntimeDirectory=`, tmpfs) and its private `/tmp`, both removed by systemd when the service stops. The helper stops when no audit runs and no request has arrived for 30 minutes, which drops every report. The helper writes nothing to persistent storage. Results reach the manager through the normal result path (§3.5), including the agent's spool.
+**Non-persistence.** The report text is held only in the helper's memory. ClusterMAX writes its own files under `CLUSTERMAX_RUNS_ROOT=/run/cmax-work`, (`RuntimeDirectory=`, tmpfs; the helper empties it after each run) and its private `/tmp`, both removed by systemd when the service stops. The helper stops when no audit runs and no request has arrived for 30 minutes, which drops every report. The helper writes nothing to persistent storage. Results reach the manager through the normal result path (§3.5), including the agent's spool.
 
 **Effects on the host (accepted, §8.1).** `cmax audit -vvv -y` runs unmodified, so its normal effects apply: `nvidia-smi boost-slider --vboost 2`, `enroot import docker://hello-world` where Enroot exists, outbound HTTPS to `ipinfo.io`, and, when ClusterMAX auto-detects Slurm or Kubernetes, `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace that ClusterMAX does not delete. `-y` skips ClusterMAX's host role check, so the scan target alone decides which hosts audit a whole cluster.
 
@@ -585,10 +585,10 @@ RuntimeDirectoryMode=0700
 PrivateTmp=yes
 UMask=0077
 NoNewPrivileges=yes
-CPUQuota=50%
+CPUQuota=200%
 Nice=10
 IOSchedulingClass=idle
-MemoryMax=1G
+MemoryMax=4G
 TimeoutStopSec=30
 ```
 
