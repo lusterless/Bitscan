@@ -18,6 +18,106 @@
       <ExpectedResult>^(started|running) [0-9a-f]{32}$</ExpectedResult>
     </Plugin>
     <Plugin>
+      <PluginName>0.1.1 - wait - Wait for the ClusterMAX audit (1 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>182ac941-7845-469e-800c-4aa07455860a</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.2 - wait - Wait for the ClusterMAX audit (2 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>d2952339-665f-470b-9f14-6cfe3fb353cb</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.3 - wait - Wait for the ClusterMAX audit (3 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>834edf6c-f1a4-4ec7-a6c2-7fa717b91892</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.4 - wait - Wait for the ClusterMAX audit (4 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>cfce9b48-5eaa-44d7-9acd-d366a66e65c8</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.5 - wait - Wait for the ClusterMAX audit (5 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>65fef7fc-4c92-4b7c-ad25-e29fc5ac9a39</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.6 - wait - Wait for the ClusterMAX audit (6 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>bd98c566-44cb-422a-9ba5-a7a2bfa23b3d</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.7 - wait - Wait for the ClusterMAX audit (7 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>4e30e0a3-b516-46e9-83b5-3ae66aa9fadf</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.8 - wait - Wait for the ClusterMAX audit (8 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>bedfe2d7-d61c-43d0-9e4b-d90d737ee900</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.9 - wait - Wait for the ClusterMAX audit (9 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>8991bfc9-f803-4c10-bf14-14029b5ac405</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
+      <PluginName>0.1.10 - wait - Wait for the ClusterMAX audit (10 of 10)</PluginName>
+      <PluginDescription>Waits up to about 10 minutes for this scan's audit and prints done or running. Both pass: these plugins only give a long audit on a large cluster more time. 0.3 status reports whether the audit succeeded.</PluginDescription>
+      <PluginId>0a1a9cc0-0302-451b-aca7-62dd98904787</PluginId>
+      <Execute timeout="600"><![CDATA[
+        cmax-trigger get wait
+      ]]></Execute>
+      <Operator>regex</Operator>
+      <ExpectedResult>^(done|running)$</ExpectedResult>
+    </Plugin>
+    <Plugin>
       <PluginName>0.2 - header - ClusterMAX target</PluginName>
       <PluginDescription>Waits for the audit and prints the target block ClusterMAX reported: command, target, host, system, access and selection. Evidence of what ran on this host.</PluginDescription>
       <PluginId>713b6874-6bc0-461e-8041-8cfecd21d586</PluginId>

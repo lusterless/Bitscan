@@ -60,12 +60,46 @@ def audit_command(cmax: str = CMAX) -> list[str]:
     return [cmax, "audit", "-vvv", "-y"]
 
 
-def audit_environment(work_dir: str = WORK_DIR) -> dict[str, str]:
-    return {
-        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+# Where cluster tools and configs live when they are not on the default PATH
+# (RKE2, Slurm built from source, snap), so the audit finds Slurm or
+# Kubernetes as a root shell on the host would (owner decision 2026-11-21).
+EXTRA_PATH = ("/var/lib/rancher/rke2/bin", "/opt/slurm/bin", "/snap/bin")
+KUBECONFIGS = (
+    "/root/.kube/config",
+    "/etc/rancher/k3s/k3s.yaml",
+    "/etc/rancher/rke2/rke2.yaml",
+    "/etc/kubernetes/admin.conf",
+)
+# slurm.conf in a place the Slurm tools do not look by default.
+SLURM_CONFS = ("/etc/slurm-llnl/slurm.conf", "/opt/slurm/etc/slurm.conf")
+
+
+def audit_environment(
+    work_dir: str = WORK_DIR, exists: Callable[[str], bool] = os.path.isfile
+) -> dict[str, str]:
+    env = {
+        "PATH": ":".join(
+            (
+                "/usr/local/sbin",
+                "/usr/local/bin",
+                "/usr/sbin",
+                "/usr/bin",
+                "/sbin",
+                "/bin",
+            )
+            + EXTRA_PATH
+        ),
         "HOME": work_dir,
         "LANG": "C.UTF-8",
     }
+    kubeconfig = next((p for p in KUBECONFIGS if exists(p)), None)
+    if kubeconfig:
+        env["KUBECONFIG"] = kubeconfig
+    if not exists("/etc/slurm/slurm.conf"):
+        slurm_conf = next((p for p in SLURM_CONFS if exists(p)), None)
+        if slurm_conf:
+            env["SLURM_CONF"] = slurm_conf
+    return env
 
 
 def parse_check(report: str, check_id: str) -> str:
@@ -234,11 +268,15 @@ class Helper:
         if done is None:
             with s.lock:
                 held = run_id in s.runs
+            if held and what == "wait":
+                return "running"
             return (
                 "TIMEOUT the audit is still running"
                 if held
                 else f"MISSING run {run_id} is not held"
             )
+        if what == "wait":
+            return "done"
         if done.exit_code != 0 or done.report is None:
             return f"ERROR cmax exited {done.exit_code}"
         if what == "header":
@@ -253,7 +291,9 @@ class Helper:
             len(words) == 3
             and words[0] == "get"
             and RUN_ID.fullmatch(words[1])
-            and (words[2] in {"header", "status"} or CHECK_ID.fullmatch(words[2]))
+            and (
+                words[2] in {"header", "status", "wait"} or CHECK_ID.fullmatch(words[2])
+            )
         ):
             return self.get(words[1], words[2])
         return "REFUSED unknown request"

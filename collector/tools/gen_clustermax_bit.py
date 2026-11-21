@@ -29,6 +29,7 @@ OUT = HERE.parent.parent / "bits" / "samples" / "clustermax-0.3.0.bit"
 GROUP = re.compile(r"^\[(\w+)\] (.+) \((\d+) checks\)$")
 CHECK = re.compile(r"^  ([A-Za-z0-9_.-]+): (.+)$")
 PASSING = r"^(PASS|n/a)( |$)"
+WAITS = 10
 
 POLICY_DESCRIPTION = (
     "The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y). "
@@ -101,6 +102,26 @@ def main() -> int:
             "regex",
             r"^(started|running) [0-9a-f]{32}$",
         ),
+    ]
+    # Each plugin may run at most 600 s (SR 2), so a long audit on a large
+    # Slurm or Kubernetes cluster is waited for by these plugins, which pass
+    # whether the audit is done or still running (owner decision 2026-11-21).
+    # With 2 plugins at once they add about 50 minutes to the header's 10.
+    for n in range(1, WAITS + 1):
+        plugins.append(
+            plugin(
+                f"0.1.{n} - wait - Wait for the ClusterMAX audit ({n} of {WAITS})",
+                "Waits up to about 10 minutes for this scan's audit and prints done or "
+                "running. Both pass: these plugins only give a long audit on a large "
+                "cluster more time. 0.3 status reports whether the audit succeeded.",
+                pid(f"wait{n}"),
+                "cmax-trigger get wait",
+                600,
+                "regex",
+                r"^(done|running)$",
+            )
+        )
+    plugins += [
         plugin(
             "0.2 - header - ClusterMAX target",
             "Waits for the audit and prints the target block ClusterMAX reported: command, target, "

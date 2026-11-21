@@ -92,7 +92,7 @@ def test_the_only_command_is_cmax_audit_vvv_y() -> None:
 
 
 def test_environment_is_minimal_and_home_is_the_tmpfs_dir() -> None:
-    env = helper_mod.audit_environment()
+    env = helper_mod.audit_environment(exists=lambda _p: False)
     assert set(env) == {"PATH", "HOME", "LANG"}
     assert env["HOME"] == "/run/cmax-work"
 
@@ -140,6 +140,21 @@ def test_every_check_in_the_report_parses() -> None:
             "WARNING",
             "n/a",
         }
+
+
+def test_audit_environment_finds_cluster_configs() -> None:
+    present = {"/etc/rancher/k3s/k3s.yaml", "/opt/slurm/etc/slurm.conf"}
+    env = helper_mod.audit_environment("/w", exists=present.__contains__)
+    assert env["KUBECONFIG"] == "/etc/rancher/k3s/k3s.yaml"
+    assert env["SLURM_CONF"] == "/opt/slurm/etc/slurm.conf"
+    assert env["PATH"].split(":")[-3:] == list(helper_mod.EXTRA_PATH)
+    root = helper_mod.audit_environment(
+        "/w", exists={"/root/.kube/config", "/etc/slurm/slurm.conf"}.__contains__
+    )
+    assert root["KUBECONFIG"] == "/root/.kube/config"
+    assert "SLURM_CONF" not in root
+    none = helper_mod.audit_environment("/w", exists=lambda _p: False)
+    assert set(none) == {"PATH", "HOME", "LANG"}
 
 
 def test_unknown_check_is_missing() -> None:
@@ -198,6 +213,16 @@ def test_collect_starts_a_run_and_get_returns_its_lines(tmp_path: Path) -> None:
     assert h.handle(f"get {rid(1)} status").startswith("ok ")
     assert h.handle(f"get {rid(1)} status").endswith(" 0.3.0")
     assert counter.read_text() == "x"
+
+
+def test_wait_passes_while_running_and_when_done(tmp_path: Path) -> None:
+    """Owner decision 2026-11-21: wait plugins give a long audit more time."""
+    h, _ = make_helper(tmp_path, delay=1.0, get_wait_s=0.2)
+    assert h.handle("collect") == f"started {rid(1)}"
+    assert h.handle(f"get {rid(1)} wait") == "running"
+    wait_done(h, rid(1))
+    assert h.handle(f"get {rid(1)} wait") == "done"
+    assert h.handle(f"get {rid(9)} wait").startswith("MISSING ")
 
 
 def test_every_collect_after_a_run_starts_a_new_audit(tmp_path: Path) -> None:

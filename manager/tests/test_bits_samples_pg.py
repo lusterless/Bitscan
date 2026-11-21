@@ -195,7 +195,8 @@ def test_description_note_and_status(path: Path) -> None:
 def test_clustermax_sample_has_every_clustermax_check() -> None:
     # TS §3.8, owner decision 2026-11-14: the 81 checks of `cmax audit
     # --show -vvv` (ClusterMAX 0.3.0, lusterless/clustermax f849f46), in that
-    # order, after the collect, header and status plugins.
+    # order, after the collect, 10 wait (owner decision 2026-11-21), header and
+    # status plugins.
     root = parsed(CLUSTERMAX)
     assert value(root, "PolicyName") == "ClusterMAX 0.3.0 audit checks"
     assert value(root.find("Family"), "FamilyName") == "Clustermax"
@@ -210,6 +211,7 @@ def test_clustermax_sample_has_every_clustermax_check() -> None:
     found = plugins(CLUSTERMAX)
     assert [p["name"].split(" - ")[1] for p in found] == [
         "collect",
+        *["wait"] * 10,
         "header",
         "status",
         *checks,
@@ -220,7 +222,13 @@ def test_clustermax_sample_has_every_clustermax_check() -> None:
         "cmax-trigger collect",
         "^(started|running) [0-9a-f]{32}$",
     )
-    for p, check in zip(found[3:], checks, strict=True):
+    for p in found[1:11]:
+        assert (p["execute"], p["expected"], p["timeout"]) == (
+            "cmax-trigger get wait",
+            "^(done|running)$",
+            "600",
+        )
+    for p, check in zip(found[13:], checks, strict=True):
         assert p["execute"] == f"cmax-trigger get {check}"
         assert (p["operator"], p["expected"], p["timeout"]) == (
             "regex",
