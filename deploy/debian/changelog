@@ -1,3 +1,22 @@
+bitscan-agent (0.5.6-1) unstable; urgency=medium
+
+  * Release 0.5.6 of the Bitscan agent, with manager 0.5.6 (its code is
+    unchanged from 0.5.0).
+  * cmax-helper runs the ClusterMAX audit with KUBECONFIG set to the first
+    of /root/.kube/config, /etc/rancher/k3s/k3s.yaml,
+    /etc/rancher/rke2/rke2.yaml and /etc/kubernetes/admin.conf that exists,
+    with /var/lib/rancher/rke2/bin, /opt/slurm/bin and /snap/bin on PATH,
+    and with SLURM_CONF when slurm.conf is only in /etc/slurm-llnl or
+    /opt/slurm/etc. The audit then finds Slurm or Kubernetes as a root
+    shell on the host would.
+  * cmax-helper answers "get <run> wait" with done or running. The
+    ClusterMAX policy has 10 new wait plugins, so a long audit on a large
+    cluster has about one hour before the checks time out.
+  * Supported with manager 0.5.6 and manager 0.5.5. Manager 0.5.6 supports
+    agents 0.5.6-1 and 0.5.5-1.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Fri, 20 Nov 2026 06:00:00 +0000
+
 bitscan-agent (0.5.5-1) unstable; urgency=medium
 
   * Release 0.5.5 of the Bitscan agent, with manager 0.5.5 (its code is
