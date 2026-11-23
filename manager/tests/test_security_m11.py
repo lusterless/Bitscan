@@ -258,7 +258,17 @@ POST_M11_PINS = {
     # 2026-11-14): queue_scan counts the jobs not run, and m0007 adds
     # scan_job.cancel_reason and the max_parallel_jobs setting.
     "services/jobs/queue.py": (
-        "719b773822432da68f64e1a8ea5875a0fe3971777fe609e5185bdbbc009bbbc4"
+        # ClusterMAX scans (TS §4.4; work/decisions.md 2026-11-23).
+        "a64e7b84b9b9ae628752fd933c5c1f893ba5791eb8cf9758e7d835d6a5ac7457"
+    ),
+    "services/jobs/cmax.py": (
+        "d9273c42e83f7c6f5c8d8da2639027ad86b68c18902076cc26ac4cce9591e19b"
+    ),
+    "api/user/scans.py": (
+        "17b327624d9bbd04a455b7bde668522d0da6097a2f28f2029ae2ea14260cc2fd"
+    ),
+    "api/user/scan_schedules.py": (
+        "cb677904b95055c76123e6084a40c3d8f27857f4e6708510f7572d75e3b8bd65"
     ),
     "db/migrations/versions/m0007_parallel_jobs.py": (
         "72cd3aa7a862ea87f01d4e0ba09d23dc817008ac0382e111f0840a8fd556887e"

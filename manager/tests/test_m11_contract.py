@@ -79,6 +79,7 @@ KUBECONFIG_SCHEMAS = {
     "KubeconfigReplace",
     "KubeconfigUpload",
     "Page_KubeconfigItem_",
+    "CmaxOptions",  # POST /scans cmax (TS §4.4, owner decision 2026-11-23)
 }
 UUID_RE = (
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -182,6 +183,12 @@ def without_parallel_jobs(schemas: dict[str, Any]) -> dict[str, Any]:
             s["required"].remove("max_parallel_jobs")
         if "description" in s:
             s["description"] = s["description"].replace("eight keys", "seven keys")
+    # TS §4.4 (owner decision 2026-11-23): POST /scans gained the optional cmax.
+    scan = out["ScanRequest"]
+    del scan["properties"]["cmax"]
+    scan["description"] = scan["description"].replace(
+        " `cmax` only for a ClusterMAX profile.", ""
+    )
     return out
 
 
