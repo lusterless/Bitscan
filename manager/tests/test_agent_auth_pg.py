@@ -721,6 +721,9 @@ def test_route_walk_of_the_agent_group() -> None:
         ("POST", "/api/v1/agent/{id}/jobs/{job_id}/results"),
         ("PUT", "/api/v1/agent/{id}/inventory"),
         ("POST", "/api/v1/agent/{id}/token/rotate"),
+        # TS §3.8, §6.1 (owner decision 2026-11-23): the cluster_audit routes.
+        ("POST", "/api/v1/agent/{id}/jobs/{job_id}/kubeconfig"),
+        ("PUT", "/api/v1/agent/{id}/jobs/{job_id}/files/{name}"),
     }
     app = create_app()
     # The walk must descend into included routers (TASK-067 TEST: a walk over
@@ -747,7 +750,7 @@ def test_route_walk_of_the_agent_group() -> None:
         assert "bsa_" in deps and "bse_" not in deps, route.path
         names = {getattr(d.call, "__name__", "") for d in route.dependant.dependencies}
         assert not any("principal" in n or "require_" in n for n in names), route.path
-    assert len(ops) <= 6
+    assert len(ops) <= 8  # TS §6.1 + the two cluster_audit routes (2026-11-23)
 
 
 def test_database_down_is_503_not_counted(

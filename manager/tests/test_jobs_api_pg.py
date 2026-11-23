@@ -653,6 +653,7 @@ def test_openapi_documents_the_pull_operation() -> None:
     assert refs == {
         "#/components/schemas/InventoryJob",
         "#/components/schemas/ComplianceJob",
+        "#/components/schemas/ClusterAuditJob",  # TS §3.8, §6.5 (2026-11-23)
     }
     assert "422" not in op["responses"]
     for status in ("401", "403", "429", "503"):
@@ -1335,7 +1336,8 @@ def test_openapi_documents_the_results_operation() -> None:
     comps = doc["components"]["schemas"]
     req = comps["ResultsRequest"]
     assert req["additionalProperties"] is False
-    assert sorted(req["properties"]) == ["final", "results"]
+    # TS §6.5 (owner decision 2026-11-23): the optional cmax_run.
+    assert sorted(req["properties"]) == ["cmax_run", "final", "results"]
     assert sorted(req["required"]) == ["final", "results"]
     assert req["properties"]["results"]["maxItems"] == 50
     assert req["properties"]["results"]["items"] == {

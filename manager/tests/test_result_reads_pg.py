@@ -44,7 +44,9 @@ pytestmark = pytest.mark.pg
 
 # sha256 of manager/bitscan_manager/repositories/results.py at 6efe0fb
 # (`git show 6efe0fb:manager/bitscan_manager/repositories/results.py | sha256sum`).
-RESULTS_PY_6EFE0FB = "101e918293e108f2c9c7559d881e8fa4eafdaa7c2681057db24bf0c59c1ada61"
+# Owner decision 2026-11-23 (TS §3.8): the reads include cluster_audit jobs,
+# so the pin is the file after that change.
+RESULTS_PY_6EFE0FB = "3c3e9ef750ba0e9e878491d28c724b7a8ae3ff3913e1e66c0fc7ce8f15ddc47b"
 STATUSES: tuple[str | None, ...] = (None, "PASS", "FAIL", "ERROR", "NOT_RUN")
 CODES = {"PASS": 0, "FAIL": 1, "ERROR": 2}
 

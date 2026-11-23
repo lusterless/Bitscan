@@ -375,7 +375,11 @@ def agent_request(
     a: Agent, method: str, template: str, job: str, at: datetime
 ) -> dict[str, Any]:
     """The path, headers and a valid body for one agent operation."""
-    path = template.replace("{id}", a.agent_id).replace("{job_id}", job)
+    path = (
+        template.replace("{id}", a.agent_id)
+        .replace("{job_id}", job)
+        .replace("{name}", "report.txt")
+    )
     headers = {"X-Bitscan-Machine-Id": a.machine_id}
     kw: dict[str, Any] = {"headers": headers}
     if template.endswith("/enroll"):
@@ -387,6 +391,9 @@ def agent_request(
     elif template.endswith("/inventory"):
         kw["raw"] = gz(inventory(["sec3-pkg"]))
         headers |= {"Content-Type": "application/json", "Content-Encoding": "gzip"}
+    elif template.endswith("/files/{name}"):
+        kw["raw"] = gzip.compress(b"PASS x [y]\n", mtime=0)
+        headers |= {"Content-Type": "application/gzip"}
     return {"method": method, "path": path, **kw}
 
 
@@ -399,7 +406,7 @@ def test_user_and_wrong_agent_tokens_are_refused_on_every_agent_route(
     verified admin's, the bsa_ is an online agent's, the bse_ a usable
     enrolment token. The control shows each route answers the right token."""
     agent_ops, _ = walk()
-    assert len(agent_ops) == 6
+    assert len(agent_ops) == 8  # TS §6.1 + the two cluster_audit routes
     a = env.agent()
     _, bse = env.enrolment_token()
     admin = env.user()
@@ -423,6 +430,8 @@ def test_user_and_wrong_agent_tokens_are_refused_on_every_agent_route(
         "/results": 409,
         "/inventory": 204,
         "/rotate": 403,  # outside the rotation window
+        "/kubeconfig": 409,  # no such cluster_audit job
+        "/files/{name}": 409,
     }
     for method, template in agent_ops:
         tok = bse if template.endswith("/enroll") else a.token
