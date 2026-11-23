@@ -33,7 +33,7 @@ Checks:
 - bitscan-agent.install (TASK-096, CHK-M4-122): exactly the three binaries to
   /usr/sbin, the D-Bus policy (from the verbatim dbus/ copy) to
   /etc/dbus-1/system.d (TS §3.1 L158, L161), and the ClusterMAX collector
-  (/usr/lib/clustermax, cmax-helper, cmax-trigger and its two doc files;
+  (/usr/lib/clustermax, cmax-helper and its two doc files;
   TS §3.8); no globs.
 - source/format: one line, 3.0 (native) or 3.0 (quilt) (PD-26).
 - no "arm64" anywhere in deploy/debian or deploy/dbus.
@@ -371,7 +371,6 @@ INSTALL_MAP = {
     # (TS §3.1, §3.8; owner decision 2026-11-15).
     "clustermax": "usr/lib",
     "cmax-helper": "usr/sbin",
-    "cmax-trigger": "usr/bin",
     "LICENSE.clustermax": "usr/share/doc/bitscan-agent",
     "clustermax-SOURCE": "usr/share/doc/bitscan-agent",
 }

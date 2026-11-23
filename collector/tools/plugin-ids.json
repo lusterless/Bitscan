@@ -6,7 +6,6 @@
   "access.userManagement": "f689eff9-becf-4217-ad0b-89da79060c03",
   "arm_smmu_virtualization.status": "251b3ae6-c9fa-43cc-8ee4-27f79bb54efd",
   "bmc-ipmi": "d0d5b9c3-63f7-42ce-af03-c8ba6330d563",
-  "collect": "3bde17c0-474e-4333-a5f5-d5f3572b4501",
   "containers.dockerOnWorkers": "b47602b8-c4f2-402b-977c-db477e9ef9e3",
   "containers.enroot": "bd7c0e62-4ce7-4fe5-994c-3988fe5420cd",
   "containers.enrootImportWorks": "f87c4beb-c521-4d02-ab65-956d554ef3a7",
@@ -82,15 +81,5 @@
   "thp_madvise.status": "252d3f80-e770-4c57-aa8f-f4d05e0cdff4",
   "ufm-profile": "c30a08ef-c212-4aad-9415-32a62508ca2a",
   "vm_iommu.status": "8e4a7c70-edf9-4200-810e-183b14ebaca7",
-  "vmscape": "bf9acdf5-efcf-49e2-8d3a-17ff493280c8",
-  "wait1": "182ac941-7845-469e-800c-4aa07455860a",
-  "wait10": "0a1a9cc0-0302-451b-aca7-62dd98904787",
-  "wait2": "d2952339-665f-470b-9f14-6cfe3fb353cb",
-  "wait3": "834edf6c-f1a4-4ec7-a6c2-7fa717b91892",
-  "wait4": "cfce9b48-5eaa-44d7-9acd-d366a66e65c8",
-  "wait5": "65fef7fc-4c92-4b7c-ad25-e29fc5ac9a39",
-  "wait6": "bd98c566-44cb-422a-9ba5-a7a2bfa23b3d",
-  "wait7": "4e30e0a3-b516-46e9-83b5-3ae66aa9fadf",
-  "wait8": "bedfe2d7-d61c-43d0-9e4b-d90d737ee900",
-  "wait9": "8991bfc9-f803-4c10-bf14-14029b5ac405"
+  "vmscape": "bf9acdf5-efcf-49e2-8d3a-17ff493280c8"
 }

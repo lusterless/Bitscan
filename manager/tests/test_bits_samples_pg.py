@@ -212,27 +212,19 @@ def test_clustermax_sample_has_every_clustermax_check() -> None:
     ]
     assert len(checks) == len(set(checks)) == 81
     found = plugins(CLUSTERMAX)
-    assert [p["name"].split(" - ")[1] for p in found] == [
-        "collect",
-        *["wait"] * 10,
-        "header",
-        "status",
-        *checks,
+    assert [p["name"].split(" - ")[1] for p in found] == ["header", "status", *checks]
+    # Owner decision 2026-11-23 (TS §3.8, §4.4): a ClusterMAX profile; each
+    # Execute names its check and is never run.
+    assert [p["execute"] for p in found] == [
+        "cmax-check header",
+        "cmax-check status",
+        *(f"cmax-check {check}" for check in checks),
     ]
-    # Owner decision 2026-11-14 (TS §3.8): the trigger starts or joins the
-    # job's one audit itself, so each check plugin is one get.
-    assert (found[0]["execute"], found[0]["expected"]) == (
-        "cmax-trigger collect",
-        "^(started|running) [0-9a-f]{32}$",
+    assert (found[0]["expected"], found[1]["expected"]) == (
+        "^Command: cmax audit;",
+        r"^ok [0-9]+ 0\.3\.0$",
     )
-    for p in found[1:11]:
-        assert (p["execute"], p["expected"], p["timeout"]) == (
-            "cmax-trigger get wait",
-            "^(done|running)$",
-            "600",
-        )
-    for p, check in zip(found[13:], checks, strict=True):
-        assert p["execute"] == f"cmax-trigger get {check}"
+    for p in found[2:]:
         assert (p["operator"], p["expected"], p["timeout"]) == (
             "regex",
             "^(PASS|n/a)( |$)",

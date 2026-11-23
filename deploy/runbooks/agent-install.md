@@ -281,7 +281,7 @@ ls /run/bitscan/capread.sock
 
 Stopping the socket also stops the helper and removes the socket file, so `ls` reports `No such file or directory`. The next heartbeat (within about 5 minutes) no longer reports `capread`, with an alert. To turn it on again, run `sudo systemctl enable --now bitscan-capread.socket`.
 
-**The ClusterMAX collector (0.5.0, TS §3.8).** The package also installs `cmax-helper`, `cmax-trigger` and ClusterMAX 0.3.0 under `/usr/lib/clustermax/`, and turns on `cmax-helper.socket` (`/run/clustermax/collect.sock`, `root:bitscan-runner` 0660). When a scan of the ClusterMAX profile reaches the host, the helper runs `cmax audit -vvv -y` as root, once per scan, and keeps the report only in memory. With `-y`, ClusterMAX auto-detects standalone, Slurm or Kubernetes: on a Slurm or Kubernetes node it also starts `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace. Target the profile with a dedicated tag. The heartbeat reports `cmax` among the host's helpers while the socket exists. To check it, or to turn it off on a host (an upgrade keeps it off):
+**The ClusterMAX scanner role (0.6.0, TS §3.8).** The package also installs `cmax-helper` and ClusterMAX 0.3.0 under `/usr/lib/clustermax/`, and turns on `cmax-helper.socket` (`/run/clustermax/collect.sock`, `root:bitscan` 0660). When an admin starts a ClusterMAX scan with this host as the scanner, the agent asks the helper to run `cmax audit -vvv -y` as root, with the chosen target, kubeconfig and variables, and uploads the report and files. With target `auto`, ClusterMAX detects standalone, Slurm or Kubernetes: in Slurm or Kubernetes mode it also starts `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace. The heartbeat reports `scanner` among the host's helpers while the socket exists. To check it, or to turn it off on a host (an upgrade keeps it off):
 
 ```sh
 systemctl is-enabled cmax-helper.socket
@@ -291,7 +291,7 @@ systemctl is-enabled cmax-helper.socket
 sudo systemctl disable --now cmax-helper.socket
 ```
 
-With the helper off, every check of the ClusterMAX profile on that host prints `NOHELPER` and fails; other profiles are not affected. `sudo systemctl enable --now cmax-helper.socket` turns it on again.
+With the helper off, the host is not offered as a scanner; other profiles are not affected. `sudo systemctl enable --now cmax-helper.socket` turns it on again.
 
 ## 11. The result spool
 

@@ -335,7 +335,7 @@ sub_install() {
     # is on after install; its service starts only on a request.
     is "$(enabled cmax-helper.socket)" enabled "cmax-helper.socket enabled"
     is "$(active cmax-helper.socket)" active "cmax-helper.socket active"
-    is "$(st /run/clustermax/collect.sock)" "root:bitscan-runner 660" "collect.sock owner and mode (TS 3.8)"
+    is "$(st /run/clustermax/collect.sock)" "root:bitscan 660" "collect.sock owner and mode (TS 3.8)"
     [ "$(enabled cmax-helper.service)" != enabled ]; ok $? "cmax-helper.service not enabled (got $(enabled cmax-helper.service))"
     # TS 3.1, 3.7 (owner decision 2026-11-16): the capread socket is on after
     # install; its service starts only on a request.

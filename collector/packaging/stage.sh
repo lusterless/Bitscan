@@ -9,7 +9,6 @@
 # writes under DEST:
 #   usr/lib/clustermax/        ClusterMAX and its dependencies, bin/cmax
 #   usr/sbin/cmax-helper       the root helper
-#   usr/bin/cmax-trigger       the client plugins call
 #   systemd/                   cmax-helper.socket and cmax-helper.service
 #   doc/                       LICENSE.clustermax and clustermax-SOURCE
 # Needs git and python3 with pip. Writes only under a temp directory and DEST.
@@ -56,7 +55,6 @@ done
 
 install -m 0755 "$here/cmax-wrapper.py" "$lib/bin/cmax"
 install -m 0755 "$collector/src/cmax_helper.py" "$dest/usr/sbin/cmax-helper"
-install -m 0755 "$collector/src/cmax_trigger.py" "$dest/usr/bin/cmax-trigger"
 install -m 0644 "$collector/systemd/cmax-helper.socket" "$collector/systemd/cmax-helper.service" "$dest/systemd/"
 install -m 0644 "$work/src/LICENSE" "$dest/doc/LICENSE.clustermax"
 {
