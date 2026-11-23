@@ -495,6 +495,59 @@
         "title": "AuditItem",
         "type": "object"
       },
+      "CmaxOptions": {
+        "additionalProperties": false,
+        "description": "TS §4.4 (owner decision 2026-11-23): the choices of a ClusterMAX scan.\nThe values are checked by services.jobs.cmax.",
+        "properties": {
+          "kubeconfig_id": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kubeconfig Id"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "standalone",
+                  "slurm",
+                  "k8s"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "vars": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "maxProperties": 16,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vars"
+          }
+        },
+        "title": "CmaxOptions",
+        "type": "object"
+      },
       "ComplianceJob": {
         "additionalProperties": false,
         "properties": {
@@ -3949,8 +4002,18 @@
       },
       "ScanRequest": {
         "additionalProperties": false,
-        "description": "#122 (a), (b): `target` is exactly one of {\"agents\": [...]},\n{\"tags\": [...]} or {\"all\": true}.",
+        "description": "#122 (a), (b): `target` is exactly one of {\"agents\": [...]},\n{\"tags\": [...]} or {\"all\": true}. `cmax` only for a ClusterMAX profile.",
         "properties": {
+          "cmax": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CmaxOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "policy_id": {
             "maximum": 9007199254740991.0,
             "minimum": 1.0,

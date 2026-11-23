@@ -1145,6 +1145,21 @@ export interface components {
       /** Target */
       target: string | null;
     };
+    /**
+     * CmaxOptions
+     * @description TS §4.4 (owner decision 2026-11-23): the choices of a ClusterMAX scan.
+     *     The values are checked by services.jobs.cmax.
+     */
+    CmaxOptions: {
+      /** Kubeconfig Id */
+      kubeconfig_id?: number | null;
+      /** Target */
+      target?: ("auto" | "standalone" | "slurm" | "k8s") | null;
+      /** Vars */
+      vars?: {
+        [key: string]: string;
+      } | null;
+    };
     /** ComplianceJob */
     ComplianceJob: {
       /** Agent Id */
@@ -2371,9 +2386,10 @@ export interface components {
     /**
      * ScanRequest
      * @description #122 (a), (b): `target` is exactly one of {"agents": [...]},
-     *     {"tags": [...]} or {"all": true}.
+     *     {"tags": [...]} or {"all": true}. `cmax` only for a ClusterMAX profile.
      */
     ScanRequest: {
+      cmax?: components["schemas"]["CmaxOptions"] | null;
       /** Policy Id */
       policy_id: number;
       /** Target */

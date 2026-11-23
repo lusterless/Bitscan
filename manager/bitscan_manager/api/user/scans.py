@@ -16,7 +16,7 @@ from typing import Annotated, Any, Final, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Path, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 from bitscan_manager.api.problems import ABOUT_BLANK, Problem
 from bitscan_manager.api.user import problem_responses
@@ -29,7 +29,7 @@ from bitscan_manager.auth.dependencies import require_role
 from bitscan_manager.auth.principal import Principal
 from bitscan_manager.auth.tokens import TokenKind
 from bitscan_manager.runtime import Runtime, get_runtime
-from bitscan_manager.services.jobs import build, queue
+from bitscan_manager.services.jobs import build, cmax, queue
 from bitscan_manager.services.jobs.cancel import ScanNotFound, cancel_scan
 from bitscan_manager.services.jobs.scan_state import ScanState
 from bitscan_manager.services.jobs.targets import (
@@ -59,13 +59,24 @@ _JSON_SAFE_MAX: Final = 2**53 - 1
 _STORE_LOCK: Final = threading.Lock()
 
 
+class CmaxOptions(BaseModel):
+    """TS §4.4 (owner decision 2026-11-23): the choices of a ClusterMAX scan.
+    The values are checked by services.jobs.cmax."""
+
+    model_config = ConfigDict(extra="forbid")
+    target: Literal["auto", "standalone", "slurm", "k8s"] | None = None
+    kubeconfig_id: Annotated[StrictInt, Field(ge=1, le=_JSON_SAFE_MAX)] | None = None
+    vars: dict[str, StrictStr] | None = Field(default=None, max_length=16)
+
+
 class ScanRequest(BaseModel):
     """#122 (a), (b): `target` is exactly one of {"agents": [...]},
-    {"tags": [...]} or {"all": true}."""
+    {"tags": [...]} or {"all": true}. `cmax` only for a ClusterMAX profile."""
 
     model_config = ConfigDict(extra="forbid")
     policy_id: Annotated[StrictInt, Field(ge=1, le=_JSON_SAFE_MAX)]
     target: dict[str, Any]
+    cmax: CmaxOptions | None = None
 
 
 class ScanQueuedItem(BaseModel):
@@ -95,13 +106,55 @@ def _store(request: Request, runtime: Runtime) -> IdempotencyStore[ScanQueuedIte
         return store
 
 
+def _cmax_allowed(principal: Principal) -> bool:
+    """TS §4.4: an admin with a TOTP-verified session; never an API token."""
+    return (
+        principal.role == "admin"
+        and principal.kind is TokenKind.SESSION
+        and principal.totp_verified
+    )
+
+
 def _queue(
-    policy_id: int, target: Target, principal: Principal, runtime: Runtime
+    policy_id: int,
+    target: Target,
+    principal: Principal,
+    runtime: Runtime,
+    options: CmaxOptions | None = None,
 ) -> ScanQueuedItem:
     failure: Problem | None = None
     try:
         with runtime.db.transaction() as tx:
             tx.on_commit(runtime.sink_gate.wake)
+            if queue.is_clustermax(tx, policy_id):
+                if not _cmax_allowed(principal):
+                    raise Problem(
+                        403,
+                        "forbidden",
+                        "A ClusterMAX scan needs an admin TOTP-verified session.",
+                    )
+                if runtime.sink_gate.refusing():
+                    raise Problem(503, ABOUT_BLANK, "The audit sink is unavailable.")
+                chosen = options or CmaxOptions()
+                queued = queue.queue_cluster_scan(
+                    tx,
+                    policy_id=policy_id,
+                    target=target,
+                    options=cmax.parse_options(
+                        chosen.target, chosen.kubeconfig_id, chosen.vars
+                    ),
+                    requested_by=principal.user_id,
+                    actor=f"user:{principal.user_id}",
+                    now=runtime.clock.now(),
+                )
+                return ScanQueuedItem(
+                    scan_id=queued.scan_id,
+                    state=queued.state,
+                    policy_version=queued.policy_version,
+                    jobs=queued.jobs,
+                )
+            if options is not None:
+                raise Problem(400, "invalid_request", "Invalid request: body.cmax")
             queued = queue.queue_scan(
                 tx,
                 policy_id=policy_id,
@@ -123,6 +176,28 @@ def _queue(
         failure = Problem(409, "conflict", "The policy has no active plugin.")
     except queue.NoTargetAgents:
         failure = Problem(422, ABOUT_BLANK, "The target resolves to no host.")
+    except queue.ClusterMaxProfile:
+        failure = Problem(
+            409, "conflict", "A ClusterMAX profile needs a ClusterMAX scan."
+        )
+    except queue.NotScanners:
+        failure = Problem(
+            409,
+            "conflict",
+            "Every target host must be a scanner on agent 0.6.0 or later.",
+        )
+    except queue.KubeconfigUnusable:
+        failure = Problem(
+            409, "conflict", "The kubeconfig does not exist or is deleted."
+        )
+    except queue.TooManyScanners:
+        failure = Problem(
+            400,
+            "invalid_request",
+            "A kubeconfig scan needs exactly one scanner; at most 50 scanners.",
+        )
+    except cmax.InvalidOptions as exc:
+        failure = Problem(400, "invalid_request", f"Invalid request: body.{exc}")
     except build.UnstorableText as exc:  # #125 (g): logged by type only
         log.error("scan not built", extra={"data": {"exc_type": type(exc).__name__}})
         failure = Problem(500, ABOUT_BLANK, "An unexpected error occurred.")
@@ -157,13 +232,13 @@ def create_scan(
     except InvalidTarget as exc:
         raise Problem(400, "invalid_request", str(exc)) from None
     if idempotency_key is None:
-        return _queue(body.policy_id, target, principal, runtime)
+        return _queue(body.policy_id, target, principal, runtime, body.cmax)
     try:
         return _store(request, runtime).run(
             principal.user_id,
             idempotency_key,
             body.model_dump(mode="json"),
-            lambda: _queue(body.policy_id, target, principal, runtime),
+            lambda: _queue(body.policy_id, target, principal, runtime, body.cmax),
         )
     except InvalidKey:
         detail = "Invalid request: Idempotency-Key"

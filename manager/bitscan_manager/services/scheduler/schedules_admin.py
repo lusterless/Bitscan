@@ -16,10 +16,11 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final
 
-from bitscan_manager.repositories import schedules
+from bitscan_manager.repositories import scan_queue, schedules
 from bitscan_manager.repositories.audit_log import PgAuditRepo
 from bitscan_manager.repositories.schedules import ScheduleRow
 from bitscan_manager.runtime import Tx
+from bitscan_manager.services.jobs import cmax
 from bitscan_manager.services.jobs.queue import PolicyNotFound
 from bitscan_manager.services.jobs.targets import Target, parse_target
 from bitscan_manager.services.scheduler.cron import (
@@ -35,6 +36,11 @@ PATCHABLE: Final = frozenset({"name", "target", "cron", "timezone", "enabled"})
 
 class ScheduleNotFound(Exception):
     """No schedule has this id (404)."""
+
+
+class ClusterMaxSchedule(Exception):
+    """A ClusterMAX profile cannot be scheduled (409; TS §4.4, owner decision
+    2026-11-23)."""
 
 
 class ScheduleConflict(Exception):
@@ -118,6 +124,8 @@ def create(
         raise InvalidField("enabled")
     if _deleted(tx, policy_id):
         raise ScheduleConflict
+    if scan_queue.policy_family(tx.conn, policy_id) == cmax.FAMILY:
+        raise ClusterMaxSchedule
     row = schedules.insert(
         tx.conn,
         name=checked_name,
