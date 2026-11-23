@@ -72,13 +72,14 @@ class Cipher:
         if self.down:
             raise VaultUnavailable("vault unreachable: ConnectError")
         self.encrypted.append(seed)
-        return "enc:" + bytes(b ^ self.MASK[i] for i, b in enumerate(seed)).hex()
+        mask = self.MASK
+        return "enc:" + bytes(b ^ mask[i % len(mask)] for i, b in enumerate(seed)).hex()
 
     def decrypt(self, ciphertext: str) -> bytes:
         if self.down:
             raise VaultUnavailable("vault unreachable: ConnectError")
         raw = bytes.fromhex(ciphertext.removeprefix("enc:"))
-        return bytes(b ^ self.MASK[i] for i, b in enumerate(raw))
+        return bytes(b ^ self.MASK[i % len(self.MASK)] for i, b in enumerate(raw))
 
 
 @dataclass

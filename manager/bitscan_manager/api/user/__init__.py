@@ -30,6 +30,7 @@ def build_user_router() -> APIRouter:
         auth,
         enrolment,
         imports,
+        kubeconfigs,
         metrics,
         packages,
         policies,
@@ -63,4 +64,5 @@ def build_user_router() -> APIRouter:
     router.include_router(scan_views.router)
     router.include_router(reevaluate.router)
     router.include_router(scan_schedules.router)
+    router.include_router(kubeconfigs.router)
     return router

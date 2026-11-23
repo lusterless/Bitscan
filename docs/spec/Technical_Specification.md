@@ -671,7 +671,7 @@ Rebuild is the recovery path for a corrupted catalog. It does not truncate the c
 - **No duplicate run (owner decision 2026-11-14):** when a scan is queued, a target agent that already has a `dispatched` or `running` compliance job of the same policy gets its job from this scan inserted as `cancelled` with `cancel_reason = 'already_running'` and `finished_at` = now; it is never sent. The agent's own rule (§3.3) also keeps two jobs of one policy from running at the same time.
 - **Refused:** a scan of a disabled policy returns 409.
 - **Version:** each scan records the `policy.version` it was built from.
-- **ClusterMAX scans (owner decision 2026-11-23, §3.8):** a policy whose Family is `Clustermax` is a ClusterMAX profile. Each plugin's `Execute` is `cmax-check <check-id>` and is never run; it names the check (`header` and `status` are reserved ids). Only an admin with a TOTP session starts one (`POST /scans` with a `cmax` object), and only manually: a schedule of a ClusterMAX profile is refused (409). The admin chooses one or more scanner hosts (agents that report `"scanner"`; others are refused with 409), an optional target mode (`auto` default, `standalone`, `slurm`, `k8s`), an optional kubeconfig (then exactly one scanner, and the target is `k8s`) and optional allow-listed variables (§3.8). The manager builds one `cluster_audit` job per scanner, with the plugins' check ids in its payload and the plugins' ExpectedResults in `eval_spec`. The job's deadline is start + 4 h 10 min. Choices are stored in `scan.cmax`, never the kubeconfig itself. Jobs of a ClusterMAX profile are never sent as `compliance` jobs, so agents before 0.6.0 never get them.
+- **ClusterMAX scans (owner decision 2026-11-23, §3.8):** a policy whose Family is `Clustermax` is a ClusterMAX profile. Each plugin's `Execute` is `cmax-check <check-id>` and is never run; it names the check (`header` and `status` are reserved ids). Only an admin with a TOTP session starts one (`POST /scans` with a `cmax` object), and only manually: a schedule of a ClusterMAX profile is refused (409). The admin chooses one or more scanner hosts (agents that report `"scanner"`; others are refused with 409), an optional target mode (`auto` default, `standalone`, `slurm`, `k8s`), an optional kubeconfig (then exactly one scanner, and the target is `k8s`) and optional allow-listed variables (§3.8). The manager builds one `cluster_audit` job per scanner, with the plugins' check ids in its payload and the plugins' ExpectedResults in `eval_spec`. The job's deadline is start + 4 h 10 min. Choices are stored in `scan.clustermax`, never the kubeconfig itself. Jobs of a ClusterMAX profile are never sent as `compliance` jobs, so agents before 0.6.0 never get them.
 
 **Job states**
 
@@ -981,7 +981,7 @@ CREATE TABLE scan (
   state          scan_state NOT NULL DEFAULT 'queued',
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   finished_at    TIMESTAMPTZ,
-  cmax           JSONB                  -- ClusterMAX scans only: {"target", "kubeconfig_id", "vars"} (§4.4); never a kubeconfig
+  clustermax     JSONB                  -- ClusterMAX scans only: {"target", "kubeconfig_id", "vars"} (§4.4); never a kubeconfig
 );
 
 CREATE TABLE scan_job (                  -- compliance (one per scan and agent) and inventory jobs
