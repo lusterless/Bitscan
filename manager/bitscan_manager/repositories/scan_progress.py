@@ -36,12 +36,13 @@ _SCAN_STATES: Final = frozenset(
 _FACTS: Final = sql.SQL(
     "WITH jobs AS MATERIALIZED (SELECT job_id, scan_id, retry_of, state, created_at,"
     " payload, COALESCE(retry_of, job_id) AS root FROM scan_job"
-    " WHERE kind = 'compliance' AND scan_id = ANY(%s)),"
+    " WHERE kind IN ('compliance', 'cluster_audit') AND scan_id = ANY(%s)),"
     " got AS (SELECT DISTINCT j.root, r.plugin_uuid FROM jobs j JOIN scan_result r"
     " ON r.job_id = j.job_id AND r.job_created_at = j.created_at),"
     " planned AS (SELECT j.job_id AS root, CAST(p.item ->> 'plugin_uuid' AS uuid)"
     " AS plugin_uuid FROM jobs j CROSS JOIN LATERAL"
-    " jsonb_array_elements(j.payload -> 'plugins') AS p(item)"
+    " jsonb_array_elements(COALESCE(j.payload -> 'plugins', j.payload -> 'cmax' ->"
+    " 'checks')) AS p(item)"
     " WHERE j.retry_of IS NULL),"
     " missing AS (SELECT DISTINCT pl.root FROM planned pl LEFT JOIN got g"
     " ON g.root = pl.root AND g.plugin_uuid = pl.plugin_uuid"
@@ -127,7 +128,7 @@ def cancel_open_jobs(conn: Conn, scan_id: UUID, now: datetime) -> list[UUID]:
     so it cannot deadlock with intake's root-then-job order."""
     rows = conn.execute(
         "UPDATE scan_job SET state = 'cancelled', finished_at = %s"
-        " WHERE scan_id = %s AND kind = 'compliance'"
+        " WHERE scan_id = %s AND kind IN ('compliance', 'cluster_audit')"
         " AND state IN ('queued', 'dispatched', 'running') RETURNING job_id",
         (now, scan_id),
     ).fetchall()

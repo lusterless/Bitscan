@@ -218,7 +218,7 @@ def soft_delete_effects(
         return None
     jobs = conn.execute(
         "UPDATE scan_job SET state = 'cancelled', finished_at = %(now)s"
-        " WHERE kind = 'compliance' AND state = 'queued'"
+        " WHERE kind IN ('compliance', 'cluster_audit') AND state = 'queued'"
         " AND scan_id IN (SELECT scan_id FROM scan WHERE policy_id = %(id)s)"
         " RETURNING job_id",
         params,

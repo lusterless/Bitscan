@@ -199,3 +199,24 @@ def set_state(
         (state, finished_at, job_id),
     )
     return cur.rowcount == 1
+
+
+def insert_cluster_run(conn: Conn, job_id: UUID, run: Any, now: datetime) -> bool:
+    """The cluster_audit job's run record, once (TS §3.8, §5.2); a repeat in a
+    later batch is ignored. bitscan_app has INSERT only on the table."""
+    return (
+        conn.execute(
+            "INSERT INTO cluster_audit_run (job_id, exit_code, error_line,"
+            " started_at, finished_at, received_at) VALUES (%s, %s, %s, %s, %s, %s)"
+            " ON CONFLICT (job_id) DO NOTHING",
+            (
+                job_id,
+                run.exit_code,
+                run.error_line,
+                run.started_at,
+                run.finished_at,
+                now,
+            ),
+        ).rowcount
+        == 1
+    )

@@ -62,7 +62,7 @@ _JOBS: Final = (
     "SELECT j.job_id, j.agent_id, a.hostname, j.state::text, j.retry_of,"
     " j.dispatched_at, j.started_at, j.finished_at, j.cancel_reason FROM scan_job j"
     " JOIN agent a ON a.agent_id = j.agent_id"
-    " WHERE j.scan_id = %(scan_id)s AND j.kind = 'compliance'"
+    " WHERE j.scan_id = %(scan_id)s AND j.kind IN ('compliance', 'cluster_audit')"
     " ORDER BY a.hostname, j.agent_id, j.retry_of IS NOT NULL, j.created_at, j.job_id"
 )
 

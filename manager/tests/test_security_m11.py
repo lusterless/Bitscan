@@ -121,6 +121,9 @@ SCAN_OPS = {
     ("POST", V1 + "/scans"),
     ("POST", V1 + "/scans/{id}/cancel"),
     *M11_OPS,
+    # TS §3.8, §6.2 (owner decision 2026-11-23): the ClusterMAX file reads.
+    ("GET", V1 + "/scans/{id}/files"),
+    ("GET", V1 + "/scans/{id}/jobs/{job_id}/files/{name}"),
 }
 COMMAND_WORDS = {"execute", "command", "commands", "cmd", "script", "shell"}
 
@@ -269,6 +272,22 @@ POST_M11_PINS = {
     ),
     "api/user/scan_schedules.py": (
         "cb677904b95055c76123e6084a40c3d8f27857f4e6708510f7572d75e3b8bd65"
+    ),
+    # cluster_audit results and reads (TS §3.8, §4.4; 2026-11-23).
+    "repositories/reeval.py": (
+        "278ef3076c0534fbc2946a4964cb969763cae06ebc39f6e4665b1593d6ab4957"
+    ),
+    "repositories/results.py": (
+        "3c3e9ef750ba0e9e878491d28c724b7a8ae3ff3913e1e66c0fc7ce8f15ddc47b"
+    ),
+    "repositories/scan_progress.py": (
+        "f0657bf1f7edac9a27eb233af1f28aea33494b0f013c0f34fd954ec72bbcda61"
+    ),
+    "services/jobs/intake.py": (
+        "d24a20ba38043439d93ca00ffb4af31b093d27d12de34df386beb11a7c20cb8a"
+    ),
+    "services/jobs/states.py": (
+        "52c80a074023379df2407fbddfd9bdbae376114508f790de7375886c8614c628"
     ),
     "db/migrations/versions/m0007_parallel_jobs.py": (
         "72cd3aa7a862ea87f01d4e0ba09d23dc817008ac0382e111f0840a8fd556887e"

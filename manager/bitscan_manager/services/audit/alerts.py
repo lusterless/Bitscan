@@ -66,7 +66,7 @@ M7_ALERT_KINDS: Final = frozenset(
 M9_ALERT_KINDS: Final = frozenset({"all_hosts_scan_api_token"})
 # Owner decision 2026-11-23 (TS §8.1): every kubeconfig upload, replacement and
 # deletion alerts; part 2 adds the fetch by a scanner.
-M10_ALERT_KINDS: Final = frozenset({"kubeconfig_changed"})
+M10_ALERT_KINDS: Final = frozenset({"kubeconfig_changed", "kubeconfig_refetch"})
 ALERT_KINDS: Final = (
     M2_ALERT_KINDS | M3_ALERT_KINDS | M7_ALERT_KINDS | M9_ALERT_KINDS | M10_ALERT_KINDS
 )

@@ -75,12 +75,16 @@ def deadline_at(
     return started_at + timedelta(seconds=seconds) + DEADLINE_SLACK
 
 
+# Scan jobs that take result posts (TS §4.4, §3.8: cluster_audit since 0.6.0).
+JOB_KINDS: Final = frozenset({"compliance", "cluster_audit"})
+
+
 def accepts_results(
     kind: str, state: str, dispatched_at: datetime | None, now: datetime
 ) -> bool:
     """Whether a result post for this job is taken at `now` (#124 (a)): a
     compliance job in an ACCEPTING state, while now ≤ dispatched_at + 7 days."""
-    if kind != "compliance" or state not in ACCEPTING or dispatched_at is None:
+    if kind not in JOB_KINDS or state not in ACCEPTING or dispatched_at is None:
         return False
     return now <= dispatched_at + LATE_WINDOW
 

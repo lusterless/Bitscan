@@ -305,7 +305,44 @@ class ComplianceJob(_Closed):
     redaction_patterns: Annotated[list[StrictStr], Field(max_length=50)]
 
 
-Job = Annotated[InventoryJob | ComplianceJob, Field(discriminator="kind")]
+class CmaxCheck(_Closed):
+    plugin_uuid: AgentUuid
+    check_id: Annotated[StrictStr, Field(pattern=r"^[A-Za-z0-9_.-]{1,128}$")]
+
+
+class CmaxVars(_Closed):
+    """TS §3.8: only the allow-listed variables, as a closed object (a job
+    holds no open object). The manager checks each value; the helper again."""
+
+    CLUSTERMAX_K8S_GPU_DRA: StrictStr | None = None
+    CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS: StrictStr | None = None
+    CLUSTERMAX_K8S_GPU_DRA_DRIVER: StrictStr | None = None
+    CLUSTERMAX_AUDIT_K8S_NAMESPACE: StrictStr | None = None
+    CLUSTERMAX_AUDIT_TENANT_NAMESPACE: StrictStr | None = None
+
+
+class CmaxJob(_Closed):
+    """TS §3.8, §6.5 (owner decision 2026-11-23): the fixed audit's inputs.
+    `kubeconfig` only says whether the job has one to fetch."""
+
+    target: Literal["auto", "standalone", "slurm", "k8s"]
+    kubeconfig: StrictBool
+    vars: CmaxVars
+    checks: Annotated[list[CmaxCheck], Field(min_length=1, max_length=5000)]
+
+
+class ClusterAuditJob(_Closed):
+    job_id: AgentUuid
+    agent_id: AgentUuid
+    kind: Literal["cluster_audit"]
+    pickup_by: Timestamp
+    cmax: CmaxJob
+    redaction_patterns: Annotated[list[StrictStr], Field(max_length=50)]
+
+
+Job = Annotated[
+    InventoryJob | ComplianceJob | ClusterAuditJob, Field(discriminator="kind")
+]
 
 
 class JobsResponse(_Closed):
@@ -324,9 +361,19 @@ class ResultItem(_Closed):
     error: Literal["spool_overflow", "runner_unavailable"] | None
 
 
+class CmaxRun(_Closed):
+    """TS §6.5: once, in the final batch of a cluster_audit job."""
+
+    exit_code: Annotated[StrictInt, Field(ge=-(2**31), le=I32)]
+    error_line: Annotated[StrictStr, Field(max_length=512)] | None
+    started_at: Timestamp
+    finished_at: Timestamp
+
+
 class ResultsRequest(_Closed):
     results: Annotated[list[ResultItem], Field(max_length=50)]  # TS §3.5 L253
     final: StrictBool
+    cmax_run: CmaxRun | None = None
 
 
 class ResultsResponse(_Closed):

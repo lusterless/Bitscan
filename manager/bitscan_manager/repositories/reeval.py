@@ -101,7 +101,7 @@ _STORED: Final = (
     "SELECT r.job_id, r.plugin_uuid, r.stdout, r.exit_code, r.timed_out,"
     " r.truncated, r.eval_code, r.eval_detail FROM scan_job j JOIN scan_result r"
     " ON r.job_id = j.job_id AND r.job_created_at = j.created_at"
-    " WHERE j.scan_id = %(scan_id)s AND j.kind = 'compliance'"
+    " WHERE j.scan_id = %(scan_id)s AND j.kind IN ('compliance', 'cluster_audit')"
     " ORDER BY r.job_id, r.plugin_uuid"
 )
 

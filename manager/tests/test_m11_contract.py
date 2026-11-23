@@ -73,6 +73,10 @@ KUBECONFIG_OPS = {
     ("get", "/api/v1/kubeconfigs/{kubeconfig_id}"),
     ("put", "/api/v1/kubeconfigs/{kubeconfig_id}"),
     ("delete", "/api/v1/kubeconfigs/{kubeconfig_id}"),
+    ("post", "/api/v1/agent/{id}/jobs/{job_id}/kubeconfig"),
+    ("put", "/api/v1/agent/{id}/jobs/{job_id}/files/{name}"),
+    ("get", "/api/v1/scans/{id}/files"),
+    ("get", "/api/v1/scans/{id}/jobs/{job_id}/files/{name}"),
 }
 KUBECONFIG_SCHEMAS = {
     "KubeconfigItem",
@@ -80,6 +84,15 @@ KUBECONFIG_SCHEMAS = {
     "KubeconfigUpload",
     "Page_KubeconfigItem_",
     "CmaxOptions",  # POST /scans cmax (TS §4.4, owner decision 2026-11-23)
+    "CmaxCheck",
+    "CmaxJob",
+    "CmaxRun",
+    "CmaxVars",
+    "ClusterAuditJob",
+    "FileAccepted",
+    "KubeconfigAnswer",
+    "ScanFileItem",
+    "ScanFiles",
 }
 UUID_RE = (
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -189,6 +202,15 @@ def without_parallel_jobs(schemas: dict[str, Any]) -> dict[str, Any]:
     scan["description"] = scan["description"].replace(
         " `cmax` only for a ClusterMAX profile.", ""
     )
+    # TS §3.8, §6.5: the cluster_audit job variant and the cmax_run field.
+    items = out["JobsResponse"]["properties"]["jobs"]["items"]
+    del items["discriminator"]["mapping"]["cluster_audit"]
+    items["oneOf"] = [
+        v
+        for v in items["oneOf"]
+        if v != {"$ref": "#/components/schemas/ClusterAuditJob"}
+    ]
+    del out["ResultsRequest"]["properties"]["cmax_run"]
     return out
 
 

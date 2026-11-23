@@ -49,6 +49,7 @@ SPEC_CLASS_CAPS = {
     # TS §6.2 (owner decision 2026-11-23): a kubeconfig is at most 1 MiB; the
     # JSON body may escape it to twice that.
     "kubeconfig": 2 * MIB,
+    "scan_file": 32 * MIB,  # TS §3.8, §6.1: one ClusterMAX file, gzip
 }
 OTEL_ENV_KEYS = (
     "FASTAPI_OTEL_AUTO_CONFIGURE",
