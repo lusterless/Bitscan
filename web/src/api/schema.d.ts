@@ -1233,6 +1233,28 @@ export interface components {
       /** Redaction Patterns */
       redaction_patterns: string[];
     };
+    /**
+     * ClusterMaxVerdict
+     * @description TS §3.8: a ClusterMAX scan's run on this scanner; counts of the
+     *     ClusterMAX verdict words (n/a = SKIPPED). No raw output.
+     */
+    ClusterMaxVerdict: {
+      /** Exit Code */
+      exit_code: number;
+      /** Failed */
+      failed: number;
+      /** Not Applicable */
+      not_applicable: number;
+      /** Passed */
+      passed: number;
+      /**
+       * Verdict
+       * @enum {string}
+       */
+      verdict: "pass" | "fail" | "error";
+      /** Warning */
+      warning: number;
+    };
     /** CmaxCheck */
     CmaxCheck: {
       /** Check Id */
@@ -1604,6 +1626,7 @@ export interface components {
        * Format: uuid
        */
       agent_id: string;
+      clustermax: components["schemas"]["ClusterMaxVerdict"] | null;
       /** Errors */
       errors: number;
       /** Failed */

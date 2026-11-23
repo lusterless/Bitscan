@@ -207,3 +207,59 @@ def test_a_gzip_bomb_is_refused(env: ApiEnv, cat: f.Catalog) -> None:
     job = queued_job(env, cat, a)
     bomb = b"\0" * (65 * 1024 * 1024)
     assert upload(a, job["job_id"], "audit.out", bomb).status_code == 413
+
+
+@pytest.mark.parametrize(
+    ("stdouts", "exit_code", "want"),
+    [
+        # Every result graded PASS (ExpectedResult "ok" in this fixture).
+        (["ok", "ok", "ok", "ok"], 0, ("pass", 0, 0, 0, 0)),
+        # Graded FAIL; the counts read the ClusterMAX verdict words.
+        (
+            ["ok", "ok", "PASS observed=true", "n/a observed=x"],
+            0,
+            ("fail", 1, 0, 0, 1),
+        ),
+        (["ok", "FAIL x", "WARNING x", "ok"], 2, ("error", 0, 1, 1, 0)),
+    ],
+)
+def test_scan_detail_shows_the_clustermax_verdict(
+    env: ApiEnv,
+    cat: f.Catalog,
+    stdouts: list[str],
+    exit_code: int,
+    want: tuple[str, int, int, int, int],
+) -> None:
+    """TS §3.8: `error` when the exit code is not 0, `pass` when every graded
+    check passes, otherwise `fail`, with the PASS, FAIL, WARNING and n/a
+    counts; no raw output, so a viewer sees it too."""
+    a = scanner(env)
+    job = queued_job(env, cat, a, {"target": "standalone"})
+    detail_path = f"{SCANS}/{job['scan_id']}"
+    viewer = env.caller("viewer", "session")[1]
+    before = env.call("GET", detail_path, viewer).json()
+    assert before["hosts"][0]["clustermax"] is None
+    checks = job["cmax"]["checks"]
+    results = [
+        item(c["plugin_uuid"], stdout=s, exit_code=0)
+        for c, s in zip(checks, stdouts, strict=True)
+    ]
+    run = {
+        "exit_code": exit_code,
+        "error_line": None if exit_code == 0 else "cmax: error: x",
+        "started_at": results[0]["started_at"],
+        "finished_at": results[0]["finished_at"],
+    }
+    assert a.post(job["job_id"], batch(*results) | {"cmax_run": run}).status_code == 200
+    r = env.call("GET", detail_path, viewer)
+    assert r.status_code == 200, r.text
+    got = r.json()["hosts"][0]["clustermax"]
+    assert got == {
+        "verdict": want[0],
+        "exit_code": exit_code,
+        "passed": want[1],
+        "failed": want[2],
+        "warning": want[3],
+        "not_applicable": want[4],
+    }
+    assert "cmax: error" not in r.text

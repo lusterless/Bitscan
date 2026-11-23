@@ -145,7 +145,9 @@ describe("generated paths (CHK-M2-281)", () => {
 type AgentItem = components["schemas"]["AgentItem"];
 
 describe("M3 generated paths (CHK-M3-299)", () => {
-  it("has exactly the six TS §6.1 agent paths", () => {
+  // 0.6.0 (TS §3.8, §6.1; owner decision 2026-11-23): plus the kubeconfig
+  // fetch and the file upload of a cluster_audit job.
+  it("has exactly the eight TS §6.1 agent paths", () => {
     expectTypeOf<
       Extract<keyof paths, `/api/v1/agent/${string}`>
     >().toEqualTypeOf<
@@ -155,6 +157,8 @@ describe("M3 generated paths (CHK-M3-299)", () => {
       | "/api/v1/agent/{id}/jobs/{job_id}/results"
       | "/api/v1/agent/{id}/inventory"
       | "/api/v1/agent/{id}/token/rotate"
+      | "/api/v1/agent/{id}/jobs/{job_id}/kubeconfig"
+      | "/api/v1/agent/{id}/jobs/{job_id}/files/{name}"
     >();
   });
 

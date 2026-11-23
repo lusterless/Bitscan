@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import type { components } from "../api/schema";
+import { downloadScanFile } from "../app/download";
 import { toProblem, type ProblemInfo } from "../app/problems";
 import { formatHash } from "../app/router";
 import type { Role } from "../app/session";
@@ -14,6 +15,8 @@ import { formatTime } from "../format";
 
 type Detail = components["schemas"]["ScanDetailItem"];
 type HostJob = components["schemas"]["HostJob"];
+type ClusterVerdict = components["schemas"]["ClusterMaxVerdict"];
+type ScanFile = components["schemas"]["ScanFileItem"];
 /** What openapi-fetch answers; `error` is the parsed refusal body. */
 interface Answer {
   readonly data?: unknown;
@@ -57,6 +60,105 @@ function jobsText(jobs: readonly HostJob[]): string {
       job.retry_of === null ? jobText(job) : "retry " + jobText(job),
     )
     .join(", ");
+}
+
+/** TS §3.8: the ClusterMAX verdict with its counts (n/a = SKIPPED). */
+function clusterText(c: ClusterVerdict): string {
+  const counts =
+    String(c.passed) +
+    " PASS, " +
+    String(c.failed) +
+    " FAIL, " +
+    String(c.warning) +
+    " WARNING, " +
+    String(c.not_applicable) +
+    " n/a";
+  return c.verdict === "error"
+    ? "error (exit " + String(c.exit_code) + "), " + counts
+    : c.verdict + ", " + counts;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return String(bytes) + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KiB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MiB";
+}
+
+/** TS §3.8, §6.2: the redacted ClusterMAX files, for operators and admins. */
+function ScanFiles({ scanId }: { scanId: string }) {
+  const [files, setFiles] = useState<readonly ScanFile[] | null>(null);
+  const [problem, setProblem] = useState<ProblemInfo | null>(null);
+  useEffect(() => {
+    let active = true;
+    api
+      .GET("/api/v1/scans/{id}/files", { params: { path: { id: scanId } } })
+      .then(({ data, error, response }) => {
+        if (!active) return;
+        if (data !== undefined) setFiles(data.items);
+        else setProblem(toProblem(error, response));
+      })
+      .catch(() => {
+        if (active) setProblem(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [scanId]);
+  if (files === null || files.length === 0) {
+    return <ProblemBanner problem={problem} />;
+  }
+  return (
+    <section className="card card-flush" aria-labelledby="scan-files">
+      <h2 id="scan-files" className="card-title">
+        ClusterMAX files
+      </h2>
+      <ProblemBanner problem={problem} />
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Job</th>
+              <th>Size</th>
+              <th>SHA-256</th>
+              <th>Received</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {files.map((file) => (
+              <tr key={file.job_id + "/" + file.name}>
+                <td>
+                  {file.name}
+                  {file.truncated && " (cut at 64 MiB)"}
+                </td>
+                <td className="mono">{file.job_id}</td>
+                <td>{formatSize(file.size_bytes)}</td>
+                <td className="mono">{file.sha256.slice(0, 16)}</td>
+                <td>{formatTime(file.received_at)}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setProblem(null);
+                      downloadScanFile(scanId, file.job_id, file.name)
+                        .then(setProblem)
+                        .catch(() => {
+                          setProblem(null);
+                        });
+                    }}
+                  >
+                    Download
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 export interface ScanDetailProps {
@@ -146,6 +248,7 @@ export function ScanDetail({ scanId, role, links }: ScanDetailProps) {
     );
   }
   const scan = detail.value;
+  const clustermax = scan.hosts.some((host) => host.clustermax !== null);
   return (
     <main className="page">
       {back}
@@ -250,6 +353,7 @@ export function ScanDetail({ scanId, role, links }: ScanDetailProps) {
                   <th>Failed</th>
                   <th>Not run</th>
                   <th>Score</th>
+                  {clustermax && <th>ClusterMAX</th>}
                 </tr>
               </thead>
               <tbody>
@@ -273,6 +377,13 @@ export function ScanDetail({ scanId, role, links }: ScanDetailProps) {
                     <td>
                       <Score score={host.score} errors={host.errors} />
                     </td>
+                    {clustermax && (
+                      <td>
+                        {host.clustermax === null
+                          ? "not run yet"
+                          : clusterText(host.clustermax)}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -280,6 +391,7 @@ export function ScanDetail({ scanId, role, links }: ScanDetailProps) {
           </div>
         )}
       </section>
+      {role !== "viewer" && clustermax && <ScanFiles scanId={scan.scan_id} />}
     </main>
   );
 }

@@ -405,3 +405,93 @@ describe("CHK-M11-272 plain text on the scan detail (plant CHK-M11-375)", () => 
     expect(noInjectedMarkup(view.container)).toEqual({ scripts: 0, imgs: 0 });
   });
 });
+
+// TS §3.8 (owner decision 2026-11-23): a ClusterMAX scan shows each scanner's
+// verdict with its counts; operators and admins also get the files.
+describe("ClusterMAX scans", () => {
+  const FILES = GET + "/files";
+  const cmaxDetail = () =>
+    detail({
+      hosts: [
+        host(1, {
+          clustermax: {
+            verdict: "fail",
+            exit_code: 0,
+            passed: 70,
+            failed: 3,
+            warning: 2,
+            not_applicable: 6,
+          },
+        }),
+        host(2, {
+          clustermax: {
+            verdict: "error",
+            exit_code: 2,
+            passed: 0,
+            failed: 0,
+            warning: 0,
+            not_applicable: 0,
+          },
+        }),
+      ],
+    });
+  const file = {
+    agent_id: uuid(1),
+    job_id: uuid(5001),
+    name: "audit.out",
+    received_at: "2026-11-23T08:30:00Z",
+    sha256: "a".repeat(64),
+    size_bytes: 2048,
+    truncated: true,
+  };
+
+  function cmaxServer(): void {
+    answer((call) => {
+      if (call.method === "GET" && call.path === GET)
+        return json(200, cmaxDetail());
+      if (call.method === "GET" && call.path === FILES)
+        return json(200, { items: [file] });
+      return json(599, { type: "unexpected" });
+    });
+  }
+
+  it("shows the verdict and counts per scanner", async () => {
+    cmaxServer();
+    await mount("viewer");
+    const rows = hostRows();
+    expect(at(rows, 0).at(-1)).toBe("fail, 70 PASS, 3 FAIL, 2 WARNING, 6 n/a");
+    expect(at(rows, 1).at(-1)).toBe(
+      "error (exit 2), 0 PASS, 0 FAIL, 0 WARNING, 0 n/a",
+    );
+  });
+
+  it("a viewer never asks for the files", async () => {
+    cmaxServer();
+    await mount("viewer");
+    expect(sent()).toEqual(["GET " + GET]);
+    expect(screen.queryByText("ClusterMAX files")).toBeNull();
+  });
+
+  it("an operator sees the files with a download button", async () => {
+    cmaxServer();
+    await mount("operator");
+    expect(sent()).toEqual(["GET " + GET, "GET " + FILES]);
+    const section = screen
+      .getByText("ClusterMAX files")
+      .closest("section") as HTMLElement;
+    expect(within(section).getByText("audit.out (cut at 64 MiB)")).toBeTruthy();
+    expect(within(section).getByText("2.0 KiB")).toBeTruthy();
+    expect(
+      within(section).getByRole("button", { name: "Download" }),
+    ).toBeTruthy();
+  });
+
+  it("a scan of another profile has no ClusterMAX column or files request", async () => {
+    server();
+    await mount("operator");
+    expect(
+      screen.queryByRole("columnheader", { name: "ClusterMAX" }),
+    ).toBeNull();
+    expect(sent()).toEqual(["GET " + GET]);
+  });
+});

@@ -93,6 +93,7 @@ KUBECONFIG_SCHEMAS = {
     "KubeconfigAnswer",
     "ScanFileItem",
     "ScanFiles",
+    "ClusterMaxVerdict",  # GET /scans/{id} hosts[].clustermax (TS §3.8)
 }
 UUID_RE = (
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -145,6 +146,8 @@ HOST_SUMMARY = {
     "errors",
     "not_run",
     "score",
+    # TS §3.8 (owner decision 2026-11-23): a ClusterMAX scan's verdict.
+    "clustermax",
 }
 RESULT_ITEM = {
     "agent_id",

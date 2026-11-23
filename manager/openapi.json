@@ -542,6 +542,50 @@
         "title": "ClusterAuditJob",
         "type": "object"
       },
+      "ClusterMaxVerdict": {
+        "description": "TS §3.8: a ClusterMAX scan's run on this scanner; counts of the\nClusterMAX verdict words (n/a = SKIPPED). No raw output.",
+        "properties": {
+          "exit_code": {
+            "title": "Exit Code",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "not_applicable": {
+            "title": "Not Applicable",
+            "type": "integer"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "fail",
+              "error"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "warning": {
+            "title": "Warning",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "verdict",
+          "exit_code",
+          "passed",
+          "failed",
+          "warning",
+          "not_applicable"
+        ],
+        "title": "ClusterMaxVerdict",
+        "type": "object"
+      },
       "CmaxCheck": {
         "additionalProperties": false,
         "properties": {
@@ -1524,6 +1568,16 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "clustermax": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClusterMaxVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "errors": {
             "title": "Errors",
             "type": "integer"
@@ -1571,7 +1625,8 @@
           "failed",
           "errors",
           "not_run",
-          "score"
+          "score",
+          "clustermax"
         ],
         "title": "HostSummary",
         "type": "object"
