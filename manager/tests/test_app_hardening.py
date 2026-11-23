@@ -46,6 +46,9 @@ SPEC_CLASS_CAPS = {
     # file part itself stays at 5 MiB (checked by the route, TS §6.3 L1138)
     "bit": 5 * MIB + 64 * 1024,
     "inventory": 10 * MIB,
+    # TS §6.2 (owner decision 2026-11-23): a kubeconfig is at most 1 MiB; the
+    # JSON body may escape it to twice that.
+    "kubeconfig": 2 * MIB,
 }
 OTEL_ENV_KEYS = (
     "FASTAPI_OTEL_AUTO_CONFIGURE",
