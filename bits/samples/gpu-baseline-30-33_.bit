@@ -1,0 +1,2689 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Policy formatVersion="1.0">
+  <PolicyName>GPU Baseline items 30-33</PolicyName>
+  <PolicyDescription>Check GPU component versions and multi-tenant settings, firmware: Secure Boot, Secure Host, InfiniBand isolation and RoCE isolation</PolicyDescription>
+  <PolicyStatus>enabled</PolicyStatus>
+  <Family>
+    <FamilyName>GPU Baseline</FamilyName>
+  </Family>
+  <PluginsGroups>
+<Plugin>
+  <PluginName>30.1 - NVIDIA Driver version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.1. Source: gpu_baseline_check_2.sh:2599-2666 (main_30_33.sh:42-109). GPU model/count (INFO). Driver version from /sys/module/nvidia/version, nvidia-smi, /proc/driver/nvidia/version. Minimum per branch: R615&gt;=615.71.09, R610&gt;=610.57.04, R595&gt;=595.91.07, R590&gt;=590.48.01, R580&gt;=580.178.04, R570&gt;=570.211.01, R535&gt;=535.309.01 (EOL note -&gt; WARN even when OK); branch &lt;535 -&gt; min 535.309.01; other branches -&gt; WARN (no threshold). Below min -&gt; FAIL. Version unreadable -&gt; WARN. vGPU (lsmod nvidia_vgpu_vfio|vfio_mdev or /sys/class/mdev_bus) -&gt; WARN. Versions compared with the script's _ver_ge (sort -V, fail-closed). Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: nvidia-smi present but silent gives WARN UNVERIFIED instead of passing.</PluginDescription>
+  <PluginId>3f8252fb-7c69-4b41-ab96-5ce7e332267f</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+gpu_count=$(nvidia-smi --list-gpus 2>/dev/null | grep -c .)
+gpu_model=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+item INFO "gpu=${gpu_model:-unknown} x ${gpu_count:-?}"
+if [ -z "$gpu_model" ] && command -v nvidia-smi >/dev/null 2>&1; then item WARN "UNVERIFIED nvidia-smi returned no GPU (device access?)"; fi
+drv_ver=""
+[ -r /sys/module/nvidia/version ] && drv_ver=$(cat /sys/module/nvidia/version 2>/dev/null)
+[ -z "$drv_ver" ] && drv_ver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+if [ -z "$drv_ver" ] && [ -r /proc/driver/nvidia/version ]; then
+  drv_ver=$(grep -oE 'Kernel Module +[0-9.]+' /proc/driver/nvidia/version 2>/dev/null | grep -oE '[0-9.]+')
+fi
+drv_ver=$(_ver_num "$drv_ver")
+if [ -z "$drv_ver" ]; then
+  item WARN "driver=unavailable"
+else
+  drv_branch=$(echo "$drv_ver" | cut -d. -f1); drv_min=""; drv_note=""
+  case "$drv_branch" in
+    615) drv_min="615.71.09" ;;
+    610) drv_min="610.57.04" ;;
+    595) drv_min="595.91.07" ;;
+    590) drv_min="590.48.01" ;;
+    580) drv_min="580.178.04" ;;
+    570) drv_min="570.211.01" ;;
+    535) drv_min="535.309.01"; drv_note="R535 EOL, migrate to R580" ;;
+    *)
+      case "$drv_branch" in
+        ''|*[!0-9]*) drv_note="unknown branch R$drv_branch, no threshold" ;;
+        *) if [ "$drv_branch" -lt 535 ]; then drv_min="535.309.01"; drv_note="branch below R535, no security support"
+           else drv_note="unknown branch R$drv_branch, no threshold"; fi ;;
+      esac ;;
+  esac
+  if [ -n "$drv_min" ]; then
+    if _ver_ge "$drv_ver" "$drv_min"; then
+      item OK "driver=$drv_ver R$drv_branch min=$drv_min"
+      [ -n "$drv_note" ] && item WARN "$drv_note"
+    else
+      item FAIL "driver=$drv_ver R$drv_branch min=$drv_min"
+    fi
+  else
+    item WARN "driver=$drv_ver R$drv_branch ${drv_note:-no threshold}"
+  fi
+  if lsmod 2>/dev/null | grep -qE '^(nvidia_vgpu_vfio|vfio_mdev)' || [ -d /sys/class/mdev_bus ]; then
+    item WARN "vGPU manager=enabled (check CVE-2026-24200 fix)"
+  fi
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.2 - CUDA Toolkit version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.2. Source: gpu_baseline_check_2.sh:2668-2700 (main_30_33.sh:111-143). CUDA Toolkit from nvcc --version, /usr/local/cuda*/version.json, /usr/local/cuda-* dir names. Not found -&gt; INFO. &gt;= 13.4.92 -&gt; OK, below -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>4537f29b-450a-418c-80f3-056c58bc0657</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+cuda_ver=""
+if command -v nvcc >/dev/null 2>&1; then
+  cuda_ver=$(nvcc --version 2>/dev/null | grep -oE 'V[0-9]+\.[0-9]+\.[0-9]+' | head -1 | tr -d 'V')
+  [ -z "$cuda_ver" ] && cuda_ver=$(nvcc --version 2>/dev/null | grep -oE 'release [0-9]+\.[0-9]+' | grep -oE '[0-9.]+')
+fi
+if [ -z "$cuda_ver" ]; then
+  for vj in /usr/local/cuda/version.json /usr/local/cuda-*/version.json; do
+    [ -r "$vj" ] || continue
+    cuda_ver=$(grep -A3 '"cuda"' "$vj" 2>/dev/null | grep -oE '"version" *: *"[0-9.]+"' | grep -oE '[0-9.]+' | head -1)
+    [ -n "$cuda_ver" ] && break
+  done
+fi
+[ -z "$cuda_ver" ] && cuda_ver=$(ls -d /usr/local/cuda-* 2>/dev/null | grep -oE '[0-9]+\.[0-9]+$' | sort -V | tail -1)
+CUDA_MIN="13.4.92"
+if [ -z "$cuda_ver" ]; then
+  item INFO "cuda=not installed min=$CUDA_MIN"
+elif _ver_ge "$cuda_ver" "$CUDA_MIN"; then
+  item OK "cuda=$cuda_ver min=$CUDA_MIN"
+else
+  item WARN "cuda=$cuda_ver min=$CUDA_MIN"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.3 - cuDNN version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.3. Source: gpu_baseline_check_2.sh:2702-2726 (main_30_33.sh:145-169). cuDNN version from cudnn_version.h or libcudnn.so.*. No CVE threshold: always INFO (found or not). Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>fec965fc-1385-4115-a344-40ceabb80295</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+cudnn_ver=""
+for h in /usr/include/cudnn_version.h /usr/include/*/cudnn_version.h \
+         /usr/local/cuda/include/cudnn_version.h /usr/local/cuda-*/include/cudnn_version.h; do
+  [ -r "$h" ] || continue
+  M=$(awk '/#define CUDNN_MAJOR/{print $3; exit}' "$h" 2>/dev/null)
+  m=$(awk '/#define CUDNN_MINOR/{print $3; exit}' "$h" 2>/dev/null)
+  p=$(awk '/#define CUDNN_PATCHLEVEL/{print $3; exit}' "$h" 2>/dev/null)
+  case "$M" in ''|*[!0-9]*) ;; *) cudnn_ver="$M.${m:-0}.${p:-0}"; break ;; esac
+done
+if [ -z "$cudnn_ver" ]; then
+  cudnn_ver=$(ls /usr/lib/x86_64-linux-gnu/libcudnn.so.* /usr/lib64/libcudnn.so.* 2>/dev/null \
+    | grep -oE 'so\.[0-9]+(\.[0-9]+)*' | grep -oE '[0-9]+(\.[0-9]+)*' | sort -V | tail -1)
+fi
+if [ -z "$cudnn_ver" ]; then item INFO "cudnn=not installed"
+else item INFO "cudnn=$cudnn_ver (no CVE threshold)"; fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.4 - NCCL version and SGLang exposure</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.4. Source: gpu_baseline_check_2.sh:2728-2759 (main_30_33.sh:171-202). NCCL version from nccl.h or libnccl.so.*: INFO, no threshold. When NCCL is found and a sglang process runs (pgrep -af) -&gt; WARN (CVE-2026-15978). Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: also finds NCCL installed as a pip wheel (nvidia-nccl-cu*) in system Python paths.</PluginDescription>
+  <PluginId>06968cc5-00dc-4af0-b642-3c8b7f2ad8f9</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+nccl_ver=""
+for h in /usr/include/nccl.h /usr/include/*/nccl.h \
+         /usr/local/cuda/include/nccl.h /usr/local/cuda-*/include/nccl.h; do
+  [ -r "$h" ] || continue
+  NM=$(awk '/#define NCCL_MAJOR/{print $3; exit}' "$h" 2>/dev/null)
+  Nm=$(awk '/#define NCCL_MINOR/{print $3; exit}' "$h" 2>/dev/null)
+  Np=$(awk '/#define NCCL_PATCH/{print $3; exit}' "$h" 2>/dev/null)
+  case "$NM" in ''|*[!0-9]*) ;; *) nccl_ver="$NM.${Nm:-0}.${Np:-0}"; break ;; esac
+done
+if [ -z "$nccl_ver" ]; then
+  nccl_ver=$(ls /usr/lib/x86_64-linux-gnu/libnccl.so.* /usr/lib64/libnccl.so.* 2>/dev/null \
+    | grep -oE 'so\.[0-9]+(\.[0-9]+)*' | grep -oE '[0-9]+(\.[0-9]+)*' | sort -V | tail -1)
+fi
+if [ -z "$nccl_ver" ]; then
+  nccl_ver=$(ls -d /usr/local/lib/python3*/dist-packages/nvidia_nccl_cu*-*.dist-info /usr/lib/python3*/*-packages/nvidia_nccl_cu*-*.dist-info /usr/local/lib/python3*/site-packages/nvidia_nccl_cu*-*.dist-info 2>/dev/null \
+    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1)
+fi
+if [ -z "$nccl_ver" ]; then
+  item INFO "nccl=not installed"
+else
+  item INFO "nccl=$nccl_ver (no CVE threshold)"
+  if pgrep -af '[s]glang' >/dev/null 2>&1; then
+    item WARN "sglang process running (check CVE-2026-15978 API key)"
+  fi
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.5 - NVIDIA Container Toolkit version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.5. Source: gpu_baseline_check_2.sh:2761-2792 (main_30_33.sh:204-235). Version from nvidia-container-cli, nvidia-ctk, dpkg-query/rpm nvidia-container-toolkit. Not installed -&gt; INFO. &gt;= 1.19.1 -&gt; OK, below -&gt; FAIL. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>40d83063-251d-4ade-ad02-9d2fcaa2ffc4</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+nct_ver=""
+if command -v nvidia-container-cli >/dev/null 2>&1; then
+  nct_ver=$(nvidia-container-cli --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+fi
+if [ -z "$nct_ver" ] && command -v nvidia-ctk >/dev/null 2>&1; then
+  nct_ver=$(nvidia-ctk --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+fi
+if [ -z "$nct_ver" ]; then
+  if command -v dpkg-query >/dev/null 2>&1; then
+    nct_ver=$(dpkg-query -W -f='${Version}' nvidia-container-toolkit 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  elif command -v rpm >/dev/null 2>&1; then
+    nct_ver=$(rpm -q --qf '%{VERSION}' nvidia-container-toolkit 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  fi
+fi
+NCT_MIN="1.19.1"
+if [ -z "$nct_ver" ]; then
+  item INFO "nvidia-container-toolkit=not installed min=$NCT_MIN"
+elif _ver_ge "$nct_ver" "$NCT_MIN"; then
+  item OK "nvidia-container-toolkit=$nct_ver min=$NCT_MIN"
+else
+  item FAIL "nvidia-container-toolkit=$nct_ver min=$NCT_MIN"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.6 - Docker Engine version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.6. Source: gpu_baseline_check_2.sh:2794-2815 (main_30_33.sh:237-258). docker version --format {{.Server.Version}}, else docker --version. Not found -&gt; INFO. &gt;= 29.9.3 -&gt; OK, below -&gt; FAIL. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: reads the engine version from dockerd --version first (no daemon or socket needed), so it is the engine, not the CLI, version.</PluginDescription>
+  <PluginId>1f79edae-dba1-4475-9cfe-4976024ae006</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+docker_ver=$(dockerd --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+if [ -z "$docker_ver" ] && command -v docker >/dev/null 2>&1; then
+  docker_ver=$(docker version --format '{{.Server.Version}}' 2>/dev/null | grep -oE '^[0-9]+(\.[0-9]+)*')
+  [ -z "$docker_ver" ] && docker_ver=$(docker --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+fi
+DOCKER_MIN="29.9.3"
+if [ -z "$docker_ver" ]; then
+  item INFO "docker=not installed/not running min=$DOCKER_MIN"
+elif _ver_ge "$docker_ver" "$DOCKER_MIN"; then
+  item OK "docker=$docker_ver min=$DOCKER_MIN"
+else
+  item FAIL "docker=$docker_ver min=$DOCKER_MIN"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.7 - runc version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.7. Source: gpu_baseline_check_2.sh:2817-2849 (main_30_33.sh:260-292). runc --version. Minimum per branch: 1.5&gt;=1.5.0 (and rc&gt;=3 for 1.5.0-rc), 1.4&gt;=1.4.3, 1.3&gt;=1.3.6, 1.2&gt;=1.2.8, 1.1&gt;=1.1.14, 1.0&gt;=1.0.3, 0.1&gt;=0.1.0, other&gt;=1.3.6. Below -&gt; FAIL. Not installed -&gt; INFO. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>937874d6-57d0-451a-ab7d-3c27b11cdb7a</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+runc_ver=""; runc_rc=""
+if command -v runc >/dev/null 2>&1; then
+  runc_ver=$(runc --version 2>/dev/null | awk '/^runc version/{print $3; exit}' | grep -oE '^[0-9]+(\.[0-9]+)*')
+  runc_rc=$(runc --version 2>/dev/null | awk '/^runc version/{print $3; exit}' | grep -oE -e '-rc\.?[0-9]+' | grep -oE '[0-9]+$')
+fi
+if [ -n "$runc_ver" ]; then
+  runc_branch=$(echo "$runc_ver" | cut -d. -f1-2)
+  case "$runc_branch" in
+    1.5) runc_min="1.5.0" ;;
+    1.4) runc_min="1.4.3" ;;
+    1.3) runc_min="1.3.6" ;;
+    1.2) runc_min="1.2.8" ;;
+    1.1) runc_min="1.1.14" ;;
+    1.0) runc_min="1.0.3" ;;
+    0.1) runc_min="0.1.0" ;;
+    *)   runc_min="1.3.6" ;;
+  esac
+  runc_rc_bad=false
+  if [ "$runc_branch" = "1.5" ] && [ "$runc_ver" = "1.5.0" ] && [ -n "$runc_rc" ] && [ "$runc_rc" -lt 3 ]; then runc_rc_bad=true; fi
+  rcs=""; [ -n "$runc_rc" ] && rcs="-rc.$runc_rc"
+  if _ver_ge "$runc_ver" "$runc_min" && ! $runc_rc_bad; then
+    item OK "runc=$runc_ver$rcs min=$runc_min"
+  else
+    if $runc_rc_bad; then item FAIL "runc=$runc_ver$rcs min=1.5.0-rc.3"
+    else item FAIL "runc=$runc_ver$rcs min=$runc_min"; fi
+  fi
+else
+  item INFO "runc=not installed"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.8 - containerd version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.8. Source: gpu_baseline_check_2.sh:2851-2881 (main_30_33.sh:294-324). containerd --version. Minimum per branch: 2.3&gt;=2.3.2, 2.2&gt;=2.2.5, 2.1&gt;=2.1.9, 2.0&gt;=2.0.10, 1.7 and other&gt;=1.7.33. Below -&gt; FAIL. Not installed -&gt; INFO. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>d25e3d75-b538-4f44-9702-59ff5b6418ab</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+ctd_ver=""
+if command -v containerd >/dev/null 2>&1; then
+  ctd_ver=$(containerd --version 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /^v[0-9]/){gsub(/^v/,"",$i); print $i; exit}}' | grep -oE '^[0-9]+(\.[0-9]+)*')
+fi
+if [ -n "$ctd_ver" ]; then
+  ctd_branch=$(echo "$ctd_ver" | cut -d. -f1-2)
+  case "$ctd_branch" in
+    2.3) ctd_min="2.3.2" ;;
+    2.2) ctd_min="2.2.5" ;;
+    2.1) ctd_min="2.1.9" ;;
+    2.0) ctd_min="2.0.10" ;;
+    1.7) ctd_min="1.7.33" ;;
+    *)   ctd_min="1.7.33" ;;
+  esac
+  if _ver_ge "$ctd_ver" "$ctd_min"; then item OK "containerd=$ctd_ver min=$ctd_min"
+  else item FAIL "containerd=$ctd_ver min=$ctd_min"; fi
+else
+  item INFO "containerd=not installed"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.8.1.1 - DCGM version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.8.1.1. Source: gpu_baseline_check_2.sh:2883-2904 (main_30_33.sh:326-347). Split from script 8.1. dcgmi --version, else dpkg-query/rpm datacenter-gpu-manager*. Not found -&gt; INFO. &gt;= 4.5.3 -&gt; OK, below -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>a00524a5-e1c4-4754-8ad5-e7e446bf70ea</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+DCGM_MIN="4.5.3"
+dcgm_ver=""
+if command -v dcgmi >/dev/null 2>&1; then
+  dcgm_ver=$(dcgmi --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+fi
+if [ -z "$dcgm_ver" ]; then
+  if command -v dpkg-query >/dev/null 2>&1; then
+    dcgm_ver=$(dpkg-query -W -f='${Version}\n' 'datacenter-gpu-manager*' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  elif command -v rpm >/dev/null 2>&1; then
+    dcgm_ver=$(rpm -qa 'datacenter-gpu-manager*' --qf '%{VERSION}\n' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  fi
+fi
+if [ -z "$dcgm_ver" ]; then item INFO "dcgm=not installed min=$DCGM_MIN"
+elif _ver_ge "$dcgm_ver" "$DCGM_MIN"; then item OK "dcgm=$dcgm_ver min=$DCGM_MIN"
+else item WARN "dcgm=$dcgm_ver min=$DCGM_MIN"; fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.8.1.2 - DCGM exporter version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.8.1.2. Source: gpu_baseline_check_2.sh:2906-2926 (main_30_33.sh:349-369). Split from script 8.1. dcgm-exporter --version, else the second x.y.z in the tag of a running dcgm-exporter container (docker ps). Not found -&gt; INFO. &gt;= 4.8.2 -&gt; OK, below -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>51d8a350-80fe-46f2-886b-712246b085c4</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+DCGM_EXP_MIN="4.8.2"
+dexp_ver=""
+if command -v dcgm-exporter >/dev/null 2>&1; then
+  dexp_ver=$(dcgm-exporter --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+fi
+if [ -z "$dexp_ver" ] && command -v docker >/dev/null 2>&1; then
+  dexp_tag=$(docker ps --format '{{.Image}}' 2>/dev/null | grep -i 'dcgm-exporter' | head -1 | awk -F: '{print $NF}')
+  if [ -n "$dexp_tag" ]; then
+    dexp_ver=$(echo "$dexp_tag" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sed -n '2p')
+    [ -z "$dexp_ver" ] && dexp_ver=$(echo "$dexp_tag" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  fi
+fi
+if [ -z "$dexp_ver" ]; then item INFO "dcgm-exporter=not installed min=$DCGM_EXP_MIN"
+elif _ver_ge "$dexp_ver" "$DCGM_EXP_MIN"; then item OK "dcgm-exporter=$dexp_ver min=$DCGM_EXP_MIN"
+else item WARN "dcgm-exporter=$dexp_ver min=$DCGM_EXP_MIN"; fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.8.1.3 - NVIDIA HPC SDK version</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.8.1.3. Source: gpu_baseline_check_2.sh:2928-2940 (main_30_33.sh:371-383). Split from script 8.1. Last /opt/nvidia/hpc_sdk/Linux_*/&lt;version&gt; directory. Not found -&gt; INFO. &gt;= 26.5 -&gt; OK, below -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>d52ebfd9-a6bc-438f-93e7-505cb4a72b7f</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+HPCSDK_MIN="26.5"
+hpc_ver=""
+for hpc_dir in /opt/nvidia/hpc_sdk/Linux_*/[0-9]*; do
+  [ -d "$hpc_dir" ] || continue
+  hpc_ver=$(basename "$hpc_dir")
+done
+if [ -z "$hpc_ver" ]; then item INFO "hpc-sdk=not installed min=$HPCSDK_MIN"
+elif _ver_ge "$hpc_ver" "$HPCSDK_MIN"; then item OK "hpc-sdk=$hpc_ver min=$HPCSDK_MIN"
+else item WARN "hpc-sdk=$hpc_ver min=$HPCSDK_MIN"; fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.9.1 - nvidia-container-runtime no-cgroups</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.9.1. Source: gpu_baseline_check_2.sh:2946-2964 (main_30_33.sh:389-407). /etc/nvidia-container-runtime/config.toml: no-cgroups=true -&gt; FAIL, else OK; debug log path -&gt; INFO. File not readable -&gt; INFO. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>a24cf9be-104e-4bed-87dc-1cc447521bf4</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+nct_conf="/etc/nvidia-container-runtime/config.toml"
+if [ -r "$nct_conf" ]; then
+  no_cgroups=$(grep -E '^\s*no-cgroups\s*=' "$nct_conf" 2>/dev/null | tail -1 | grep -oE '(true|false)')
+  if [ "$no_cgroups" = "true" ]; then item FAIL "no-cgroups=true"
+  else item OK "no-cgroups=${no_cgroups:-false(default)}"; fi
+  dbg=$(grep -E '^\s*debug\s*=' "$nct_conf" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' "')
+  [ -n "$dbg" ] && item INFO "runtime debug log=$dbg"
+else
+  item INFO "$nct_conf=not found"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.9.2 - GPU compute mode</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.9.2. Source: gpu_baseline_check_2.sh:2966-2978 (main_30_33.sh:409-421). nvidia-smi --query-gpu=compute_mode: any Exclusive_Process -&gt; OK, else WARN. No nvidia-smi output -&gt; the script prints nothing -&gt; n/a. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: non-exclusive mode is INFO (whole-node bare metal); silent nvidia-smi gives WARN UNVERIFIED.</PluginDescription>
+  <PluginId>a171f45a-e26b-4e86-ab09-3b812b7f44e0</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+compute_modes=$(nvidia-smi --query-gpu=compute_mode --format=csv,noheader 2>/dev/null | sort -u | tr '\n' ' ')
+if [ -n "$compute_modes" ]; then
+  if echo "$compute_modes" | grep -q "Exclusive_Process"; then item OK "compute_mode=$compute_modes"
+  else item INFO "compute_mode=$compute_modes (Exclusive_Process matters only when GPUs are shared)"; fi
+fi
+if [ -z "$compute_modes" ] && command -v nvidia-smi >/dev/null 2>&1; then item WARN "UNVERIFIED nvidia-smi returned no compute_mode"; fi
+out "no compute_mode from nvidia-smi"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.9.3 - MIG mode</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.9.3. Source: gpu_baseline_check_2.sh:2980-2990 (main_30_33.sh:423-433). nvidia-smi --query-gpu=mig.mode.current: Enabled -&gt; WARN (confirm CVE-2026-24197 fix), other value -&gt; INFO. No output -&gt; n/a. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: silent nvidia-smi gives WARN UNVERIFIED instead of n/a.</PluginDescription>
+  <PluginId>5c3216be-d919-44a1-945a-40fb97208d8b</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+mig_mode=$(nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader 2>/dev/null | sort -u | tr '\n' ' ')
+if echo "$mig_mode" | grep -qi "Enabled"; then
+  item WARN "mig=Enabled (confirm driver fixes CVE-2026-24197)"
+elif [ -n "$mig_mode" ]; then
+  item INFO "mig=$mig_mode"
+fi
+if [ -z "$mig_mode" ] && command -v nvidia-smi >/dev/null 2>&1; then item WARN "UNVERIFIED nvidia-smi returned no mig.mode"; fi
+out "no mig.mode from nvidia-smi"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.9.4 - Docker default-runtime and no-new-privileges</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.9.4. Source: gpu_baseline_check_2.sh:2992-3007 (main_30_33.sh:435-450). /etc/docker/daemon.json: default-runtime nvidia -&gt; WARN; no-new-privileges true missing -&gt; WARN, present -&gt; OK. File not readable -&gt; the script prints nothing -&gt; n/a. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>d0fb1b9e-cfe0-4327-b9d7-e2e60326e3d1</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+if [ -r /etc/docker/daemon.json ]; then
+  if grep -qE '"default-runtime"\s*:\s*"nvidia"' /etc/docker/daemon.json 2>/dev/null; then
+    item WARN "default-runtime=nvidia"
+  fi
+  if ! grep -qE '"no-new-privileges"\s*:\s*true' /etc/docker/daemon.json 2>/dev/null; then
+    item WARN "no-new-privileges=not set"
+  else
+    item OK "no-new-privileges=true"
+  fi
+fi
+out "/etc/docker/daemon.json not readable"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>30.9.5 - Privileged or dangerous-capability containers</PluginName>
+  <PluginDescription>Script item 30, sub-section 30.9.5. Source: gpu_baseline_check_2.sh:3009-3030 (main_30_33.sh:452-473). When docker info works: docker inspect of up to 50 running containers; Privileged=true or CapAdd matching SYS_ADMIN|SYS_MODULE|SYS_RAWIO|ALL (case-insensitive, whole inspect line) -&gt; FAIL, none -&gt; OK. docker missing or not reachable -&gt; n/a. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO; the WARN/FAIL lines the script adds to item 30's issues/warns are included. Gate (script lines 28-40): no /proc/driver/nvidia, no nvidia-smi, no /dev/nvidia[0-9]*, no NVIDIA 3D/VGA in lspci -&gt; 'n/a no NVIDIA GPU' (script: PASS, skip item 30). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: a docker socket that the runner cannot query gives WARN UNVERIFIED instead of n/a.</PluginDescription>
+  <PluginId>5c9ceb8e-f9c5-4659-92de-2e493fe1f04e</PluginId>
+  <Execute timeout="120"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+has_gpu=false
+if [ -d /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then has_gpu=true; fi
+if ! $has_gpu; then
+  for f in /dev/nvidia[0-9]*; do if [ -e "$f" ]; then has_gpu=true; break; fi; done
+fi
+if ! $has_gpu && lspci 2>/dev/null | grep -qi 'NVIDIA.*\(3D controller\|VGA compatible\)'; then has_gpu=true; fi
+if ! $has_gpu; then echo "n/a no NVIDIA GPU"; exit 0; fi
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  priv=""
+  for cid in $(docker ps -q 2>/dev/null | head -50); do
+    cinfo=$(docker inspect --format '{{.Name}}|{{.HostConfig.Privileged}}|{{range .HostConfig.CapAdd}}{{.}} {{end}}' "$cid" 2>/dev/null)
+    [ -z "$cinfo" ] && continue
+    case "$cinfo" in
+      *"|true|"*) priv="$priv${cinfo%%|*} " ;;
+      *) if echo "$cinfo" | grep -qiE 'SYS_ADMIN|SYS_MODULE|SYS_RAWIO|ALL'; then priv="$priv${cinfo%%|*}(dangerous-cap) "; fi ;;
+    esac
+  done
+  if [ -n "$priv" ]; then item FAIL "privileged/dangerous-cap containers=$priv"
+  else item OK "privileged/dangerous-cap containers=none"; fi
+fi
+if command -v docker >/dev/null 2>&1 && { [ -S /run/docker.sock ] || [ -S /var/run/docker.sock ]; } && ! docker info >/dev/null 2>&1; then
+  item WARN "UNVERIFIED docker socket present but docker info failed (runner access?)"
+fi
+out "docker info unavailable"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>31.1 - Secure Boot</PluginName>
+  <PluginDescription>Script item 31, sub-section 31.1. Source: gpu_baseline_check_2.sh:3095-3145 (main_30_33.sh:538-588). No /sys/firmware/efi (Legacy BIOS) -&gt; FAIL. UEFI: mokutil --sb-state, else byte 5 of efivars SecureBoot-*: enabled -&gt; OK, disabled -&gt; FAIL, unknown -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gate (script lines 524-532 and detect_platform): systemd-detect-virt (else /sys/hypervisor/type, else unknown) not 'none'/'unknown' -&gt; 'n/a VM (&lt;type&gt;)' (script: PASS, skip item 31). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: systemd-detect-virt --vm (a container is no longer reported as a VM); adds module signature enforcement and kernel lockdown as INFO.</PluginDescription>
+  <PluginId>3c602252-8357-4448-a57f-a4e1650b8dd8</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+if command -v systemd-detect-virt >/dev/null 2>&1; then
+  VIRT_TYPE=$(systemd-detect-virt --vm 2>/dev/null) || VIRT_TYPE="none"
+elif [ -r /sys/hypervisor/type ]; then
+  VIRT_TYPE=$(cat /sys/hypervisor/type 2>/dev/null)
+else
+  VIRT_TYPE="unknown"
+fi
+[ -z "$VIRT_TYPE" ] && VIRT_TYPE="unknown"
+if [ "$VIRT_TYPE" != "none" ] && [ "$VIRT_TYPE" != "unknown" ]; then echo "n/a VM ($VIRT_TYPE)"; exit 0; fi
+boot_mode="Legacy BIOS"
+[ -d /sys/firmware/efi ] && boot_mode="UEFI"
+if [ "$boot_mode" != "UEFI" ]; then
+  item FAIL "boot=Legacy BIOS, no Secure Boot"
+else
+  sb_state="unknown"
+  if command -v mokutil >/dev/null 2>&1; then
+    sb_out=$(mokutil --sb-state 2>/dev/null)
+    if echo "$sb_out" | grep -qi "SecureBoot enabled"; then sb_state="enabled"
+    elif echo "$sb_out" | grep -qi "SecureBoot disabled"; then sb_state="disabled"; fi
+  fi
+  if [ "$sb_state" = "unknown" ] && [ -d /sys/firmware/efi/efivars ]; then
+    sb_var=$(find /sys/firmware/efi/efivars -maxdepth 1 -name 'SecureBoot-*' 2>/dev/null | head -1)
+    if [ -n "$sb_var" ]; then
+      sb_byte=$(od -An -t u1 -j 4 -N 1 "$sb_var" 2>/dev/null | tr -d ' ')
+      [ "$sb_byte" = "1" ] && sb_state="enabled"
+      [ "$sb_byte" = "0" ] && sb_state="disabled"
+    fi
+  fi
+  case "$sb_state" in
+    enabled)  item OK "boot=UEFI secureboot=enabled" ;;
+    disabled) item FAIL "boot=UEFI secureboot=disabled" ;;
+    *)        item WARN "boot=UEFI secureboot=unconfirmed" ;;
+  esac
+fi
+sig=$(cat /sys/module/module/parameters/sig_enforce 2>/dev/null)
+[ -n "$sig" ] && item INFO "module.sig_enforce=$sig"
+[ -r /sys/kernel/security/lockdown ] && item INFO "lockdown=$(cat /sys/kernel/security/lockdown 2>/dev/null)"
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>31.2 - Secure Host (ConnectX/BlueField firmware signing)</PluginName>
+  <PluginDescription>Script item 31, sub-section 31.2. Source: gpu_baseline_check_2.sh:3064-3230 (main_30_33.sh:507-673). Devices from /dev/mst/*pciconf*|*pci_cr*, else lspci -Dn vendor 15b3; none -&gt; n/a. No flint/mstflint -&gt; WARN. Per device 'timeout 30 flint -d &lt;dev&gt; q': FW Version below train minimum (28&gt;=28.47.02, 32&gt;=32.19.08, 35&gt;=35.80.02, 39&gt;=39.80.02, 43&gt;=43.80.02, 46&gt;=46.30.08) -&gt; FAIL, other train -&gt; INFO; Security Attributes secure-fw without dev/debug/debug-token -&gt; OK, secure-fw with them -&gt; FAIL, signed-fw -&gt; FAIL, other -&gt; FAIL, missing -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gate (script lines 524-532 and detect_platform): systemd-detect-virt (else /sys/hypervisor/type, else unknown) not 'none'/'unknown' -&gt; 'n/a VM (&lt;type&gt;)' (script: PASS, skip item 31). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: an empty flint answer gives WARN UNVERIFIED with the likely cause; systemd-detect-virt --vm.</PluginDescription>
+  <PluginId>40c5add4-9094-4cd3-b883-3d6dee4bb12d</PluginId>
+  <Execute timeout="600"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+if command -v systemd-detect-virt >/dev/null 2>&1; then
+  VIRT_TYPE=$(systemd-detect-virt --vm 2>/dev/null) || VIRT_TYPE="none"
+elif [ -r /sys/hypervisor/type ]; then
+  VIRT_TYPE=$(cat /sys/hypervisor/type 2>/dev/null)
+else
+  VIRT_TYPE="unknown"
+fi
+[ -z "$VIRT_TYPE" ] && VIRT_TYPE="unknown"
+if [ "$VIRT_TYPE" != "none" ] && [ "$VIRT_TYPE" != "unknown" ]; then echo "n/a VM ($VIRT_TYPE)"; exit 0; fi
+_mlx_fw_min() {
+  case "$1" in
+    28) echo "28.47.02" ;;
+    32) echo "32.19.08" ;;
+    35) echo "35.80.02" ;;
+    39) echo "39.80.02" ;;
+    43) echo "43.80.02" ;;
+    46) echo "46.30.08" ;;
+  esac
+}
+flint_bin=""
+if command -v flint >/dev/null 2>&1; then flint_bin="flint"
+elif command -v mstflint >/dev/null 2>&1; then flint_bin="mstflint"; fi
+mlx_devs=""
+for f in /dev/mst/*; do
+  if [ -e "$f" ]; then mlx_devs=$(ls /dev/mst/* 2>/dev/null | grep -E 'pciconf|pci_cr' | tr '\n' ' '); break; fi
+done
+if [ -z "$mlx_devs" ]; then
+  mlx_devs=$(lspci -Dn 2>/dev/null | awk '$3 ~ /^15b3:/ {print $1}' | tr '\n' ' ')
+fi
+if [ -z "$mlx_devs" ]; then
+  echo "n/a no Mellanox/NVIDIA NIC"; exit 0
+elif [ -z "$flint_bin" ]; then
+  item WARN "flint/mstflint missing, cannot query: $mlx_devs"
+else
+  sec_ok=0; sec_bad=0; sec_unknown=0
+  for dev in $mlx_devs; do
+    q_out=$(timeout 30 "$flint_bin" -d "$dev" q 2>/dev/null)
+    if [ -z "$q_out" ]; then item WARN "UNVERIFIED $(basename "$dev") flint query returned nothing (mst started? device access?)"; sec_unknown=$((sec_unknown + 1)); continue; fi
+    sec_attr=$(echo "$q_out" | grep -i 'Security Attributes' | head -1 | sed 's/^[^:]*:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    dname=$(basename "$dev")
+    fw_ver=$(echo "$q_out" | awk -F: '/^FW Version/{gsub(/[[:space:]]/,"",$2); print $2; exit}')
+    if [ -n "$fw_ver" ]; then
+      fw_min=$(_mlx_fw_min "${fw_ver%%.*}")
+      if [ -z "$fw_min" ]; then item INFO "$dname fw=$fw_ver (no threshold)"
+      elif _ver_ge "$fw_ver" "$fw_min"; then item OK "$dname fw=$fw_ver min=$fw_min"
+      else item FAIL "$dname fw=$fw_ver min=$fw_min"; fi
+    fi
+    if [ -z "$sec_attr" ]; then
+      item WARN "$dname security=no Security Attributes"
+      sec_unknown=$((sec_unknown + 1))
+    elif echo "$sec_attr" | grep -qw 'secure-fw'; then
+      if echo "$sec_attr" | grep -qwE 'dev|debug|debug-token'; then
+        item FAIL "$dname security=$sec_attr"; sec_bad=$((sec_bad + 1))
+      else
+        item OK "$dname security=$sec_attr"; sec_ok=$((sec_ok + 1))
+      fi
+    elif echo "$sec_attr" | grep -qw 'signed-fw'; then
+      item FAIL "$dname security=$sec_attr"; sec_bad=$((sec_bad + 1))
+    else
+      item FAIL "$dname security=$sec_attr"; sec_bad=$((sec_bad + 1))
+    fi
+  done
+  item INFO "secure-fw ok=$sec_ok bad=$sec_bad unknown=$sec_unknown"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>31.3 - BlueField VIRTIO-Net controller and Snap4 versions</PluginName>
+  <PluginDescription>Script item 31, sub-section 31.3. Source: gpu_baseline_check_2.sh:3232-3277 (main_30_33.sh:675-720). dpkg-query/rpm virtio-net-controller*: 23.x&gt;=23.10.23, 24.x&gt;=24.10.50, 25.x&gt;=25.10.2, below -&gt; FAIL, other major -&gt; INFO. Running images matching 'snap' (docker ps): 4.5&gt;=4.5.5, 4.9&gt;=4.9.1, below -&gt; FAIL, other -&gt; INFO. Nothing found -&gt; the script prints nothing -&gt; n/a. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gate (script lines 524-532 and detect_platform): systemd-detect-virt (else /sys/hypervisor/type, else unknown) not 'none'/'unknown' -&gt; 'n/a VM (&lt;type&gt;)' (script: PASS, skip item 31). Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: a two-part Snap tag (for example 4.5) is normalised to x.y.0 before the branch is chosen, so its threshold applies; systemd-detect-virt --vm.</PluginDescription>
+  <PluginId>93c922f6-292c-429b-b9fb-925587cffd9e</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+if command -v systemd-detect-virt >/dev/null 2>&1; then
+  VIRT_TYPE=$(systemd-detect-virt --vm 2>/dev/null) || VIRT_TYPE="none"
+elif [ -r /sys/hypervisor/type ]; then
+  VIRT_TYPE=$(cat /sys/hypervisor/type 2>/dev/null)
+else
+  VIRT_TYPE="unknown"
+fi
+[ -z "$VIRT_TYPE" ] && VIRT_TYPE="unknown"
+if [ "$VIRT_TYPE" != "none" ] && [ "$VIRT_TYPE" != "unknown" ]; then echo "n/a VM ($VIRT_TYPE)"; exit 0; fi
+vnc_ver=""; vnc_min=""
+if command -v dpkg-query >/dev/null 2>&1; then
+  vnc_ver=$(dpkg-query -W -f='${Version}\n' 'virtio-net-controller*' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+elif command -v rpm >/dev/null 2>&1; then
+  vnc_ver=$(rpm -qa 'virtio-net-controller*' --qf '%{VERSION}\n' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+fi
+if [ -n "$vnc_ver" ]; then
+  case "${vnc_ver%%.*}" in
+    23) vnc_min="23.10.23" ;;
+    24) vnc_min="24.10.50" ;;
+    25) vnc_min="25.10.2" ;;
+  esac
+  if [ -z "$vnc_min" ]; then item INFO "virtio-net-controller=$vnc_ver (no threshold)"
+  elif _ver_ge "$vnc_ver" "$vnc_min"; then item OK "virtio-net-controller=$vnc_ver min=$vnc_min"
+  else item FAIL "virtio-net-controller=$vnc_ver min=$vnc_min"; fi
+fi
+if command -v docker >/dev/null 2>&1; then
+  snap_imgs=$(docker ps --format '{{.Image}}' 2>/dev/null | grep -i 'snap' | sort -u)
+  while IFS= read -r snap_img; do
+    [ -z "$snap_img" ] && continue
+    snap_ver=$(echo "${snap_img##*:}" | grep -oE '^[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+    [ -z "$snap_ver" ] && continue
+    if echo "$snap_ver" | grep -qE '^[0-9]+\.[0-9]+$'; then snap_ver="$snap_ver.0"; fi
+    case "${snap_ver%.*}" in
+      4.5) snap_min="4.5.5" ;;
+      4.9) snap_min="4.9.1" ;;
+      *)   snap_min="" ;;
+    esac
+    if [ -z "$snap_min" ]; then item INFO "snap4=$snap_img (no threshold)"
+    elif _ver_ge "$snap_ver" "$snap_min"; then item OK "snap4=$snap_img min=$snap_min"
+    else item FAIL "snap4=$snap_img min=$snap_min"; fi
+  done <<SNAPEOF
+$snap_imgs
+SNAPEOF
+fi
+out "no virtio-net-controller package, no Snap4 container"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>32.1 - umad/issm device exposure</PluginName>
+  <PluginDescription>Script item 32, sub-section 32.1. Source: gpu_baseline_check_2.sh:3365-3415 (main_30_33.sh:808-858). Mode of /dev/infiniband/umad* and issm*: group or other digit not 0 -&gt; FAIL, else OK. umad present -&gt; FAIL in a container, WARN on a host; absent -&gt; OK. Same for issm. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gates (script lines 751-780): no /sys/class/infiniband entries -&gt; 'n/a no IB/RDMA device'; no port with link_layer=InfiniBand -&gt; 'n/a no native IB port' (script: PASS, skip item 32). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup; several lines are FAIL in a container and WARN/INFO on a host. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: umad/issm present on a host is INFO (expected on IB hosts with agent 0.5.4-1); ib_umad loaded but umad not visible gives WARN UNVERIFIED.</PluginDescription>
+  <PluginId>45e92f17-714a-4e72-b4a4-3afd4413f019</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+ib_devs=""
+[ -d /sys/class/infiniband ] && ib_devs=$(ls /sys/class/infiniband 2>/dev/null | tr '\n' ' ')
+if [ -z "$ib_devs" ]; then echo "n/a no IB/RDMA device"; exit 0; fi
+has_ib_port=false
+for _d in $ib_devs; do
+  for _p in /sys/class/infiniband/"$_d"/ports/*; do
+    [ -d "$_p" ] || continue
+    [ "$(cat "$_p/link_layer" 2>/dev/null)" = "InfiniBand" ] && has_ib_port=true
+  done
+done
+if ! $has_ib_port; then echo "n/a no native IB port (all RoCE, see 33)"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+umad_devs=$(ls /dev/infiniband/umad* 2>/dev/null | tr '\n' ' ')
+issm_devs=$(ls /dev/infiniband/issm* 2>/dev/null | tr '\n' ' ')
+for ud in $umad_devs $issm_devs; do
+  perm=$(stat -c '%a' "$ud" 2>/dev/null); owner=$(stat -c '%U:%G' "$ud" 2>/dev/null)
+  l1=${perm#"${perm%?}"}; p2=${perm%?}; l2=${p2#"${p2%?}"}
+  if [ -n "$perm" ] && { [ "$l1" != "0" ] || [ "$l2" != "0" ]; }; then
+    item FAIL "$(basename "$ud") mode=$perm $owner (group/other can send MADs)"
+  else
+    item OK "$(basename "$ud") mode=$perm $owner"
+  fi
+done
+if [ -n "$umad_devs" ]; then
+  if $in_container; then item FAIL "umad visible in container: $umad_devs"
+  else item INFO "umad present on host: $umad_devs"; fi
+elif ls -d /sys/class/infiniband_mad/umad* >/dev/null 2>&1; then
+  item WARN "UNVERIFIED ib_umad loaded but /dev/infiniband/umad* not visible to the runner (agent older than 0.5.4-1?)"
+else
+  item OK "umad=absent (ib_umad not loaded)"
+fi
+if [ -n "$issm_devs" ]; then
+  if $in_container; then item FAIL "issm visible in container: $issm_devs"
+  else item INFO "issm present on host: $issm_devs"; fi
+else
+  item OK "issm=absent"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>32.2 - SM identity, M_Key and switch-port partition enforcement</PluginName>
+  <PluginDescription>Rewritten 2026-11-18 (needs agent 0.5.4-1 for MAD access). Per ACTIVE InfiniBand port, with -C/-P so each rail is queried: (1) sminfo: master SM GUID, priority and state; FAIL if UFM_SM_GUIDS is set and the GUID is not in it; WARN if priority below 15; FAIL if reachable from a container. (2) smpquery portinfo on this port: ProtectBits 2 or 3 OK, 0 or 1 FAIL (M_Key not enforced); MkeyLeasePeriod not 0 WARN. (3) Directed route 0,port to the switch port facing this HCA: PartEnfInb and PartEnfOutb both 1 OK, else FAIL; switch port pkey table with 0xffff FAIL. No fabric-wide discovery (ibhosts, ibswitches, saquery). Anything that cannot be read gives WARN UNVERIFIED. Read-only MAD Get queries. Output: &lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>cf6ddfbe-5002-489e-a233-946c53ca2809</PluginId>
+  <Execute timeout="120"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+ib_devs=""
+[ -d /sys/class/infiniband ] && ib_devs=$(ls /sys/class/infiniband 2>/dev/null | tr '\n' ' ')
+if [ -z "$ib_devs" ]; then echo "n/a no IB/RDMA device"; exit 0; fi
+has_ib_port=false
+for _d in $ib_devs; do
+  for _p in /sys/class/infiniband/"$_d"/ports/*; do
+    [ -d "$_p" ] || continue
+    [ "$(cat "$_p/link_layer" 2>/dev/null)" = "InfiniBand" ] && has_ib_port=true
+  done
+done
+if ! $has_ib_port; then echo "n/a no native IB port (all RoCE, see 33)"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+# Space-separated port GUIDs of the UFM Subnet Managers (primary and standby).
+# Empty = report the SM only; set it to FAIL on any other master SM.
+UFM_SM_GUIDS=""
+if ! command -v sminfo >/dev/null 2>&1 || ! command -v smpquery >/dev/null 2>&1; then
+  echo "WARN UNVERIFIED infiniband-diags (sminfo, smpquery) not installed"; exit 0
+fi
+if ! ls /dev/infiniband/umad* >/dev/null 2>&1; then
+  if ls -d /sys/class/infiniband_mad/umad* >/dev/null 2>&1; then
+    echo "WARN UNVERIFIED /dev/infiniband/umad* not visible to the runner (needs agent 0.5.4-1)"
+  else
+    echo "WARN UNVERIFIED ib_umad not loaded, no MAD access"
+  fi
+  exit 0
+fi
+for dev in $ib_devs; do
+  for port in /sys/class/infiniband/"$dev"/ports/*; do
+    [ "$(cat "$port/link_layer" 2>/dev/null)" = "InfiniBand" ] || continue
+    pn=$(basename "$port")
+    case "$(cat "$port/state" 2>/dev/null)" in *ACTIVE*) ;; *) item INFO "$dev:$pn not ACTIVE, skipped"; continue ;; esac
+    lid=$(cat "$port/lid" 2>/dev/null)
+    # SM identity
+    so=$(timeout 10 sminfo -C "$dev" -P "$pn" 2>&1)
+    g=$(echo "$so" | grep -oE 'sm guid 0x[0-9a-fA-F]+' | awk '{print $3}')
+    pr=$(echo "$so" | grep -oE 'priority [0-9]+' | awk '{print $2}')
+    st=$(echo "$so" | grep -oE 'SMINFO_[A-Z]+')
+    if [ -z "$g" ]; then
+      item WARN "$dev:$pn UNVERIFIED sminfo: $(echo "$so" | head -1)"
+    else
+      if $in_container; then item FAIL "$dev:$pn SM reachable from a container (sm=$g)"; fi
+      if [ -z "$UFM_SM_GUIDS" ]; then item INFO "$dev:$pn sm=$g prio=${pr:-?} $st (UFM_SM_GUIDS not set)"
+      else
+        case " $UFM_SM_GUIDS " in *" $g "*) item OK "$dev:$pn sm=$g prio=${pr:-?} $st" ;; *) item FAIL "$dev:$pn master SM $g is not a UFM SM" ;; esac
+      fi
+      [ "${pr:-0}" -lt 15 ] && item WARN "$dev:$pn SM priority ${pr:-?} below 15"
+    fi
+    # M_Key protection on this host's port
+    pi=$(timeout 10 smpquery -C "$dev" -P "$pn" portinfo "$lid" "$pn" 2>&1)
+    pb=$(echo "$pi" | grep -i 'protectbits' | grep -oE '[0-9]+$' | head -1)
+    ls_=$(echo "$pi" | grep -i 'mkeyleaseperiod' | grep -oE '[0-9]+$' | head -1)
+    case "$pb" in
+      2|3) item OK "$dev:$pn ProtectBits=$pb" ;;
+      '')  item WARN "$dev:$pn UNVERIFIED ProtectBits unreadable: $(echo "$pi" | head -1)" ;;
+      *)   item FAIL "$dev:$pn ProtectBits=$pb (M_Key not enforced)" ;;
+    esac
+    [ "${ls_:-0}" -ne 0 ] && item WARN "$dev:$pn MkeyLeasePeriod=$ls_ (protection lapses if the SM goes quiet)"
+    # Switch port facing this HCA (one hop, directed route)
+    sp=$(timeout 10 smpquery -C "$dev" -P "$pn" -D nodeinfo 0,"$pn" 2>/dev/null | grep -i 'localport' | grep -oE '[0-9]+$' | head -1)
+    if [ -z "$sp" ]; then
+      item WARN "$dev:$pn UNVERIFIED switch port not readable"
+      continue
+    fi
+    sw=$(timeout 10 smpquery -C "$dev" -P "$pn" -D portinfo 0,"$pn" "$sp" 2>&1)
+    ei=$(echo "$sw" | grep -i 'partenfinb' | grep -oE '[0-9]+$' | head -1)
+    eo=$(echo "$sw" | grep -i 'partenfoutb' | grep -oE '[0-9]+$' | head -1)
+    if [ "$ei" = 1 ] && [ "$eo" = 1 ]; then item OK "$dev:$pn switch port $sp PartEnf in/out=1/1"
+    elif [ -z "$ei$eo" ]; then item WARN "$dev:$pn UNVERIFIED switch port $sp PartEnf unreadable"
+    else item FAIL "$dev:$pn switch port $sp PartEnf in=${ei:-?} out=${eo:-?}"; fi
+    spk=$(timeout 10 smpquery -C "$dev" -P "$pn" -D pkeys 0,"$pn" "$sp" 2>/dev/null | grep -oiE '0x[0-9a-f]{4}' | grep -viE '^0x0000$' | sort -u | tr '\n' ' ')
+    if echo "$spk" | grep -qiE '0xffff'; then item FAIL "$dev:$pn switch port $sp is a full member of the default partition: $spk"
+    elif [ -z "$spk" ]; then item WARN "$dev:$pn UNVERIFIED switch port $sp pkey table unreadable"
+    else item INFO "$dev:$pn switch port $sp pkeys=$spk"; fi
+  done
+done
+out "no active IB port"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>32.3 - PKey partition isolation</PluginName>
+  <PluginDescription>Rewritten 2026-11-18. Per ACTIVE InfiniBand port (DOWN ports are skipped, they show a default 0xffff): empty pkey table FAIL; 0xffff (full member of the default partition) FAIL; no dedicated full-member pkey WARN; full member of more than one dedicated partition WARN (verify against UFM); exactly one dedicated full-member pkey OK, printed so it can be reconciled with UFM. Membership is bit 15 of the pkey. Output: &lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>0dafaed7-36ec-4e0c-9524-f7ff47293022</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+ib_devs=""
+[ -d /sys/class/infiniband ] && ib_devs=$(ls /sys/class/infiniband 2>/dev/null | tr '\n' ' ')
+if [ -z "$ib_devs" ]; then echo "n/a no IB/RDMA device"; exit 0; fi
+has_ib_port=false
+for _d in $ib_devs; do
+  for _p in /sys/class/infiniband/"$_d"/ports/*; do
+    [ -d "$_p" ] || continue
+    [ "$(cat "$_p/link_layer" 2>/dev/null)" = "InfiniBand" ] && has_ib_port=true
+  done
+done
+if ! $has_ib_port; then echo "n/a no native IB port (all RoCE, see 33)"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+for dev in $ib_devs; do
+  for port in /sys/class/infiniband/"$dev"/ports/*; do
+    [ "$(cat "$port/link_layer" 2>/dev/null)" = "InfiniBand" ] || continue
+    pn=$(basename "$port"); st=$(cat "$port/state" 2>/dev/null)
+    case "$st" in *ACTIVE*) ;; *) item INFO "$dev:$pn state=${st:-?} skipped"; continue ;; esac
+    pk=$(cat "$port"/pkeys/* 2>/dev/null | grep -viE '^0x0000$' | sort -u | tr '\n' ' ')
+    if [ -z "$pk" ]; then item FAIL "$dev:$pn empty pkey table"; continue; fi
+    fdef=0; ldef=0; dfull=""; dlim=""
+    for k in $pk; do
+      case "$k" in
+        0xffff|0xFFFF) fdef=1 ;;
+        0x7fff|0x7FFF) ldef=1 ;;
+        *) if [ $(( k & 0x8000 )) -ne 0 ]; then dfull="$dfull$k "; else dlim="$dlim$k "; fi ;;
+      esac
+    done
+    nf=$(echo $dfull | wc -w)
+    if [ "$fdef" -eq 1 ]; then item FAIL "$dev:$pn 0xffff full member of the default partition pkeys=$pk"
+    elif [ "$nf" -eq 0 ]; then item WARN "$dev:$pn no dedicated full-member pkey pkeys=$pk"
+    elif [ "$nf" -gt 1 ]; then item WARN "$dev:$pn full member of $nf partitions (${dfull% }), verify against UFM"
+    else item OK "$dev:$pn tenant_pkey=${dfull% } limited=${dlim:-none} default=$([ "$ldef" = 1 ] && echo 0x7fff || echo none)"; fi
+  done
+done
+out "no active IB port"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>32.4 - opensm on this node</PluginName>
+  <PluginDescription>Rewritten 2026-11-18. opensm running on a GPU host FAIL (only UFM should run a Subnet Manager). For each readable opensm.conf: m_key unset or 0 FAIL; m_key_protection_level not 2 or 3 FAIL; sm_key unset or 0 FAIL; part_enforce off/in/out FAIL; no_partition_enforcement TRUE FAIL; partitions file missing or empty FAIL; sm_priority INFO. Not running OK; binary installed INFO. Output: &lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>020bd0d5-a61e-4420-927b-e8954297b844</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+ib_devs=""
+[ -d /sys/class/infiniband ] && ib_devs=$(ls /sys/class/infiniband 2>/dev/null | tr '\n' ' ')
+if [ -z "$ib_devs" ]; then echo "n/a no IB/RDMA device"; exit 0; fi
+has_ib_port=false
+for _d in $ib_devs; do
+  for _p in /sys/class/infiniband/"$_d"/ports/*; do
+    [ -d "$_p" ] || continue
+    [ "$(cat "$_p/link_layer" 2>/dev/null)" = "InfiniBand" ] && has_ib_port=true
+  done
+done
+if ! $has_ib_port; then echo "n/a no native IB port (all RoCE, see 33)"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+if systemctl is-active --quiet opensm 2>/dev/null || pgrep -x opensm >/dev/null 2>&1; then
+  item FAIL "opensm=running on this node (only UFM should run a Subnet Manager)"
+  for osm_conf in /etc/opensm/opensm.conf /etc/rdma/opensm.conf; do
+    [ -r "$osm_conf" ] || continue
+    kv() { grep -E "^[[:space:]]*$1[[:space:]]" "$osm_conf" 2>/dev/null | awk '{print $2}' | tail -1; }
+    m_key=$(kv m_key); osm_sm_key=$(kv sm_key); mkpl=$(kv m_key_protection_level)
+    prio=$(kv sm_priority); penf=$(kv part_enforce); nope=$(kv no_partition_enforcement)
+    if [ -z "$m_key" ] || echo "$m_key" | grep -qE '^0x0+$'; then item FAIL "$osm_conf m_key=${m_key:-unset}"; else item OK "$osm_conf m_key=set"; fi
+    case "$mkpl" in 2|3) item OK "$osm_conf m_key_protection_level=$mkpl" ;; *) item FAIL "$osm_conf m_key_protection_level=${mkpl:-unset}" ;; esac
+    if [ -z "$osm_sm_key" ] || echo "$osm_sm_key" | grep -qE '^0x0+$'; then item FAIL "$osm_conf sm_key=${osm_sm_key:-unset}"; else item OK "$osm_conf sm_key=set"; fi
+    item INFO "$osm_conf sm_priority=${prio:-unset}"
+    case "$penf" in off|in|out) item FAIL "$osm_conf part_enforce=$penf" ;; *) item INFO "$osm_conf part_enforce=${penf:-default}" ;; esac
+    case "$nope" in TRUE|true) item FAIL "$osm_conf no_partition_enforcement=TRUE" ;; esac
+    part_file=$(kv partition_config_file); part_file="${part_file:-/etc/opensm/partitions.conf}"
+    if [ -r "$part_file" ] && grep -qvE '^\s*(#|$)' "$part_file" 2>/dev/null; then item OK "partitions=$part_file"
+    else item FAIL "partitions=$part_file missing/empty"; fi
+  done
+else
+  item OK "opensm=not running"
+  if command -v opensm >/dev/null 2>&1; then item INFO "opensm binary installed (not running)"; fi
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>32.5 - RDMA netns mode (rdma system show)</PluginName>
+  <PluginDescription>Script item 32, sub-section 32.5. Source: gpu_baseline_check_2.sh:3591-3616 (main_30_33.sh:1034-1059). rdma system show netns: exclusive -&gt; OK, shared -&gt; FAIL, other/unreadable -&gt; WARN. rdma tool missing -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gates (script lines 751-780): no /sys/class/infiniband entries -&gt; 'n/a no IB/RDMA device'; no port with link_layer=InfiniBand -&gt; 'n/a no native IB port' (script: PASS, skip item 32). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup; several lines are FAIL in a container and WARN/INFO on a host. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: shared RDMA netns is FAIL only when a container runtime (docker, containerd) or a container is present; on bare metal without containers it is INFO.</PluginDescription>
+  <PluginId>a31aa44d-9701-4ea5-82fb-ba9e5acbcb61</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+ib_devs=""
+[ -d /sys/class/infiniband ] && ib_devs=$(ls /sys/class/infiniband 2>/dev/null | tr '\n' ' ')
+if [ -z "$ib_devs" ]; then echo "n/a no IB/RDMA device"; exit 0; fi
+has_ib_port=false
+for _d in $ib_devs; do
+  for _p in /sys/class/infiniband/"$_d"/ports/*; do
+    [ -d "$_p" ] || continue
+    [ "$(cat "$_p/link_layer" 2>/dev/null)" = "InfiniBand" ] && has_ib_port=true
+  done
+done
+if ! $has_ib_port; then echo "n/a no native IB port (all RoCE, see 33)"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+ctr_rt=false
+for s in /run/containerd/containerd.sock /run/docker.sock /var/run/docker.sock; do [ -S "$s" ] && ctr_rt=true; done
+$in_container && ctr_rt=true
+if command -v rdma >/dev/null 2>&1; then
+  netns_mode=$(rdma system show 2>/dev/null | grep -oE 'netns [a-z]+' | awk '{print $2}')
+  case "$netns_mode" in
+    exclusive) item OK "rdma netns=exclusive" ;;
+    shared)    if $ctr_rt; then item FAIL "rdma netns=shared with a container runtime"; else item INFO "rdma netns=shared (no container runtime)"; fi ;;
+    *)         item WARN "rdma netns=${netns_mode:-unavailable}" ;;
+  esac
+else
+  item WARN "rdma tool=not installed"
+fi
+out "no result"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>32.6 - IPoIB neighbour count</PluginName>
+  <PluginDescription>Script item 32, sub-section 32.6. Source: gpu_baseline_check_2.sh:3618-3635 (main_30_33.sh:1061-1078). Per ib[0-9]* interface: ip neigh show dev &lt;if&gt; lines &gt;1 -&gt; WARN, else OK. No IPoIB interface -&gt; n/a. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gates (script lines 751-780): no /sys/class/infiniband entries -&gt; 'n/a no IB/RDMA device'; no port with link_layer=InfiniBand -&gt; 'n/a no native IB port' (script: PASS, skip item 32). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup; several lines are FAIL in a container and WARN/INFO on a host. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: neighbour count is INFO; several IPoIB neighbours are normal inside one tenant cluster.</PluginDescription>
+  <PluginId>4c940105-c263-4758-9bc3-3b3243277f9a</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+ib_devs=""
+[ -d /sys/class/infiniband ] && ib_devs=$(ls /sys/class/infiniband 2>/dev/null | tr '\n' ' ')
+if [ -z "$ib_devs" ]; then echo "n/a no IB/RDMA device"; exit 0; fi
+has_ib_port=false
+for _d in $ib_devs; do
+  for _p in /sys/class/infiniband/"$_d"/ports/*; do
+    [ -d "$_p" ] || continue
+    [ "$(cat "$_p/link_layer" 2>/dev/null)" = "InfiniBand" ] && has_ib_port=true
+  done
+done
+if ! $has_ib_port; then echo "n/a no native IB port (all RoCE, see 33)"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+ib_ifaces=$(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | grep -E '^ib[0-9]' | tr '\n' ' ')
+for ifc in $ib_ifaces; do
+  neigh_count=$(ip neigh show dev "$ifc" 2>/dev/null | grep -c .)
+  if [ "${neigh_count:-0}" -gt 1 ]; then item INFO "$ifc neighbours=$neigh_count"
+  else item OK "$ifc neighbours=${neigh_count:-0}"; fi
+done
+out "no IPoIB interface"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>32.7 - GPUDirect RDMA with PKey isolation</PluginName>
+  <PluginDescription>Script item 32, sub-section 32.7. Source: gpu_baseline_check_2.sh:3637-3646 (main_30_33.sh:1080-1089). nvidia_peermem loaded -&gt; INFO; and if any IB port is a 0xffff full member (32.3 logic) -&gt; FAIL. Not loaded -&gt; n/a. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gates (script lines 751-780): no /sys/class/infiniband entries -&gt; 'n/a no IB/RDMA device'; no port with link_layer=InfiniBand -&gt; 'n/a no native IB port' (script: PASS, skip item 32). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup; several lines are FAIL in a container and WARN/INFO on a host. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: DOWN ports are skipped, as in 32.3.</PluginDescription>
+  <PluginId>1b261a76-df76-42a3-878d-0fd05a497487</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+ib_devs=""
+[ -d /sys/class/infiniband ] && ib_devs=$(ls /sys/class/infiniband 2>/dev/null | tr '\n' ' ')
+if [ -z "$ib_devs" ]; then echo "n/a no IB/RDMA device"; exit 0; fi
+has_ib_port=false
+for _d in $ib_devs; do
+  for _p in /sys/class/infiniband/"$_d"/ports/*; do
+    [ -d "$_p" ] || continue
+    [ "$(cat "$_p/link_layer" 2>/dev/null)" = "InfiniBand" ] && has_ib_port=true
+  done
+done
+if ! $has_ib_port; then echo "n/a no native IB port (all RoCE, see 33)"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+pkey_issue=false
+for dev in $ib_devs; do
+  for port in /sys/class/infiniband/"$dev"/ports/*; do
+    [ -d "$port/pkeys" ] || continue
+    pnum=$(basename "$port")
+    lt=$(cat "$port/link_layer" 2>/dev/null || echo "?")
+    [ "$lt" = "Ethernet" ] && continue
+    case "$(cat "$port/state" 2>/dev/null)" in *ACTIVE*) ;; *) continue ;; esac
+    pkeys=$(cat "$port"/pkeys/* 2>/dev/null | grep -viE '^0x0000$' | sort -u | tr '\n' ' ')
+    full_default=$(echo "$pkeys" | grep -ciE '0xffff')
+    limited_default=$(echo "$pkeys" | grep -ciE '0x7fff')
+    extra=$(echo "$pkeys" | tr ' ' '\n' | grep -viE '^(0xffff|0x7fff)$' | grep -c .)
+    if [ "${full_default:-0}" -gt 0 ]; then
+      item FAIL "$dev:$pnum 0xffff full member pkeys=${pkeys:-empty}"
+      pkey_issue=true
+    elif [ "${limited_default:-0}" -gt 0 ] && [ "${extra:-0}" -eq 0 ]; then
+      item WARN "$dev:$pnum only 0x7fff limited member pkeys=${pkeys:-empty}"
+    else
+      item OK "$dev:$pnum dedicated=$extra pkeys=${pkeys:-empty}"
+    fi
+  done
+done
+V=""; D=""
+if lsmod 2>/dev/null | awk '{print $1}' | grep -qx nvidia_peermem; then
+  item INFO "nvidia_peermem=loaded"
+  if $pkey_issue; then item FAIL "GPUDirect RDMA with 0xffff full-member PKey (no tenant isolation)"; fi
+fi
+out "nvidia_peermem not loaded"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>32.8 - InfiniBand SR-IOV exposure</PluginName>
+  <PluginDescription>Added 2026-11-18. Per InfiniBand device: sriov_totalvfs 0 OK; SR-IOV enabled in firmware but no VFs WARN (root on the host can create VFs); VFs present WARN, with each VF policy and node GUID as INFO (VF GUID and P_Key must be set by the provider, not the tenant). Where /dev/mst exists, mlxconfig SRIOV_EN and NUM_OF_VFS as INFO. Read-only. Output: &lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;. WARN fails in Bitscan.</PluginDescription>
+  <PluginId>cc8d9426-411e-4858-a95d-38c9e1d495b4</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+ib_devs=""
+[ -d /sys/class/infiniband ] && ib_devs=$(ls /sys/class/infiniband 2>/dev/null | tr '\n' ' ')
+if [ -z "$ib_devs" ]; then echo "n/a no IB/RDMA device"; exit 0; fi
+has_ib_port=false
+for _d in $ib_devs; do
+  for _p in /sys/class/infiniband/"$_d"/ports/*; do
+    [ -d "$_p" ] || continue
+    [ "$(cat "$_p/link_layer" 2>/dev/null)" = "InfiniBand" ] && has_ib_port=true
+  done
+done
+if ! $has_ib_port; then echo "n/a no native IB port (all RoCE, see 33)"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+found=false
+for dev in $ib_devs; do
+  ib=false
+  for p in /sys/class/infiniband/"$dev"/ports/*; do [ "$(cat "$p/link_layer" 2>/dev/null)" = "InfiniBand" ] && ib=true; done
+  $ib || continue
+  found=true
+  tot=$(cat /sys/class/infiniband/"$dev"/device/sriov_totalvfs 2>/dev/null)
+  num=$(cat /sys/class/infiniband/"$dev"/device/sriov_numvfs 2>/dev/null)
+  case "${tot:-0}" in 0|'') item OK "$dev sriov=disabled"; continue ;; esac
+  if [ "${num:-0}" -gt 0 ]; then
+    item WARN "$dev sriov_totalvfs=$tot numvfs=$num (VF GUID and P_Key must be set by the provider)"
+    for v in /sys/class/infiniband/"$dev"/device/sriov/*; do
+      [ -d "$v" ] || continue
+      item INFO "$dev vf$(basename "$v") policy=$(cat "$v/policy" 2>/dev/null) node=$(cat "$v/node" 2>/dev/null)"
+    done
+  else
+    item WARN "$dev sriov_totalvfs=$tot (SR-IOV enabled in firmware; root on the host can create VFs)"
+  fi
+done
+for m in /dev/mst/*_pciconf*; do
+  [ -e "$m" ] || continue
+  c=$(timeout 30 mlxconfig -d "$m" q 2>/dev/null | grep -E 'SRIOV_EN|NUM_OF_VFS' | tr -s ' ' | tr '\n' ';')
+  [ -n "$c" ] && item INFO "$(basename "$m") $c"
+done
+$found || item INFO "no InfiniBand device"
+out "no IB device"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>33.1 - RoCE GID types</PluginName>
+  <PluginDescription>Script item 33, sub-section 33.1. Source: gpu_baseline_check_2.sh:3730-3767 (main_30_33.sh:1173-1210). Per RoCE port: count non-empty GIDs by gid_attrs/types (RoCE v2, IB/RoCE v1, unknown) -&gt; INFO; any unknown type -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gate (script lines 1136-1158): no RDMA port with link_layer=Ethernet -&gt; 'n/a no RoCE port' (script: PASS, skip item 33). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: 33.2 RoCE v1 GIDs without SR-IOV are INFO (kernel default); 33.3 shared netns is FAIL only with a container runtime; 33.4 umad/issm on a host is INFO.</PluginDescription>
+  <PluginId>f9a41f63-942b-42c4-b15b-dba89ae642b9</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+SEC=33.1
+roce_ports=""
+if [ -d /sys/class/infiniband ]; then
+  for dev_path in /sys/class/infiniband/*; do
+    [ -d "$dev_path" ] || continue
+    dname=$(basename "$dev_path")
+    for port_path in "$dev_path"/ports/*; do
+      [ -d "$port_path" ] || continue
+      pnum=$(basename "$port_path")
+      lt=$(cat "$port_path/link_layer" 2>/dev/null)
+      [ "$lt" = "Ethernet" ] && roce_ports="$roce_ports$dname:$pnum "
+    done
+  done
+fi
+if [ -z "$roce_ports" ]; then echo "n/a no RoCE port"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+ISSUES=0
+end_sec() {
+  [ "$V" = "FAIL" ] && ISSUES=1
+  if [ "$SEC" = "$1" ]; then out "$2"; exit 0; fi
+  V=""; D=""
+}
+# 33.1 RoCE version and GID table
+v1_total=0; v2_total=0; vunknown_total=0; roce_netdevs=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"; pnum="${rp##*:}"
+  port_path="/sys/class/infiniband/$dname/ports/$pnum"
+  [ -d "$port_path/gids" ] || continue
+  v1=0; v2=0; vunk=0
+  for gid_entry in "$port_path"/gids/*; do
+    [ -r "$gid_entry" ] || continue
+    gid_val=$(cat "$gid_entry" 2>/dev/null)
+    [ "$gid_val" = "0000:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    [ "$gid_val" = "fe80:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    idx_name=$(basename "$gid_entry")
+    gid_type=$(cat "$port_path/gid_attrs/types/$idx_name" 2>/dev/null)
+    gid_ndev=$(cat "$port_path/gid_attrs/ndevs/$idx_name" 2>/dev/null)
+    if [ -n "$gid_ndev" ]; then
+      case " $roce_netdevs " in *" $gid_ndev "*) ;; *) roce_netdevs="$roce_netdevs$gid_ndev " ;; esac
+    fi
+    case "$gid_type" in
+      "RoCE v2")    v2=$((v2 + 1)) ;;
+      "IB/RoCE v1") v1=$((v1 + 1)) ;;
+      *)            vunk=$((vunk + 1)) ;;
+    esac
+  done
+  v1_total=$((v1_total + v1)); v2_total=$((v2_total + v2)); vunknown_total=$((vunknown_total + vunk))
+  item INFO "$rp gids v2=$v2 v1=$v1 unknown=$vunk"
+done
+[ -n "$roce_netdevs" ] && item INFO "netdevs=$roce_netdevs"
+[ "$vunknown_total" -gt 0 ] && item WARN "unrecognised gid types=$vunknown_total"
+end_sec 33.1 "no GID table on RoCE ports $roce_ports"
+# 33.2 SR-IOV VF anti-spoofing, PF VLAN, RoCE v1
+pf_list=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"
+  for nd in /sys/class/infiniband/"$dname"/device/net/*; do
+    [ -d "$nd" ] || continue
+    ndn=$(basename "$nd")
+    case " $pf_list " in *" $ndn "*) ;; *) pf_list="$pf_list$ndn " ;; esac
+  done
+done
+[ -z "$pf_list" ] && pf_list="$roce_netdevs"
+[ -z "$pf_list" ] && item WARN "PF lookup failed, VF checks not verified"
+sriov_found=false; vf_total=0; vf_bad_spoof=0; vf_trusted=0; vf_no_vlan=0
+for pf in $pf_list; do
+  [ -n "$pf" ] || continue
+  numvfs=0
+  [ -r "/sys/class/net/$pf/device/sriov_numvfs" ] && numvfs=$(cat "/sys/class/net/$pf/device/sriov_numvfs" 2>/dev/null || echo 0)
+  case "$numvfs" in ''|*[!0-9]*) numvfs=0 ;; esac
+  if [ "$numvfs" -eq 0 ]; then item INFO "$pf numvfs=0"; continue; fi
+  sriov_found=true
+  item INFO "$pf numvfs=$numvfs"
+  vf_lines=$(ip link show dev "$pf" 2>/dev/null | grep -E '^[[:space:]]*vf[[:space:]]+[0-9]+')
+  if [ -z "$vf_lines" ]; then item WARN "$pf vf attributes unreadable"; continue; fi
+  while IFS= read -r vf_line; do
+    [ -n "$vf_line" ] || continue
+    vf_id=$(echo "$vf_line" | grep -oE '^[[:space:]]*vf[[:space:]]+[0-9]+' | grep -oE '[0-9]+')
+    vf_total=$((vf_total + 1))
+    spoof="unknown"
+    echo "$vf_line" | grep -q 'spoof checking on' && spoof="on"
+    echo "$vf_line" | grep -q 'spoof checking off' && spoof="off"
+    trust="unknown"
+    echo "$vf_line" | grep -q 'trust on' && trust="on"
+    echo "$vf_line" | grep -q 'trust off' && trust="off"
+    vlan_id=$(echo "$vf_line" | grep -oE ', vlan [0-9]+' | grep -oE '[0-9]+' | head -1)
+    [ -z "$vlan_id" ] && vlan_id=0
+    vf_status="OK"
+    if [ "$spoof" = "off" ]; then vf_status="FAIL"; vf_bad_spoof=$((vf_bad_spoof + 1))
+    elif [ "$spoof" = "unknown" ]; then vf_status="WARN"; fi
+    if [ "$trust" = "on" ]; then vf_status="FAIL"; vf_trusted=$((vf_trusted + 1))
+    elif [ "$trust" = "unknown" ]; then [ "$vf_status" = "OK" ] && vf_status="WARN"; fi
+    if [ "$vlan_id" -eq 0 ] || [ "$vlan_id" -eq 4095 ]; then
+      [ "$vf_status" = "OK" ] && vf_status="WARN"
+      vf_no_vlan=$((vf_no_vlan + 1))
+    fi
+    if [ "$vf_status" = "OK" ]; then item OK ""
+    else item "$vf_status" "$pf vf$vf_id spoofchk=$spoof trust=$trust vlan=$vlan_id"; fi
+  done <<VFEOF
+$vf_lines
+VFEOF
+done
+$sriov_found && item INFO "vfs=$vf_total spoofchk_off=$vf_bad_spoof trust_on=$vf_trusted no_pf_vlan=$vf_no_vlan"
+$sriov_found || item INFO "sriov=no VF on any PF"
+if [ "$v1_total" -gt 0 ]; then
+  if $sriov_found && [ "$vf_no_vlan" -gt 0 ]; then item FAIL "roce v1 gids=$v1_total with VFs lacking a PF VLAN"
+  elif $sriov_found; then item WARN "roce v1 gids=$v1_total"
+  else item INFO "roce v1 gids=$v1_total (kernel default; isolation relies on the switch VLAN)"; fi
+else
+  item OK "roce v1 gids=0 v2=$v2_total"
+fi
+end_sec 33.2 "no result"
+# 33.3 RDMA netns isolation
+ctr_rt=false
+for s in /run/containerd/containerd.sock /run/docker.sock /var/run/docker.sock; do [ -S "$s" ] && ctr_rt=true; done
+$in_container && ctr_rt=true
+netns_mode=""
+[ -r /sys/module/ib_core/parameters/netns_mode ] && netns_mode=$(cat /sys/module/ib_core/parameters/netns_mode 2>/dev/null)
+case "$netns_mode" in
+  0) item OK "ib_core netns_mode=0 (exclusive)" ;;
+  1) if $ctr_rt; then item FAIL "ib_core netns_mode=1 (shared) with a container runtime"; else item INFO "ib_core netns_mode=1 (shared, no container runtime)"; fi ;;
+  *)
+    if command -v rdma >/dev/null 2>&1; then
+      rdma_sys=$(rdma system show 2>/dev/null)
+      if echo "$rdma_sys" | grep -qw exclusive; then item OK "rdma netns=exclusive"
+      elif echo "$rdma_sys" | grep -qw shared; then if $ctr_rt; then item FAIL "rdma netns=shared with a container runtime"; else item INFO "rdma netns=shared (no container runtime)"; fi
+      else item WARN "rdma netns=unconfirmed"; fi
+    else
+      item WARN "rdma netns=unconfirmed (no ib_core param, no rdma tool)"
+    fi ;;
+esac
+if [ "$netns_mode" = "0" ]; then
+  if grep -rqsE '^[[:space:]]*options[[:space:]]+ib_core.*netns_mode=0' /etc/modprobe.d/ 2>/dev/null; then item OK "netns_mode persisted in modprobe.d"
+  else item WARN "netns_mode not persisted in modprobe.d"; fi
+fi
+if command -v rdma >/dev/null 2>&1; then
+  qkey_line=$(rdma system show 2>/dev/null | grep -oE 'privileged-qkey[[:space:]]+(on|off)')
+  if [ -n "$qkey_line" ]; then
+    if echo "$qkey_line" | grep -qw on; then item WARN "privileged-qkey=on"
+    else item OK "privileged-qkey=off"; fi
+  fi
+fi
+end_sec 33.3 "no result"
+# 33.4 RDMA device nodes
+mgmt_devs=$(ls /dev/infiniband/umad* /dev/infiniband/issm* 2>/dev/null | tr '\n' ' ')
+if [ -n "$mgmt_devs" ]; then
+  if $in_container; then item FAIL "umad/issm visible in container: $mgmt_devs"
+  else item INFO "umad/issm present on host: $mgmt_devs"; fi
+else
+  item OK "umad/issm=absent"
+fi
+uverbs_devs=$(ls /dev/infiniband/uverbs* 2>/dev/null | tr '\n' ' ')
+if [ -n "$uverbs_devs" ]; then
+  item INFO "uverbs=$uverbs_devs"
+  if $in_container && ! $sriov_found; then item WARN "container RDMA device looks like a shared PF (no SR-IOV)"; fi
+fi
+end_sec 33.4 "no result"
+# 33.5 GPUDirect over RoCE
+if lsmod 2>/dev/null | awk '{print $1}' | grep -qx nvidia_peermem; then
+  item INFO "nvidia_peermem=loaded"
+  [ "$ISSUES" = "1" ] && item FAIL "GPUDirect RDMA with RoCE isolation defects in 33.1-33.4"
+fi
+end_sec 33.5 "nvidia_peermem not loaded"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>33.2 - SR-IOV VF anti-spoofing, PF VLAN and RoCE v1</PluginName>
+  <PluginDescription>Script item 33, sub-section 33.2. Source: gpu_baseline_check_2.sh:3769-3909 (main_30_33.sh:1212-1352). PF from device/net or GID ndevs; none -&gt; WARN. Per VF in ip link show dev &lt;PF&gt;: spoof checking off -&gt; FAIL, missing -&gt; WARN; trust on -&gt; FAIL, missing -&gt; WARN; vlan 0 or 4095 -&gt; WARN. RoCE v1 GIDs &gt; 0 with a VF lacking PF VLAN or no SR-IOV -&gt; FAIL, else WARN; no v1 -&gt; OK. (The RoCE v1 decision sits in this sub-section of the script.) Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gate (script lines 1136-1158): no RDMA port with link_layer=Ethernet -&gt; 'n/a no RoCE port' (script: PASS, skip item 33). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: 33.2 RoCE v1 GIDs without SR-IOV are INFO (kernel default); 33.3 shared netns is FAIL only with a container runtime; 33.4 umad/issm on a host is INFO.</PluginDescription>
+  <PluginId>430a3e05-0439-4eea-9fd7-8bf7dc58b82c</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+SEC=33.2
+roce_ports=""
+if [ -d /sys/class/infiniband ]; then
+  for dev_path in /sys/class/infiniband/*; do
+    [ -d "$dev_path" ] || continue
+    dname=$(basename "$dev_path")
+    for port_path in "$dev_path"/ports/*; do
+      [ -d "$port_path" ] || continue
+      pnum=$(basename "$port_path")
+      lt=$(cat "$port_path/link_layer" 2>/dev/null)
+      [ "$lt" = "Ethernet" ] && roce_ports="$roce_ports$dname:$pnum "
+    done
+  done
+fi
+if [ -z "$roce_ports" ]; then echo "n/a no RoCE port"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+ISSUES=0
+end_sec() {
+  [ "$V" = "FAIL" ] && ISSUES=1
+  if [ "$SEC" = "$1" ]; then out "$2"; exit 0; fi
+  V=""; D=""
+}
+# 33.1 RoCE version and GID table
+v1_total=0; v2_total=0; vunknown_total=0; roce_netdevs=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"; pnum="${rp##*:}"
+  port_path="/sys/class/infiniband/$dname/ports/$pnum"
+  [ -d "$port_path/gids" ] || continue
+  v1=0; v2=0; vunk=0
+  for gid_entry in "$port_path"/gids/*; do
+    [ -r "$gid_entry" ] || continue
+    gid_val=$(cat "$gid_entry" 2>/dev/null)
+    [ "$gid_val" = "0000:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    [ "$gid_val" = "fe80:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    idx_name=$(basename "$gid_entry")
+    gid_type=$(cat "$port_path/gid_attrs/types/$idx_name" 2>/dev/null)
+    gid_ndev=$(cat "$port_path/gid_attrs/ndevs/$idx_name" 2>/dev/null)
+    if [ -n "$gid_ndev" ]; then
+      case " $roce_netdevs " in *" $gid_ndev "*) ;; *) roce_netdevs="$roce_netdevs$gid_ndev " ;; esac
+    fi
+    case "$gid_type" in
+      "RoCE v2")    v2=$((v2 + 1)) ;;
+      "IB/RoCE v1") v1=$((v1 + 1)) ;;
+      *)            vunk=$((vunk + 1)) ;;
+    esac
+  done
+  v1_total=$((v1_total + v1)); v2_total=$((v2_total + v2)); vunknown_total=$((vunknown_total + vunk))
+  item INFO "$rp gids v2=$v2 v1=$v1 unknown=$vunk"
+done
+[ -n "$roce_netdevs" ] && item INFO "netdevs=$roce_netdevs"
+[ "$vunknown_total" -gt 0 ] && item WARN "unrecognised gid types=$vunknown_total"
+end_sec 33.1 "no GID table on RoCE ports $roce_ports"
+# 33.2 SR-IOV VF anti-spoofing, PF VLAN, RoCE v1
+pf_list=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"
+  for nd in /sys/class/infiniband/"$dname"/device/net/*; do
+    [ -d "$nd" ] || continue
+    ndn=$(basename "$nd")
+    case " $pf_list " in *" $ndn "*) ;; *) pf_list="$pf_list$ndn " ;; esac
+  done
+done
+[ -z "$pf_list" ] && pf_list="$roce_netdevs"
+[ -z "$pf_list" ] && item WARN "PF lookup failed, VF checks not verified"
+sriov_found=false; vf_total=0; vf_bad_spoof=0; vf_trusted=0; vf_no_vlan=0
+for pf in $pf_list; do
+  [ -n "$pf" ] || continue
+  numvfs=0
+  [ -r "/sys/class/net/$pf/device/sriov_numvfs" ] && numvfs=$(cat "/sys/class/net/$pf/device/sriov_numvfs" 2>/dev/null || echo 0)
+  case "$numvfs" in ''|*[!0-9]*) numvfs=0 ;; esac
+  if [ "$numvfs" -eq 0 ]; then item INFO "$pf numvfs=0"; continue; fi
+  sriov_found=true
+  item INFO "$pf numvfs=$numvfs"
+  vf_lines=$(ip link show dev "$pf" 2>/dev/null | grep -E '^[[:space:]]*vf[[:space:]]+[0-9]+')
+  if [ -z "$vf_lines" ]; then item WARN "$pf vf attributes unreadable"; continue; fi
+  while IFS= read -r vf_line; do
+    [ -n "$vf_line" ] || continue
+    vf_id=$(echo "$vf_line" | grep -oE '^[[:space:]]*vf[[:space:]]+[0-9]+' | grep -oE '[0-9]+')
+    vf_total=$((vf_total + 1))
+    spoof="unknown"
+    echo "$vf_line" | grep -q 'spoof checking on' && spoof="on"
+    echo "$vf_line" | grep -q 'spoof checking off' && spoof="off"
+    trust="unknown"
+    echo "$vf_line" | grep -q 'trust on' && trust="on"
+    echo "$vf_line" | grep -q 'trust off' && trust="off"
+    vlan_id=$(echo "$vf_line" | grep -oE ', vlan [0-9]+' | grep -oE '[0-9]+' | head -1)
+    [ -z "$vlan_id" ] && vlan_id=0
+    vf_status="OK"
+    if [ "$spoof" = "off" ]; then vf_status="FAIL"; vf_bad_spoof=$((vf_bad_spoof + 1))
+    elif [ "$spoof" = "unknown" ]; then vf_status="WARN"; fi
+    if [ "$trust" = "on" ]; then vf_status="FAIL"; vf_trusted=$((vf_trusted + 1))
+    elif [ "$trust" = "unknown" ]; then [ "$vf_status" = "OK" ] && vf_status="WARN"; fi
+    if [ "$vlan_id" -eq 0 ] || [ "$vlan_id" -eq 4095 ]; then
+      [ "$vf_status" = "OK" ] && vf_status="WARN"
+      vf_no_vlan=$((vf_no_vlan + 1))
+    fi
+    if [ "$vf_status" = "OK" ]; then item OK ""
+    else item "$vf_status" "$pf vf$vf_id spoofchk=$spoof trust=$trust vlan=$vlan_id"; fi
+  done <<VFEOF
+$vf_lines
+VFEOF
+done
+$sriov_found && item INFO "vfs=$vf_total spoofchk_off=$vf_bad_spoof trust_on=$vf_trusted no_pf_vlan=$vf_no_vlan"
+$sriov_found || item INFO "sriov=no VF on any PF"
+if [ "$v1_total" -gt 0 ]; then
+  if $sriov_found && [ "$vf_no_vlan" -gt 0 ]; then item FAIL "roce v1 gids=$v1_total with VFs lacking a PF VLAN"
+  elif $sriov_found; then item WARN "roce v1 gids=$v1_total"
+  else item INFO "roce v1 gids=$v1_total (kernel default; isolation relies on the switch VLAN)"; fi
+else
+  item OK "roce v1 gids=0 v2=$v2_total"
+fi
+end_sec 33.2 "no result"
+# 33.3 RDMA netns isolation
+ctr_rt=false
+for s in /run/containerd/containerd.sock /run/docker.sock /var/run/docker.sock; do [ -S "$s" ] && ctr_rt=true; done
+$in_container && ctr_rt=true
+netns_mode=""
+[ -r /sys/module/ib_core/parameters/netns_mode ] && netns_mode=$(cat /sys/module/ib_core/parameters/netns_mode 2>/dev/null)
+case "$netns_mode" in
+  0) item OK "ib_core netns_mode=0 (exclusive)" ;;
+  1) if $ctr_rt; then item FAIL "ib_core netns_mode=1 (shared) with a container runtime"; else item INFO "ib_core netns_mode=1 (shared, no container runtime)"; fi ;;
+  *)
+    if command -v rdma >/dev/null 2>&1; then
+      rdma_sys=$(rdma system show 2>/dev/null)
+      if echo "$rdma_sys" | grep -qw exclusive; then item OK "rdma netns=exclusive"
+      elif echo "$rdma_sys" | grep -qw shared; then if $ctr_rt; then item FAIL "rdma netns=shared with a container runtime"; else item INFO "rdma netns=shared (no container runtime)"; fi
+      else item WARN "rdma netns=unconfirmed"; fi
+    else
+      item WARN "rdma netns=unconfirmed (no ib_core param, no rdma tool)"
+    fi ;;
+esac
+if [ "$netns_mode" = "0" ]; then
+  if grep -rqsE '^[[:space:]]*options[[:space:]]+ib_core.*netns_mode=0' /etc/modprobe.d/ 2>/dev/null; then item OK "netns_mode persisted in modprobe.d"
+  else item WARN "netns_mode not persisted in modprobe.d"; fi
+fi
+if command -v rdma >/dev/null 2>&1; then
+  qkey_line=$(rdma system show 2>/dev/null | grep -oE 'privileged-qkey[[:space:]]+(on|off)')
+  if [ -n "$qkey_line" ]; then
+    if echo "$qkey_line" | grep -qw on; then item WARN "privileged-qkey=on"
+    else item OK "privileged-qkey=off"; fi
+  fi
+fi
+end_sec 33.3 "no result"
+# 33.4 RDMA device nodes
+mgmt_devs=$(ls /dev/infiniband/umad* /dev/infiniband/issm* 2>/dev/null | tr '\n' ' ')
+if [ -n "$mgmt_devs" ]; then
+  if $in_container; then item FAIL "umad/issm visible in container: $mgmt_devs"
+  else item INFO "umad/issm present on host: $mgmt_devs"; fi
+else
+  item OK "umad/issm=absent"
+fi
+uverbs_devs=$(ls /dev/infiniband/uverbs* 2>/dev/null | tr '\n' ' ')
+if [ -n "$uverbs_devs" ]; then
+  item INFO "uverbs=$uverbs_devs"
+  if $in_container && ! $sriov_found; then item WARN "container RDMA device looks like a shared PF (no SR-IOV)"; fi
+fi
+end_sec 33.4 "no result"
+# 33.5 GPUDirect over RoCE
+if lsmod 2>/dev/null | awk '{print $1}' | grep -qx nvidia_peermem; then
+  item INFO "nvidia_peermem=loaded"
+  [ "$ISSUES" = "1" ] && item FAIL "GPUDirect RDMA with RoCE isolation defects in 33.1-33.4"
+fi
+end_sec 33.5 "nvidia_peermem not loaded"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>33.3 - RDMA netns mode and privileged-qkey</PluginName>
+  <PluginDescription>Script item 33, sub-section 33.3. Source: gpu_baseline_check_2.sh:3911-3979 (main_30_33.sh:1354-1422). /sys/module/ib_core/parameters/netns_mode: 0 -&gt; OK, 1 -&gt; FAIL; other -&gt; rdma system show: exclusive OK, shared FAIL, else WARN; no rdma -&gt; WARN. When 0: options ib_core netns_mode=0 in /etc/modprobe.d -&gt; OK, else WARN. rdma system show privileged-qkey on -&gt; WARN, off -&gt; OK. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gate (script lines 1136-1158): no RDMA port with link_layer=Ethernet -&gt; 'n/a no RoCE port' (script: PASS, skip item 33). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: 33.2 RoCE v1 GIDs without SR-IOV are INFO (kernel default); 33.3 shared netns is FAIL only with a container runtime; 33.4 umad/issm on a host is INFO.</PluginDescription>
+  <PluginId>6ff03c6e-d472-4436-a777-51a1487dba4d</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+SEC=33.3
+roce_ports=""
+if [ -d /sys/class/infiniband ]; then
+  for dev_path in /sys/class/infiniband/*; do
+    [ -d "$dev_path" ] || continue
+    dname=$(basename "$dev_path")
+    for port_path in "$dev_path"/ports/*; do
+      [ -d "$port_path" ] || continue
+      pnum=$(basename "$port_path")
+      lt=$(cat "$port_path/link_layer" 2>/dev/null)
+      [ "$lt" = "Ethernet" ] && roce_ports="$roce_ports$dname:$pnum "
+    done
+  done
+fi
+if [ -z "$roce_ports" ]; then echo "n/a no RoCE port"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+ISSUES=0
+end_sec() {
+  [ "$V" = "FAIL" ] && ISSUES=1
+  if [ "$SEC" = "$1" ]; then out "$2"; exit 0; fi
+  V=""; D=""
+}
+# 33.1 RoCE version and GID table
+v1_total=0; v2_total=0; vunknown_total=0; roce_netdevs=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"; pnum="${rp##*:}"
+  port_path="/sys/class/infiniband/$dname/ports/$pnum"
+  [ -d "$port_path/gids" ] || continue
+  v1=0; v2=0; vunk=0
+  for gid_entry in "$port_path"/gids/*; do
+    [ -r "$gid_entry" ] || continue
+    gid_val=$(cat "$gid_entry" 2>/dev/null)
+    [ "$gid_val" = "0000:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    [ "$gid_val" = "fe80:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    idx_name=$(basename "$gid_entry")
+    gid_type=$(cat "$port_path/gid_attrs/types/$idx_name" 2>/dev/null)
+    gid_ndev=$(cat "$port_path/gid_attrs/ndevs/$idx_name" 2>/dev/null)
+    if [ -n "$gid_ndev" ]; then
+      case " $roce_netdevs " in *" $gid_ndev "*) ;; *) roce_netdevs="$roce_netdevs$gid_ndev " ;; esac
+    fi
+    case "$gid_type" in
+      "RoCE v2")    v2=$((v2 + 1)) ;;
+      "IB/RoCE v1") v1=$((v1 + 1)) ;;
+      *)            vunk=$((vunk + 1)) ;;
+    esac
+  done
+  v1_total=$((v1_total + v1)); v2_total=$((v2_total + v2)); vunknown_total=$((vunknown_total + vunk))
+  item INFO "$rp gids v2=$v2 v1=$v1 unknown=$vunk"
+done
+[ -n "$roce_netdevs" ] && item INFO "netdevs=$roce_netdevs"
+[ "$vunknown_total" -gt 0 ] && item WARN "unrecognised gid types=$vunknown_total"
+end_sec 33.1 "no GID table on RoCE ports $roce_ports"
+# 33.2 SR-IOV VF anti-spoofing, PF VLAN, RoCE v1
+pf_list=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"
+  for nd in /sys/class/infiniband/"$dname"/device/net/*; do
+    [ -d "$nd" ] || continue
+    ndn=$(basename "$nd")
+    case " $pf_list " in *" $ndn "*) ;; *) pf_list="$pf_list$ndn " ;; esac
+  done
+done
+[ -z "$pf_list" ] && pf_list="$roce_netdevs"
+[ -z "$pf_list" ] && item WARN "PF lookup failed, VF checks not verified"
+sriov_found=false; vf_total=0; vf_bad_spoof=0; vf_trusted=0; vf_no_vlan=0
+for pf in $pf_list; do
+  [ -n "$pf" ] || continue
+  numvfs=0
+  [ -r "/sys/class/net/$pf/device/sriov_numvfs" ] && numvfs=$(cat "/sys/class/net/$pf/device/sriov_numvfs" 2>/dev/null || echo 0)
+  case "$numvfs" in ''|*[!0-9]*) numvfs=0 ;; esac
+  if [ "$numvfs" -eq 0 ]; then item INFO "$pf numvfs=0"; continue; fi
+  sriov_found=true
+  item INFO "$pf numvfs=$numvfs"
+  vf_lines=$(ip link show dev "$pf" 2>/dev/null | grep -E '^[[:space:]]*vf[[:space:]]+[0-9]+')
+  if [ -z "$vf_lines" ]; then item WARN "$pf vf attributes unreadable"; continue; fi
+  while IFS= read -r vf_line; do
+    [ -n "$vf_line" ] || continue
+    vf_id=$(echo "$vf_line" | grep -oE '^[[:space:]]*vf[[:space:]]+[0-9]+' | grep -oE '[0-9]+')
+    vf_total=$((vf_total + 1))
+    spoof="unknown"
+    echo "$vf_line" | grep -q 'spoof checking on' && spoof="on"
+    echo "$vf_line" | grep -q 'spoof checking off' && spoof="off"
+    trust="unknown"
+    echo "$vf_line" | grep -q 'trust on' && trust="on"
+    echo "$vf_line" | grep -q 'trust off' && trust="off"
+    vlan_id=$(echo "$vf_line" | grep -oE ', vlan [0-9]+' | grep -oE '[0-9]+' | head -1)
+    [ -z "$vlan_id" ] && vlan_id=0
+    vf_status="OK"
+    if [ "$spoof" = "off" ]; then vf_status="FAIL"; vf_bad_spoof=$((vf_bad_spoof + 1))
+    elif [ "$spoof" = "unknown" ]; then vf_status="WARN"; fi
+    if [ "$trust" = "on" ]; then vf_status="FAIL"; vf_trusted=$((vf_trusted + 1))
+    elif [ "$trust" = "unknown" ]; then [ "$vf_status" = "OK" ] && vf_status="WARN"; fi
+    if [ "$vlan_id" -eq 0 ] || [ "$vlan_id" -eq 4095 ]; then
+      [ "$vf_status" = "OK" ] && vf_status="WARN"
+      vf_no_vlan=$((vf_no_vlan + 1))
+    fi
+    if [ "$vf_status" = "OK" ]; then item OK ""
+    else item "$vf_status" "$pf vf$vf_id spoofchk=$spoof trust=$trust vlan=$vlan_id"; fi
+  done <<VFEOF
+$vf_lines
+VFEOF
+done
+$sriov_found && item INFO "vfs=$vf_total spoofchk_off=$vf_bad_spoof trust_on=$vf_trusted no_pf_vlan=$vf_no_vlan"
+$sriov_found || item INFO "sriov=no VF on any PF"
+if [ "$v1_total" -gt 0 ]; then
+  if $sriov_found && [ "$vf_no_vlan" -gt 0 ]; then item FAIL "roce v1 gids=$v1_total with VFs lacking a PF VLAN"
+  elif $sriov_found; then item WARN "roce v1 gids=$v1_total"
+  else item INFO "roce v1 gids=$v1_total (kernel default; isolation relies on the switch VLAN)"; fi
+else
+  item OK "roce v1 gids=0 v2=$v2_total"
+fi
+end_sec 33.2 "no result"
+# 33.3 RDMA netns isolation
+ctr_rt=false
+for s in /run/containerd/containerd.sock /run/docker.sock /var/run/docker.sock; do [ -S "$s" ] && ctr_rt=true; done
+$in_container && ctr_rt=true
+netns_mode=""
+[ -r /sys/module/ib_core/parameters/netns_mode ] && netns_mode=$(cat /sys/module/ib_core/parameters/netns_mode 2>/dev/null)
+case "$netns_mode" in
+  0) item OK "ib_core netns_mode=0 (exclusive)" ;;
+  1) if $ctr_rt; then item FAIL "ib_core netns_mode=1 (shared) with a container runtime"; else item INFO "ib_core netns_mode=1 (shared, no container runtime)"; fi ;;
+  *)
+    if command -v rdma >/dev/null 2>&1; then
+      rdma_sys=$(rdma system show 2>/dev/null)
+      if echo "$rdma_sys" | grep -qw exclusive; then item OK "rdma netns=exclusive"
+      elif echo "$rdma_sys" | grep -qw shared; then if $ctr_rt; then item FAIL "rdma netns=shared with a container runtime"; else item INFO "rdma netns=shared (no container runtime)"; fi
+      else item WARN "rdma netns=unconfirmed"; fi
+    else
+      item WARN "rdma netns=unconfirmed (no ib_core param, no rdma tool)"
+    fi ;;
+esac
+if [ "$netns_mode" = "0" ]; then
+  if grep -rqsE '^[[:space:]]*options[[:space:]]+ib_core.*netns_mode=0' /etc/modprobe.d/ 2>/dev/null; then item OK "netns_mode persisted in modprobe.d"
+  else item WARN "netns_mode not persisted in modprobe.d"; fi
+fi
+if command -v rdma >/dev/null 2>&1; then
+  qkey_line=$(rdma system show 2>/dev/null | grep -oE 'privileged-qkey[[:space:]]+(on|off)')
+  if [ -n "$qkey_line" ]; then
+    if echo "$qkey_line" | grep -qw on; then item WARN "privileged-qkey=on"
+    else item OK "privileged-qkey=off"; fi
+  fi
+fi
+end_sec 33.3 "no result"
+# 33.4 RDMA device nodes
+mgmt_devs=$(ls /dev/infiniband/umad* /dev/infiniband/issm* 2>/dev/null | tr '\n' ' ')
+if [ -n "$mgmt_devs" ]; then
+  if $in_container; then item FAIL "umad/issm visible in container: $mgmt_devs"
+  else item INFO "umad/issm present on host: $mgmt_devs"; fi
+else
+  item OK "umad/issm=absent"
+fi
+uverbs_devs=$(ls /dev/infiniband/uverbs* 2>/dev/null | tr '\n' ' ')
+if [ -n "$uverbs_devs" ]; then
+  item INFO "uverbs=$uverbs_devs"
+  if $in_container && ! $sriov_found; then item WARN "container RDMA device looks like a shared PF (no SR-IOV)"; fi
+fi
+end_sec 33.4 "no result"
+# 33.5 GPUDirect over RoCE
+if lsmod 2>/dev/null | awk '{print $1}' | grep -qx nvidia_peermem; then
+  item INFO "nvidia_peermem=loaded"
+  [ "$ISSUES" = "1" ] && item FAIL "GPUDirect RDMA with RoCE isolation defects in 33.1-33.4"
+fi
+end_sec 33.5 "nvidia_peermem not loaded"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>33.4 - RDMA device node exposure</PluginName>
+  <PluginDescription>Script item 33, sub-section 33.4. Source: gpu_baseline_check_2.sh:3981-4009 (main_30_33.sh:1424-1452). /dev/infiniband/umad*, issm*: present -&gt; FAIL in a container, WARN on a host; absent -&gt; OK. uverbs* -&gt; INFO; in a container with no SR-IOV VF -&gt; WARN. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gate (script lines 1136-1158): no RDMA port with link_layer=Ethernet -&gt; 'n/a no RoCE port' (script: PASS, skip item 33). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: 33.2 RoCE v1 GIDs without SR-IOV are INFO (kernel default); 33.3 shared netns is FAIL only with a container runtime; 33.4 umad/issm on a host is INFO.</PluginDescription>
+  <PluginId>ed8bc0ba-6dee-40ff-a28c-e61d41c03074</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+SEC=33.4
+roce_ports=""
+if [ -d /sys/class/infiniband ]; then
+  for dev_path in /sys/class/infiniband/*; do
+    [ -d "$dev_path" ] || continue
+    dname=$(basename "$dev_path")
+    for port_path in "$dev_path"/ports/*; do
+      [ -d "$port_path" ] || continue
+      pnum=$(basename "$port_path")
+      lt=$(cat "$port_path/link_layer" 2>/dev/null)
+      [ "$lt" = "Ethernet" ] && roce_ports="$roce_ports$dname:$pnum "
+    done
+  done
+fi
+if [ -z "$roce_ports" ]; then echo "n/a no RoCE port"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+ISSUES=0
+end_sec() {
+  [ "$V" = "FAIL" ] && ISSUES=1
+  if [ "$SEC" = "$1" ]; then out "$2"; exit 0; fi
+  V=""; D=""
+}
+# 33.1 RoCE version and GID table
+v1_total=0; v2_total=0; vunknown_total=0; roce_netdevs=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"; pnum="${rp##*:}"
+  port_path="/sys/class/infiniband/$dname/ports/$pnum"
+  [ -d "$port_path/gids" ] || continue
+  v1=0; v2=0; vunk=0
+  for gid_entry in "$port_path"/gids/*; do
+    [ -r "$gid_entry" ] || continue
+    gid_val=$(cat "$gid_entry" 2>/dev/null)
+    [ "$gid_val" = "0000:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    [ "$gid_val" = "fe80:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    idx_name=$(basename "$gid_entry")
+    gid_type=$(cat "$port_path/gid_attrs/types/$idx_name" 2>/dev/null)
+    gid_ndev=$(cat "$port_path/gid_attrs/ndevs/$idx_name" 2>/dev/null)
+    if [ -n "$gid_ndev" ]; then
+      case " $roce_netdevs " in *" $gid_ndev "*) ;; *) roce_netdevs="$roce_netdevs$gid_ndev " ;; esac
+    fi
+    case "$gid_type" in
+      "RoCE v2")    v2=$((v2 + 1)) ;;
+      "IB/RoCE v1") v1=$((v1 + 1)) ;;
+      *)            vunk=$((vunk + 1)) ;;
+    esac
+  done
+  v1_total=$((v1_total + v1)); v2_total=$((v2_total + v2)); vunknown_total=$((vunknown_total + vunk))
+  item INFO "$rp gids v2=$v2 v1=$v1 unknown=$vunk"
+done
+[ -n "$roce_netdevs" ] && item INFO "netdevs=$roce_netdevs"
+[ "$vunknown_total" -gt 0 ] && item WARN "unrecognised gid types=$vunknown_total"
+end_sec 33.1 "no GID table on RoCE ports $roce_ports"
+# 33.2 SR-IOV VF anti-spoofing, PF VLAN, RoCE v1
+pf_list=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"
+  for nd in /sys/class/infiniband/"$dname"/device/net/*; do
+    [ -d "$nd" ] || continue
+    ndn=$(basename "$nd")
+    case " $pf_list " in *" $ndn "*) ;; *) pf_list="$pf_list$ndn " ;; esac
+  done
+done
+[ -z "$pf_list" ] && pf_list="$roce_netdevs"
+[ -z "$pf_list" ] && item WARN "PF lookup failed, VF checks not verified"
+sriov_found=false; vf_total=0; vf_bad_spoof=0; vf_trusted=0; vf_no_vlan=0
+for pf in $pf_list; do
+  [ -n "$pf" ] || continue
+  numvfs=0
+  [ -r "/sys/class/net/$pf/device/sriov_numvfs" ] && numvfs=$(cat "/sys/class/net/$pf/device/sriov_numvfs" 2>/dev/null || echo 0)
+  case "$numvfs" in ''|*[!0-9]*) numvfs=0 ;; esac
+  if [ "$numvfs" -eq 0 ]; then item INFO "$pf numvfs=0"; continue; fi
+  sriov_found=true
+  item INFO "$pf numvfs=$numvfs"
+  vf_lines=$(ip link show dev "$pf" 2>/dev/null | grep -E '^[[:space:]]*vf[[:space:]]+[0-9]+')
+  if [ -z "$vf_lines" ]; then item WARN "$pf vf attributes unreadable"; continue; fi
+  while IFS= read -r vf_line; do
+    [ -n "$vf_line" ] || continue
+    vf_id=$(echo "$vf_line" | grep -oE '^[[:space:]]*vf[[:space:]]+[0-9]+' | grep -oE '[0-9]+')
+    vf_total=$((vf_total + 1))
+    spoof="unknown"
+    echo "$vf_line" | grep -q 'spoof checking on' && spoof="on"
+    echo "$vf_line" | grep -q 'spoof checking off' && spoof="off"
+    trust="unknown"
+    echo "$vf_line" | grep -q 'trust on' && trust="on"
+    echo "$vf_line" | grep -q 'trust off' && trust="off"
+    vlan_id=$(echo "$vf_line" | grep -oE ', vlan [0-9]+' | grep -oE '[0-9]+' | head -1)
+    [ -z "$vlan_id" ] && vlan_id=0
+    vf_status="OK"
+    if [ "$spoof" = "off" ]; then vf_status="FAIL"; vf_bad_spoof=$((vf_bad_spoof + 1))
+    elif [ "$spoof" = "unknown" ]; then vf_status="WARN"; fi
+    if [ "$trust" = "on" ]; then vf_status="FAIL"; vf_trusted=$((vf_trusted + 1))
+    elif [ "$trust" = "unknown" ]; then [ "$vf_status" = "OK" ] && vf_status="WARN"; fi
+    if [ "$vlan_id" -eq 0 ] || [ "$vlan_id" -eq 4095 ]; then
+      [ "$vf_status" = "OK" ] && vf_status="WARN"
+      vf_no_vlan=$((vf_no_vlan + 1))
+    fi
+    if [ "$vf_status" = "OK" ]; then item OK ""
+    else item "$vf_status" "$pf vf$vf_id spoofchk=$spoof trust=$trust vlan=$vlan_id"; fi
+  done <<VFEOF
+$vf_lines
+VFEOF
+done
+$sriov_found && item INFO "vfs=$vf_total spoofchk_off=$vf_bad_spoof trust_on=$vf_trusted no_pf_vlan=$vf_no_vlan"
+$sriov_found || item INFO "sriov=no VF on any PF"
+if [ "$v1_total" -gt 0 ]; then
+  if $sriov_found && [ "$vf_no_vlan" -gt 0 ]; then item FAIL "roce v1 gids=$v1_total with VFs lacking a PF VLAN"
+  elif $sriov_found; then item WARN "roce v1 gids=$v1_total"
+  else item INFO "roce v1 gids=$v1_total (kernel default; isolation relies on the switch VLAN)"; fi
+else
+  item OK "roce v1 gids=0 v2=$v2_total"
+fi
+end_sec 33.2 "no result"
+# 33.3 RDMA netns isolation
+ctr_rt=false
+for s in /run/containerd/containerd.sock /run/docker.sock /var/run/docker.sock; do [ -S "$s" ] && ctr_rt=true; done
+$in_container && ctr_rt=true
+netns_mode=""
+[ -r /sys/module/ib_core/parameters/netns_mode ] && netns_mode=$(cat /sys/module/ib_core/parameters/netns_mode 2>/dev/null)
+case "$netns_mode" in
+  0) item OK "ib_core netns_mode=0 (exclusive)" ;;
+  1) if $ctr_rt; then item FAIL "ib_core netns_mode=1 (shared) with a container runtime"; else item INFO "ib_core netns_mode=1 (shared, no container runtime)"; fi ;;
+  *)
+    if command -v rdma >/dev/null 2>&1; then
+      rdma_sys=$(rdma system show 2>/dev/null)
+      if echo "$rdma_sys" | grep -qw exclusive; then item OK "rdma netns=exclusive"
+      elif echo "$rdma_sys" | grep -qw shared; then if $ctr_rt; then item FAIL "rdma netns=shared with a container runtime"; else item INFO "rdma netns=shared (no container runtime)"; fi
+      else item WARN "rdma netns=unconfirmed"; fi
+    else
+      item WARN "rdma netns=unconfirmed (no ib_core param, no rdma tool)"
+    fi ;;
+esac
+if [ "$netns_mode" = "0" ]; then
+  if grep -rqsE '^[[:space:]]*options[[:space:]]+ib_core.*netns_mode=0' /etc/modprobe.d/ 2>/dev/null; then item OK "netns_mode persisted in modprobe.d"
+  else item WARN "netns_mode not persisted in modprobe.d"; fi
+fi
+if command -v rdma >/dev/null 2>&1; then
+  qkey_line=$(rdma system show 2>/dev/null | grep -oE 'privileged-qkey[[:space:]]+(on|off)')
+  if [ -n "$qkey_line" ]; then
+    if echo "$qkey_line" | grep -qw on; then item WARN "privileged-qkey=on"
+    else item OK "privileged-qkey=off"; fi
+  fi
+fi
+end_sec 33.3 "no result"
+# 33.4 RDMA device nodes
+mgmt_devs=$(ls /dev/infiniband/umad* /dev/infiniband/issm* 2>/dev/null | tr '\n' ' ')
+if [ -n "$mgmt_devs" ]; then
+  if $in_container; then item FAIL "umad/issm visible in container: $mgmt_devs"
+  else item INFO "umad/issm present on host: $mgmt_devs"; fi
+else
+  item OK "umad/issm=absent"
+fi
+uverbs_devs=$(ls /dev/infiniband/uverbs* 2>/dev/null | tr '\n' ' ')
+if [ -n "$uverbs_devs" ]; then
+  item INFO "uverbs=$uverbs_devs"
+  if $in_container && ! $sriov_found; then item WARN "container RDMA device looks like a shared PF (no SR-IOV)"; fi
+fi
+end_sec 33.4 "no result"
+# 33.5 GPUDirect over RoCE
+if lsmod 2>/dev/null | awk '{print $1}' | grep -qx nvidia_peermem; then
+  item INFO "nvidia_peermem=loaded"
+  [ "$ISSUES" = "1" ] && item FAIL "GPUDirect RDMA with RoCE isolation defects in 33.1-33.4"
+fi
+end_sec 33.5 "nvidia_peermem not loaded"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+<Plugin>
+  <PluginName>33.5 - GPUDirect RDMA over RoCE</PluginName>
+  <PluginDescription>Script item 33, sub-section 33.5. Source: gpu_baseline_check_2.sh:4011-4021 (main_30_33.sh:1454-1464). nvidia_peermem loaded -&gt; INFO; and if 33.1-33.4 found any FAIL -&gt; FAIL. Not loaded -&gt; n/a. Verdict = worst result in this sub-section, FAIL &gt; WARN &gt; OK &gt; INFO. Gate (script lines 1136-1158): no RDMA port with link_layer=Ethernet -&gt; 'n/a no RoCE port' (script: PASS, skip item 33). in_container = /.dockerenv or docker|containerd|kubepods|lxc in /proc/1/cgroup. Output: '&lt;OK|INFO|WARN|FAIL|n/a&gt; &lt;observed&gt;'. WARN fails in Bitscan. Changed 2026-11-18: 33.2 RoCE v1 GIDs without SR-IOV are INFO (kernel default); 33.3 shared netns is FAIL only with a container runtime; 33.4 umad/issm on a host is INFO.</PluginDescription>
+  <PluginId>e12d523d-a51f-41f7-9c56-c504dbf4653a</PluginId>
+  <Execute timeout="60"><![CDATA[
+_ver_num() { printf '%s\n' "${1:-}" | grep -oE '[0-9]+(\.[0-9]+)*' | head -1; }
+_ver_ge() {
+  _a=$(_ver_num "${1:-}"); _b=$(_ver_num "${2:-}")
+  if [ -z "$_a" ] || [ -z "$_b" ]; then return 1; fi
+  [ "$_a" = "$_b" ] && return 0
+  [ "$(printf '%s\n%s\n' "$_a" "$_b" | sort -V | head -1)" = "$_b" ]
+}
+V=""; D=""
+item() {
+  case "$1" in
+    FAIL) V=FAIL ;;
+    WARN) [ "$V" = FAIL ] || V=WARN ;;
+    OK) case "$V" in FAIL|WARN) ;; *) V=OK ;; esac ;;
+    INFO) [ -n "$V" ] || V=INFO ;;
+  esac
+  [ -n "${2:-}" ] && D="${D:+$D; }$2"
+  return 0
+}
+out() {
+  if [ -z "$V" ]; then printf 'n/a %s\n' "$1" | tr -s ' '
+  else printf '%s %s\n' "$V" "$(printf '%s' "$D" | tr '\n' ' ' | tr -s ' ')"; fi
+}
+SEC=33.5
+roce_ports=""
+if [ -d /sys/class/infiniband ]; then
+  for dev_path in /sys/class/infiniband/*; do
+    [ -d "$dev_path" ] || continue
+    dname=$(basename "$dev_path")
+    for port_path in "$dev_path"/ports/*; do
+      [ -d "$port_path" ] || continue
+      pnum=$(basename "$port_path")
+      lt=$(cat "$port_path/link_layer" 2>/dev/null)
+      [ "$lt" = "Ethernet" ] && roce_ports="$roce_ports$dname:$pnum "
+    done
+  done
+fi
+if [ -z "$roce_ports" ]; then echo "n/a no RoCE port"; exit 0; fi
+in_container=false
+if [ -f /.dockerenv ] || grep -qE '(docker|containerd|kubepods|lxc)' /proc/1/cgroup 2>/dev/null; then in_container=true; fi
+ISSUES=0
+end_sec() {
+  [ "$V" = "FAIL" ] && ISSUES=1
+  if [ "$SEC" = "$1" ]; then out "$2"; exit 0; fi
+  V=""; D=""
+}
+# 33.1 RoCE version and GID table
+v1_total=0; v2_total=0; vunknown_total=0; roce_netdevs=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"; pnum="${rp##*:}"
+  port_path="/sys/class/infiniband/$dname/ports/$pnum"
+  [ -d "$port_path/gids" ] || continue
+  v1=0; v2=0; vunk=0
+  for gid_entry in "$port_path"/gids/*; do
+    [ -r "$gid_entry" ] || continue
+    gid_val=$(cat "$gid_entry" 2>/dev/null)
+    [ "$gid_val" = "0000:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    [ "$gid_val" = "fe80:0000:0000:0000:0000:0000:0000:0000" ] && continue
+    idx_name=$(basename "$gid_entry")
+    gid_type=$(cat "$port_path/gid_attrs/types/$idx_name" 2>/dev/null)
+    gid_ndev=$(cat "$port_path/gid_attrs/ndevs/$idx_name" 2>/dev/null)
+    if [ -n "$gid_ndev" ]; then
+      case " $roce_netdevs " in *" $gid_ndev "*) ;; *) roce_netdevs="$roce_netdevs$gid_ndev " ;; esac
+    fi
+    case "$gid_type" in
+      "RoCE v2")    v2=$((v2 + 1)) ;;
+      "IB/RoCE v1") v1=$((v1 + 1)) ;;
+      *)            vunk=$((vunk + 1)) ;;
+    esac
+  done
+  v1_total=$((v1_total + v1)); v2_total=$((v2_total + v2)); vunknown_total=$((vunknown_total + vunk))
+  item INFO "$rp gids v2=$v2 v1=$v1 unknown=$vunk"
+done
+[ -n "$roce_netdevs" ] && item INFO "netdevs=$roce_netdevs"
+[ "$vunknown_total" -gt 0 ] && item WARN "unrecognised gid types=$vunknown_total"
+end_sec 33.1 "no GID table on RoCE ports $roce_ports"
+# 33.2 SR-IOV VF anti-spoofing, PF VLAN, RoCE v1
+pf_list=""
+for rp in $roce_ports; do
+  dname="${rp%%:*}"
+  for nd in /sys/class/infiniband/"$dname"/device/net/*; do
+    [ -d "$nd" ] || continue
+    ndn=$(basename "$nd")
+    case " $pf_list " in *" $ndn "*) ;; *) pf_list="$pf_list$ndn " ;; esac
+  done
+done
+[ -z "$pf_list" ] && pf_list="$roce_netdevs"
+[ -z "$pf_list" ] && item WARN "PF lookup failed, VF checks not verified"
+sriov_found=false; vf_total=0; vf_bad_spoof=0; vf_trusted=0; vf_no_vlan=0
+for pf in $pf_list; do
+  [ -n "$pf" ] || continue
+  numvfs=0
+  [ -r "/sys/class/net/$pf/device/sriov_numvfs" ] && numvfs=$(cat "/sys/class/net/$pf/device/sriov_numvfs" 2>/dev/null || echo 0)
+  case "$numvfs" in ''|*[!0-9]*) numvfs=0 ;; esac
+  if [ "$numvfs" -eq 0 ]; then item INFO "$pf numvfs=0"; continue; fi
+  sriov_found=true
+  item INFO "$pf numvfs=$numvfs"
+  vf_lines=$(ip link show dev "$pf" 2>/dev/null | grep -E '^[[:space:]]*vf[[:space:]]+[0-9]+')
+  if [ -z "$vf_lines" ]; then item WARN "$pf vf attributes unreadable"; continue; fi
+  while IFS= read -r vf_line; do
+    [ -n "$vf_line" ] || continue
+    vf_id=$(echo "$vf_line" | grep -oE '^[[:space:]]*vf[[:space:]]+[0-9]+' | grep -oE '[0-9]+')
+    vf_total=$((vf_total + 1))
+    spoof="unknown"
+    echo "$vf_line" | grep -q 'spoof checking on' && spoof="on"
+    echo "$vf_line" | grep -q 'spoof checking off' && spoof="off"
+    trust="unknown"
+    echo "$vf_line" | grep -q 'trust on' && trust="on"
+    echo "$vf_line" | grep -q 'trust off' && trust="off"
+    vlan_id=$(echo "$vf_line" | grep -oE ', vlan [0-9]+' | grep -oE '[0-9]+' | head -1)
+    [ -z "$vlan_id" ] && vlan_id=0
+    vf_status="OK"
+    if [ "$spoof" = "off" ]; then vf_status="FAIL"; vf_bad_spoof=$((vf_bad_spoof + 1))
+    elif [ "$spoof" = "unknown" ]; then vf_status="WARN"; fi
+    if [ "$trust" = "on" ]; then vf_status="FAIL"; vf_trusted=$((vf_trusted + 1))
+    elif [ "$trust" = "unknown" ]; then [ "$vf_status" = "OK" ] && vf_status="WARN"; fi
+    if [ "$vlan_id" -eq 0 ] || [ "$vlan_id" -eq 4095 ]; then
+      [ "$vf_status" = "OK" ] && vf_status="WARN"
+      vf_no_vlan=$((vf_no_vlan + 1))
+    fi
+    if [ "$vf_status" = "OK" ]; then item OK ""
+    else item "$vf_status" "$pf vf$vf_id spoofchk=$spoof trust=$trust vlan=$vlan_id"; fi
+  done <<VFEOF
+$vf_lines
+VFEOF
+done
+$sriov_found && item INFO "vfs=$vf_total spoofchk_off=$vf_bad_spoof trust_on=$vf_trusted no_pf_vlan=$vf_no_vlan"
+$sriov_found || item INFO "sriov=no VF on any PF"
+if [ "$v1_total" -gt 0 ]; then
+  if $sriov_found && [ "$vf_no_vlan" -gt 0 ]; then item FAIL "roce v1 gids=$v1_total with VFs lacking a PF VLAN"
+  elif $sriov_found; then item WARN "roce v1 gids=$v1_total"
+  else item INFO "roce v1 gids=$v1_total (kernel default; isolation relies on the switch VLAN)"; fi
+else
+  item OK "roce v1 gids=0 v2=$v2_total"
+fi
+end_sec 33.2 "no result"
+# 33.3 RDMA netns isolation
+ctr_rt=false
+for s in /run/containerd/containerd.sock /run/docker.sock /var/run/docker.sock; do [ -S "$s" ] && ctr_rt=true; done
+$in_container && ctr_rt=true
+netns_mode=""
+[ -r /sys/module/ib_core/parameters/netns_mode ] && netns_mode=$(cat /sys/module/ib_core/parameters/netns_mode 2>/dev/null)
+case "$netns_mode" in
+  0) item OK "ib_core netns_mode=0 (exclusive)" ;;
+  1) if $ctr_rt; then item FAIL "ib_core netns_mode=1 (shared) with a container runtime"; else item INFO "ib_core netns_mode=1 (shared, no container runtime)"; fi ;;
+  *)
+    if command -v rdma >/dev/null 2>&1; then
+      rdma_sys=$(rdma system show 2>/dev/null)
+      if echo "$rdma_sys" | grep -qw exclusive; then item OK "rdma netns=exclusive"
+      elif echo "$rdma_sys" | grep -qw shared; then if $ctr_rt; then item FAIL "rdma netns=shared with a container runtime"; else item INFO "rdma netns=shared (no container runtime)"; fi
+      else item WARN "rdma netns=unconfirmed"; fi
+    else
+      item WARN "rdma netns=unconfirmed (no ib_core param, no rdma tool)"
+    fi ;;
+esac
+if [ "$netns_mode" = "0" ]; then
+  if grep -rqsE '^[[:space:]]*options[[:space:]]+ib_core.*netns_mode=0' /etc/modprobe.d/ 2>/dev/null; then item OK "netns_mode persisted in modprobe.d"
+  else item WARN "netns_mode not persisted in modprobe.d"; fi
+fi
+if command -v rdma >/dev/null 2>&1; then
+  qkey_line=$(rdma system show 2>/dev/null | grep -oE 'privileged-qkey[[:space:]]+(on|off)')
+  if [ -n "$qkey_line" ]; then
+    if echo "$qkey_line" | grep -qw on; then item WARN "privileged-qkey=on"
+    else item OK "privileged-qkey=off"; fi
+  fi
+fi
+end_sec 33.3 "no result"
+# 33.4 RDMA device nodes
+mgmt_devs=$(ls /dev/infiniband/umad* /dev/infiniband/issm* 2>/dev/null | tr '\n' ' ')
+if [ -n "$mgmt_devs" ]; then
+  if $in_container; then item FAIL "umad/issm visible in container: $mgmt_devs"
+  else item INFO "umad/issm present on host: $mgmt_devs"; fi
+else
+  item OK "umad/issm=absent"
+fi
+uverbs_devs=$(ls /dev/infiniband/uverbs* 2>/dev/null | tr '\n' ' ')
+if [ -n "$uverbs_devs" ]; then
+  item INFO "uverbs=$uverbs_devs"
+  if $in_container && ! $sriov_found; then item WARN "container RDMA device looks like a shared PF (no SR-IOV)"; fi
+fi
+end_sec 33.4 "no result"
+# 33.5 GPUDirect over RoCE
+if lsmod 2>/dev/null | awk '{print $1}' | grep -qx nvidia_peermem; then
+  item INFO "nvidia_peermem=loaded"
+  [ "$ISSUES" = "1" ] && item FAIL "GPUDirect RDMA with RoCE isolation defects in 33.1-33.4"
+fi
+end_sec 33.5 "nvidia_peermem not loaded"
+  ]]></Execute>
+  <Operator>regex</Operator>
+  <ExpectedResult>^(OK|INFO|n/a)( |$)</ExpectedResult>
+</Plugin>
+  </PluginsGroups>
+</Policy>
