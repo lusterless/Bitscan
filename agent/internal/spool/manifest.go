@@ -17,6 +17,7 @@ import (
 
 const (
 	manifestName = "job.json"
+	runName      = "cmax_run.json"
 	itemSuffix   = ".json"
 	tmpSuffix    = ".tmp"
 	// keepFor: the manager refuses results after dispatched_at + 7 days
@@ -155,6 +156,14 @@ func (s *Spool) loadJob(id wire.UUID) (*job, []Dropped, error) {
 		return nil, nil, errors.New("spool: a manifest is unreadable")
 	}
 	j := &job{m: m, mSize: int64(len(b)), nextSeq: 1}
+	if rb, err := s.root.ReadFile(path.Join(string(id), runName)); err == nil {
+		var run wire.CmaxRun
+		if wire.DecodeStrict(rb, &run) == nil {
+			j.run, j.runSize = &run, int64(len(rb))
+		} else if err := s.root.Remove(path.Join(string(id), runName)); err != nil {
+			return nil, nil, fmt.Errorf("spool: remove an unreadable run: %w", err)
+		}
+	}
 	ents, err := fs.ReadDir(s.root.FS(), string(id))
 	if err != nil {
 		return nil, nil, fmt.Errorf("spool: list a job directory: %w", err)

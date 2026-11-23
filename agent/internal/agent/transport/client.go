@@ -10,13 +10,15 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"bitscan.local/agent/internal/agent/wire"
 )
 
-// Op is one of the six agent routes (TS §6.1, §6.5).
+// Op is one of the eight agent routes (TS §6.1, §6.5).
 type Op int
 
 const (
@@ -26,9 +28,11 @@ const (
 	OpResults
 	OpInventory
 	OpRotate
+	OpKubeconfig // a cluster_audit job's kubeconfig, once (TS §3.8)
+	OpFile       // one redacted ClusterMAX file, gzip (TS §3.8)
 )
 
-var opNames = [...]string{"enrol", "heartbeat", "jobs", "results", "inventory", "rotate"}
+var opNames = [...]string{"enrol", "heartbeat", "jobs", "results", "inventory", "rotate", "kubeconfig", "file"}
 
 func (o Op) String() string {
 	if o < 0 || int(o) >= len(opNames) {
@@ -42,13 +46,18 @@ const (
 	MaxResponse   = 32 << 20
 	callTimeout   = 60 * time.Second
 	uploadTimeout = 120 * time.Second // inventory
+	fileTimeout   = 600 * time.Second // a ClusterMAX file, up to 32 MiB
 )
+
+// FileNames are the ClusterMAX files a cluster_audit job uploads (TS §3.8).
+var FileNames = []string{"report.txt", "run.log", "audit.out", "audit.values.json"}
 
 // ErrTooLarge is a response body over MaxResponse; its class is Drop.
 var ErrTooLarge = errors.New("transport: the manager's answer is larger than the cap")
 
 // Request is one call. Token is the bse_ token for OpEnrol and the bsa_ token
-// otherwise; JobID is required for OpResults and optional for OpInventory.
+// otherwise; JobID is required for OpResults, OpKubeconfig and OpFile and
+// optional for OpInventory. Name and Truncated are for OpFile only.
 type Request struct {
 	Op      Op
 	Token   string
@@ -56,6 +65,9 @@ type Request struct {
 	JobID   wire.UUID
 	Body    []byte // JSON, or gzip-compressed JSON when Gzip is set
 	Gzip    bool
+	// OpFile: one of FileNames, and whether the file was cut at its cap.
+	Name      string
+	Truncated bool
 }
 
 // String never shows the token or the body.
@@ -131,6 +143,16 @@ func (c *Client) target(r Request) (method, u string, err error) {
 		}
 	case OpRotate:
 		method, p = http.MethodPost, []string{id, "token", "rotate"}
+	case OpKubeconfig:
+		if job == "" {
+			return "", "", errors.New("transport: a kubeconfig needs a job id")
+		}
+		method, p = http.MethodPost, []string{id, "jobs", job, "kubeconfig"}
+	case OpFile:
+		if job == "" || !slices.Contains(FileNames, r.Name) {
+			return "", "", errors.New("transport: a file needs a job id and a known name")
+		}
+		method, p = http.MethodPut, []string{id, "jobs", job, "files", r.Name}
 	default:
 		return "", "", errors.New("transport: unknown route")
 	}
@@ -148,8 +170,11 @@ func (c *Client) Do(ctx context.Context, r Request) (Response, error) {
 		return Response{Class: Drop}, err
 	}
 	timeout := callTimeout
-	if r.Op == OpInventory {
+	switch r.Op {
+	case OpInventory:
 		timeout = uploadTimeout
+	case OpFile:
+		timeout = fileTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -165,10 +190,14 @@ func (c *Client) Do(ctx context.Context, r Request) (Response, error) {
 	if r.Op != OpEnrol {
 		req.Header.Set("X-Bitscan-Machine-Id", c.machineID)
 	}
-	if r.Body != nil {
+	switch {
+	case r.Op == OpFile:
+		req.Header.Set("Content-Type", "application/gzip")
+		req.Header.Set("X-Bitscan-Truncated", strconv.FormatBool(r.Truncated))
+	case r.Body != nil:
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if r.Gzip {
+	if r.Gzip && r.Op != OpFile {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
 	resp, err := c.http.Do(req)

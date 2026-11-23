@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"bitscan.local/agent/internal/agent/cmaxclient"
 	"bitscan.local/agent/internal/agent/config"
 	"bitscan.local/agent/internal/agent/enrol"
 	"bitscan.local/agent/internal/agent/loops"
@@ -55,6 +56,10 @@ func run() int {
 		level = slog.LevelInfo
 	}
 	log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	// Non-dumpable before any kubeconfig can be fetched (TS §3.8).
+	if err := cmaxclient.Harden(); err != nil {
+		return refuse(log, err)
+	}
 
 	machineID, err := enrol.ReadMachineID(enrol.MachineIDPath)
 	if err != nil {
@@ -119,7 +124,8 @@ func run() int {
 	})
 	inv := loops.NewInventory(r, inventory.CollectBody)
 	var wg sync.WaitGroup
-	var comp loops.ComplianceHandler // nil: compliance jobs are refused
+	var comp loops.ComplianceHandler  // nil: compliance jobs are refused
+	var audit loops.ComplianceHandler // nil: cluster_audit jobs are refused
 	if spErr != nil {
 		log.Error("the result spool could not be opened; compliance jobs are refused", "reason", spErr.Error())
 		r.SetLastError("spool: not opened; compliance jobs refused")
@@ -131,9 +137,10 @@ func run() int {
 		sender := loops.NewSender(r, sp)
 		wg.Go(sender.Loop)
 		comp = &loops.Compliance{Run: r, Spool: sp, Sender: sender, Runner: &runnerclient.Client{}}
+		audit = &loops.ClusterAudit{Run: r, Spool: sp, Sender: sender, Auditor: &cmaxclient.Client{}}
 	}
 	wg.Go(r.Heartbeat)
-	wg.Go((&loops.Puller{Run: r, Seen: seen, Inventory: inv, Compliance: comp}).Loop)
+	wg.Go((&loops.Puller{Run: r, Seen: seen, Inventory: inv, Compliance: comp, ClusterAudit: audit}).Loop)
 	wg.Go(func() { inv.Watch(r.Context(), inventory.NewWatcher(inventory.DpkgDir, clock)) })
 	log.Info("bitscan-agent started", "version", version, "agent_id", string(res.AgentID))
 

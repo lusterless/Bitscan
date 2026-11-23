@@ -35,6 +35,10 @@ var (
 // body around its items; items are joined by one comma each.
 const bodyOverhead = 28
 
+// runRoom is kept free in a batch of a job with a run summary: the
+// ,"cmax_run":{…} key with a 512-character error line, JSON-escaped.
+const runRoom = 4096
+
 type entry struct {
 	seq    uint64
 	size   int64
@@ -50,6 +54,8 @@ func newEntry(seq uint64, size int64, r proto.Result, putAt time.Time) *entry {
 type job struct {
 	m       Manifest
 	mSize   int64
+	run     *wire.CmaxRun // a cluster_audit job's run, sent with its final batch
+	runSize int64
 	items   []*entry // by seq
 	nextSeq uint64
 	flight  bool
@@ -77,7 +83,9 @@ type Batch struct {
 	Start bool
 	Items []proto.Result
 	Final bool
-	seqs  []uint64
+	// CmaxRun goes in the final batch of a cluster_audit job (TS §6.5).
+	CmaxRun *wire.CmaxRun
+	seqs    []uint64
 }
 
 // Open opens (creating it 0700 if needed) the spool directory. It deletes
@@ -120,7 +128,7 @@ func (s *Spool) load() ([]Dropped, error) {
 		if err == nil {
 			dropped = append(dropped, bad...)
 			if s.now().Sub(j.m.ReceivedAt.Time()) <= keepFor {
-				s.size += j.mSize
+				s.size += j.mSize + j.runSize
 				for _, e := range j.items {
 					s.size += e.size
 				}
@@ -250,6 +258,35 @@ func (s *Spool) Finish(id wire.UUID) error {
 	return s.saveManifest(j)
 }
 
+// FinishRun marks a cluster_audit job finished and keeps its run summary,
+// which goes in its final batch (TS §3.8, §6.5).
+func (s *Spool) FinishRun(id wire.UUID, run wire.CmaxRun) error {
+	b, err := wire.Encode(run)
+	if err != nil {
+		return fmt.Errorf("spool: run: %w", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j := s.find(id)
+	if j == nil {
+		return ErrUnknownJob
+	}
+	if !j.running() {
+		return ErrJobEnded
+	}
+	if s.size+int64(len(b)) > s.max {
+		return ErrFull
+	}
+	n, err := s.writeFile(path.Join(string(j.m.JobID), runName), b)
+	if err != nil {
+		return err
+	}
+	s.size += n - j.runSize
+	j.run, j.runSize = &run, n
+	j.m.Finished = true
+	return s.saveManifest(j)
+}
+
 // Size is the spool's size in bytes on disk (heartbeat spool_bytes, #78 (d)).
 func (s *Spool) Size() int64 {
 	s.mu.Lock()
@@ -287,7 +324,13 @@ func (s *Spool) batch(j *job, maxItems int, maxBytes int64, holdYoung time.Durat
 		return b, true
 	case len(j.items) == 0:
 		b.Final = j.m.Finished && !j.m.FinalAcked
+		if b.Final {
+			b.CmaxRun = j.run
+		}
 		return b, b.Final
+	}
+	if j.run != nil {
+		maxBytes -= runRoom
 	}
 	total := int64(bodyOverhead - 1)
 	for i, e := range j.items {
@@ -308,6 +351,9 @@ func (s *Spool) batch(j *job, maxItems int, maxBytes int64, holdYoung time.Durat
 		return b, false
 	}
 	b.Final = j.m.Finished && all
+	if b.Final {
+		b.CmaxRun = j.run
+	}
 	return b, true
 }
 
@@ -384,7 +430,7 @@ func (s *Spool) removeJob(j *job) error {
 	if err := s.root.RemoveAll(string(j.m.JobID)); err != nil {
 		return fmt.Errorf("spool: remove a job directory: %w", err)
 	}
-	s.size -= j.mSize
+	s.size -= j.mSize + j.runSize
 	for _, e := range j.items {
 		s.size -= e.size
 	}

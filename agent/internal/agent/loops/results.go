@@ -1,8 +1,6 @@
 package loops
 
 import (
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"time"
 
@@ -101,7 +99,7 @@ func (s *Sender) post(b spool.Batch) transport.Class {
 	for _, it := range b.Items {
 		items = append(items, it.Item())
 	}
-	body, err := gzipBody(wire.ResultsRequest{Results: items, Final: b.Final})
+	body, err := gzipBody(wire.ResultsRequest{Results: items, Final: b.Final, CmaxRun: b.CmaxRun})
 	if err != nil {
 		r.Log().Error("the results batch failed the contract check; dropped", "job_id", string(b.Job))
 		r.SetLastError("results batch refused")
@@ -137,13 +135,5 @@ func gzipBody(req wire.ResultsRequest) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loops: results batch: %w", err)
 	}
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-	if _, err := zw.Write(raw); err != nil {
-		return nil, fmt.Errorf("loops: gzip: %w", err)
-	}
-	if err := zw.Close(); err != nil {
-		return nil, fmt.Errorf("loops: gzip: %w", err)
-	}
-	return buf.Bytes(), nil
+	return gzipBytes(raw)
 }

@@ -28,7 +28,7 @@ Spec: TS §3.1–§3.6 (install, enrolment, loops, inventory, jobs, config) and 
 ## Loops
 
 - **Heartbeat:** `POST /api/v1/agent/{id}/heartbeat` every 300 s ± 30 s jitter. Send status only (TS §6.5), including the enabled `runner_helpers` every time. Apply `job_pull_seconds` (clamped 60–3,600), `max_parallel_plugins` (clamped 1–8) and, when present, `max_parallel_jobs` (clamped 1–4) from the response; the manager sends `max_parallel_jobs` only to agents 0.5.0 or later (TS §3.3, §6.5). A heartbeat never makes the agent run anything.
-- **Decided** (`work/open-questions.md` #30, owner-approved): a helper counts as enabled while its socket path exists (`/run/bitscan/capread.sock`; `/run/bitscan/` is 0755), reported as `"capread"`; `/run/clustermax/collect.sock` is reported as `"cmax"` (TS §3.8). The agent never connects to either.
+- **Decided** (`work/open-questions.md` #30, owner-approved): a helper counts as enabled while its socket path exists (`/run/bitscan/capread.sock`; `/run/bitscan/` is 0755), reported as `"capread"`; `/run/clustermax/collect.sock` is reported as `"scanner"` (TS §3.8, 0.6.0). The agent never connects to capread; it connects to the scanner helper only from `internal/agent/cmaxclient`, for a `cluster_audit` job (owner decision 2026-11-23).
 - **Job pull:** `GET /api/v1/agent/{id}/jobs` every `job_pull_seconds` ± 30 s. Up to 10 jobs per pull; an empty list means do nothing until the next timer: no extra polling and no collection. Idle target: < 0.1 % CPU and < 30 MB RSS.
 - **Accepting a job:** only if it was fetched by this agent over verified TLS, `agent_id` is this host's, `pickup_by` is in the future and no more than 25 h away, and the `job_id` is not among those seen in the last 7 days (kept in the state directory). Start a job before `pickup_by`; it may finish after it. Hosts must be NTP-synced; the manager alerts on clock skew over 5 minutes (TS §3.3).
 - **Order (owner decision 2026-11-14, TS §3.3):** at most `max_parallel_jobs` compliance jobs run at once, started in pull order. A waiting job never starts while a running job shares a `plugin_uuid` with it (same policy, or a retry), and it never overtakes an older waiting job of the same policy; a waiting job of another policy may start first. `current_job_id` is the running compliance job that started first. Post an empty results batch (`{"results": [], "final": false}`) when a job starts. Inventory jobs (`kind: "inventory"`, no `plugins` or `redaction_patterns`) run immediately, alongside compliance jobs.
@@ -54,5 +54,10 @@ Spec: TS §3.1–§3.6 (install, enrolment, loops, inventory, jobs, config) and 
 - Write outside `/var/lib/bitscan-agent`.
 - Open a listening socket.
 - Add code that executes commands outside the runner.
+
+## ClusterMAX scans (TS §3.8; owner decision 2026-11-23)
+
+- `cluster_audit` jobs run one at a time, alongside compliance and inventory jobs. The agent fetches the job's kubeconfig once (`POST /agent/{id}/jobs/{job_id}/kubeconfig`) into memory, passes it to `cmax-helper` in a sealed memfd and clears its copy; it never writes it to disk, the spool or a log. The agent process is non-dumpable.
+- It reads one result per check from the redacted `report.txt` (exit code 0), spools them plus `cmax_run` for the final batch, and uploads the four redacted files gzip-compressed, retrying until the job deadline. The agent links `internal/redact` for this.
 
 Tests (TS §8.3): Agent (back-off, spool overflow), Contract (shared JSON Schema fixtures), Security (expired, foreign and replayed jobs; certificate that fails verification or its pin), on Ubuntu 22.04, 24.04 and Debian 12, amd64 and arm64.

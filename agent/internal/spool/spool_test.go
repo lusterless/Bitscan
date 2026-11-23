@@ -367,7 +367,10 @@ func TestP1Expiry(t *testing.T) {
 func TestP1OnlyResultsAndNoCommand(t *testing.T) {
 	st := reflect.TypeFor[*Spool]()
 	allowed := map[string]bool{"wire.UUID": true, "[]wire.UUID": true, "proto.Result": true, "spool.Batch": true,
-		"int": true, "time.Duration": true}
+		"int": true, "time.Duration": true,
+		// TS §3.8, §6.5: a cluster_audit run summary; its error_line is
+		// redacted by the handler before FinishRun (loops.ClusterAudit).
+		"wire.CmaxRun": true}
 	for i := range st.NumMethod() {
 		m := st.Method(i)
 		for a := 1; a < m.Type.NumIn(); a++ {
@@ -679,4 +682,47 @@ func TestP2ConcurrentPutAndDrain(t *testing.T) {
 		}
 	}
 	checkSize(t, s, dir)
+}
+
+// TS §3.8, §6.5: a cluster_audit job's run summary goes in its final batch,
+// also after a restart; it counts toward the spool size.
+func TestFinishRunGoesInTheFinalBatch(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 11, 23, 8, 0, 0, 0, time.UTC)
+	s, _, err := Open(dir, 1<<20, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := wire.UUID("0b7c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3")
+	plugin := wire.UUID("7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")
+	if err := s.StartJob(job, []wire.UUID{plugin}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := s.Next(50, 1<<20, 0)
+	if !b.Start || b.CmaxRun != nil || s.Ack(b) != nil {
+		t.Fatalf("start %+v", b)
+	}
+	line := "cmax: error: no cluster"
+	run := wire.CmaxRun{ExitCode: 2, ErrorLine: &line, StartedAt: wire.NewTime(now), FinishedAt: wire.NewTime(now)}
+	before := s.Size()
+	if err := s.FinishRun(job, run); err != nil {
+		t.Fatal(err)
+	}
+	if s.Size() <= before {
+		t.Fatalf("size %d, before %d", s.Size(), before)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, _, err = Open(dir, 1<<20, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, ok := s.Next(50, 1<<20, 0)
+	if !ok || !b.Final || b.CmaxRun == nil || b.CmaxRun.ExitCode != 2 || *b.CmaxRun.ErrorLine != line {
+		t.Fatalf("final %+v", b)
+	}
+	if err := s.Ack(b); err != nil || s.Size() != 0 {
+		t.Fatalf("ack %v size %d", err, s.Size())
+	}
 }
