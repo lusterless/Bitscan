@@ -38,6 +38,8 @@ SAMPLE_FILES = sorted(SAMPLES.glob("*.bit"))
 # ClusterMAX policy (TS §3.8), which has its own checks below.
 CIS_FILES = [p for p in SAMPLE_FILES if p.name.startswith("cis-")]
 CLUSTERMAX = SAMPLES / "clustermax-0.3.0.bit"
+# Owner upload 2026-11-23 (commit 65a5ef8): GPU Baseline items 30-33.
+GPU_BASELINE = SAMPLES / "gpu-baseline-30-33_.bit"
 CLUSTERMAX_CHECKS = REPO / "collector" / "tools" / "clustermax-0.3.0-checks.txt"
 
 
@@ -118,7 +120,8 @@ def test_g59_all_samples_together_in_one_fresh_catalog(fresh: Env) -> None:
         "cis-ubuntu-22.04-l1-server.bit",
         "cis-ubuntu-24.04-l1-server.bit",
     ]
-    assert SAMPLE_FILES == [*CIS_FILES, CLUSTERMAX]  # and the ClusterMAX policy
+    # and the ClusterMAX and GPU baseline policies
+    assert SAMPLE_FILES == [*CIS_FILES, CLUSTERMAX, GPU_BASELINE]
     outcomes = {}
     for path in SAMPLE_FILES:
         out = fresh.imp(path.read_bytes(), path.name, mode="manual")
@@ -167,7 +170,7 @@ def test_policy_names_and_plugin_ids_are_distinct_across_the_samples() -> None:
     )
     by_sample = {f.name: {p["uuid"] for p in plugins(f)} for f in SAMPLE_FILES}
     sets = list(by_sample.values())
-    assert len(sets) == 3
+    assert len(sets) == len(SAMPLE_FILES) == 4
     for i, a in enumerate(sets):
         for b in sets[i + 1 :]:
             assert a.isdisjoint(b)
