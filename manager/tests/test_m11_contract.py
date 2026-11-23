@@ -66,6 +66,20 @@ SESSION_OPS = {
     ("delete", "/api/v1/auth/sessions/{session_id}"),
 }
 SESSION_SCHEMAS = {"CurrentSession", "Page_SessionItem_", "SessionItem"}
+# TS §6.2 (owner decision 2026-11-23): the kubeconfig routes and their models.
+KUBECONFIG_OPS = {
+    ("get", "/api/v1/kubeconfigs"),
+    ("post", "/api/v1/kubeconfigs"),
+    ("get", "/api/v1/kubeconfigs/{kubeconfig_id}"),
+    ("put", "/api/v1/kubeconfigs/{kubeconfig_id}"),
+    ("delete", "/api/v1/kubeconfigs/{kubeconfig_id}"),
+}
+KUBECONFIG_SCHEMAS = {
+    "KubeconfigItem",
+    "KubeconfigReplace",
+    "KubeconfigUpload",
+    "Page_KubeconfigItem_",
+}
 UUID_RE = (
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
@@ -216,7 +230,7 @@ def test_exactly_the_six_operations_are_added(doc: dict[str, Any]) -> None:
     assert all(p.startswith(PREFIX + "/") for _, p in M11_OPS)
     rest: dict[str, dict[str, Any]] = {}
     for path, item in doc["paths"].items():
-        added = M11_OPS | SESSION_OPS
+        added = M11_OPS | SESSION_OPS | KUBECONFIG_OPS
         kept = {m: o for m, o in item.items() if (m, path) not in added}
         if kept:
             rest[path] = kept
@@ -408,7 +422,7 @@ def test_earlier_components_are_byte_identical(doc: dict[str, Any]) -> None:
     """REQ-273 (3): every component schema present at 6efe0fb (the agent-route
     ones, ResultItem among them) is unchanged; M11 only adds."""
     schemas = doc["components"]["schemas"]
-    added = M11_SCHEMAS | SESSION_SCHEMAS
+    added = M11_SCHEMAS | SESSION_SCHEMAS | KUBECONFIG_SCHEMAS
     old = {k: v for k, v in schemas.items() if k not in added}
     assert len(old) == BASE_SCHEMA_COUNT
     assert digest(without_parallel_jobs(old)) == BASE_SCHEMAS

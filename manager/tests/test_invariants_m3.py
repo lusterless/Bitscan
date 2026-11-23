@@ -106,6 +106,14 @@ USER_OPS = {
 USER_OPS |= _crud(V1 + "/enrollment-tokens")
 USER_OPS |= _crud(V1 + "/scan-schedules")
 USER_OPS |= _crud(V1 + "/users")
+# TS §6.2 (owner decision 2026-11-23): list, read, upload, replace, delete.
+USER_OPS |= {
+    ("GET", V1 + "/kubeconfigs"),
+    ("POST", V1 + "/kubeconfigs"),
+    ("GET", V1 + "/kubeconfigs/{}"),
+    ("PUT", V1 + "/kubeconfigs/{}"),
+    ("DELETE", V1 + "/kubeconfigs/{}"),
+}
 HEALTH_OPS = {("GET", "/healthz"), ("GET", "/readyz")}  # #5
 # M5 (REQ-118, REQ-088 (1) as changed for M5; #6 M5 half, decisions 2026-10-24):
 # the built web UI, served without a token and not in the OpenAPI document.

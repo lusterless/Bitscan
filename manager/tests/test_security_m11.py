@@ -103,6 +103,9 @@ RETENTION_TABLES = {
     "user_token",
     "audit_log",
     "package",
+    "kubeconfig_fetch",
+    "cluster_audit_run",
+    "scan_file",
 }
 
 M11_OPS = {
@@ -259,6 +262,10 @@ POST_M11_PINS = {
     ),
     "db/migrations/versions/m0007_parallel_jobs.py": (
         "72cd3aa7a862ea87f01d4e0ba09d23dc817008ac0382e111f0840a8fd556887e"
+    ),
+    # ClusterMAX scanner role (TS §3.8, §5.2; work/decisions.md 2026-11-23).
+    "db/migrations/versions/m0008_cluster_audit.py": (
+        "f35ba5724a126a1702eb1061e1075e8af794d43dce98a20a0c2c6e3f0773c41c"
     ),
 }
 PINS = {**FROZEN, **POST_M11_PINS}

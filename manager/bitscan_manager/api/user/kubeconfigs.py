@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from bitscan_manager.api.pagination import (
@@ -41,14 +41,14 @@ _BASE = (401, 403, 429, 503)
 NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 
 
-class Upload(BaseModel):
+class KubeconfigUpload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: StrictStr = Field(pattern=NAME_PATTERN)
     description: StrictStr = Field(default="", max_length=1000)
     content: StrictStr = Field(min_length=1, max_length=service.MAX_BYTES)
 
 
-class Replace(BaseModel):
+class KubeconfigReplace(BaseModel):
     model_config = ConfigDict(extra="forbid")
     description: StrictStr | None = Field(default=None, max_length=1000)
     content: StrictStr = Field(min_length=1, max_length=service.MAX_BYTES)
@@ -101,13 +101,14 @@ def list_kubeconfigs(
     principal: ADMIN,
     runtime: RUNTIME,
     page: Annotated[PageParams, Depends(page_params)],
-    include_deleted: Annotated[bool, Query()] = False,
 ) -> Page[KubeconfigItem]:
+    """Every kubeconfig, deleted ones included (deleted_at set), so old scans
+    can still name theirs."""
     after = None if page.cursor is None else decode_cursor(SCOPE, page.cursor)
     if after is not None and not isinstance(after, int):
         raise Problem(400, "invalid_request", "Invalid request: query.cursor")
     with _stores(runtime) as (repo, _):
-        rows = repo.page(page.limit + 1, after, include_deleted=include_deleted)
+        rows = repo.page(page.limit + 1, after)
     return page_of(
         [_item(r) for r in rows], page.limit, SCOPE, lambda k: k.kubeconfig_id
     )
@@ -126,7 +127,7 @@ def get_kubeconfig(
 
 @router.post("", status_code=201, responses=problem_responses((*_BASE, 409, 422)))
 def upload_kubeconfig(
-    body: Upload, principal: ADMIN_TOTP, runtime: RUNTIME
+    body: KubeconfigUpload, principal: ADMIN_TOTP, runtime: RUNTIME
 ) -> KubeconfigItem:
     checked = _checked(body.content)
     content_enc = runtime.totp_cipher.encrypt(body.content.encode("utf-8"))
@@ -155,7 +156,7 @@ def upload_kubeconfig(
 
 @router.put("/{kubeconfig_id}", responses=problem_responses((*_BASE, 404, 422)))
 def replace_kubeconfig(
-    kubeconfig_id: int, body: Replace, principal: ADMIN_TOTP, runtime: RUNTIME
+    kubeconfig_id: int, body: KubeconfigReplace, principal: ADMIN_TOTP, runtime: RUNTIME
 ) -> KubeconfigItem:
     checked = _checked(body.content)
     content_enc = runtime.totp_cipher.encrypt(body.content.encode("utf-8"))

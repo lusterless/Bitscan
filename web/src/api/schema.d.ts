@@ -513,7 +513,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Kubeconfigs */
+    /**
+     * List Kubeconfigs
+     * @description Every kubeconfig, deleted ones included (deleted_at set), so old scans
+     *     can still name theirs.
+     */
     get: operations["list_kubeconfigs_api_v1_kubeconfigs_get"];
     put?: never;
     /** Upload Kubeconfig */
@@ -1582,6 +1586,25 @@ export interface components {
       /** Server */
       server: string;
     };
+    /** KubeconfigReplace */
+    KubeconfigReplace: {
+      /** Content */
+      content: string;
+      /** Description */
+      description?: string | null;
+    };
+    /** KubeconfigUpload */
+    KubeconfigUpload: {
+      /** Content */
+      content: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** Name */
+      name: string;
+    };
     /** LoginRequest */
     LoginRequest: {
       /** Password */
@@ -2103,13 +2126,6 @@ export interface components {
       scan_id: string;
       /** Scan Policy Version */
       scan_policy_version: number;
-    };
-    /** Replace */
-    Replace: {
-      /** Content */
-      content: string;
-      /** Description */
-      description?: string | null;
     };
     /**
      * RequestItem
@@ -2716,18 +2732,6 @@ export interface components {
       current_password?: string | null;
       /** Totp Code */
       totp_code?: string | null;
-    };
-    /** Upload */
-    Upload: {
-      /** Content */
-      content: string;
-      /**
-       * Description
-       * @default
-       */
-      description: string;
-      /** Name */
-      name: string;
     };
     /** UserItem */
     UserItem: {
@@ -5005,7 +5009,6 @@ export interface operations {
   list_kubeconfigs_api_v1_kubeconfigs_get: {
     parameters: {
       query?: {
-        include_deleted?: boolean;
         limit?: number;
         cursor?: string | null;
       };
@@ -5080,7 +5083,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["Upload"];
+        "application/json": components["schemas"]["KubeconfigUpload"];
       };
     };
     responses: {
@@ -5245,7 +5248,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["Replace"];
+        "application/json": components["schemas"]["KubeconfigReplace"];
       };
     };
     responses: {

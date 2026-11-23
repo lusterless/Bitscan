@@ -223,12 +223,9 @@ def test_replace_and_delete(env: Env) -> None:
         ).status_code
         == 404
     )
-    listed = env.call("GET", tok, ROUTE).json()["items"]
-    assert kid not in [k["kubeconfig_id"] for k in listed]
-    listed = env.call("GET", tok, ROUTE, params={"include_deleted": "true"}).json()[
-        "items"
-    ]
-    assert kid in [k["kubeconfig_id"] for k in listed]
+    listed = env.call("GET", tok, ROUTE, params={"limit": 200}).json()["items"]
+    gone = [k for k in listed if k["kubeconfig_id"] == kid]
+    assert len(gone) == 1 and gone[0]["deleted_at"] is not None
     actions = audit_text(env)
     for action in ("kubeconfig.create", "kubeconfig.replace", "kubeconfig.delete"):
         assert action in actions

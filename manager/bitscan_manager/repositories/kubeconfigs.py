@@ -88,14 +88,11 @@ class KubeconfigRepo:
         ).fetchone()
         return None if row is None else KubeconfigRow(*row)
 
-    def page(
-        self, limit: int, after_id: int | None, *, include_deleted: bool
-    ) -> list[KubeconfigRow]:
+    def page(self, limit: int, after_id: int | None) -> list[KubeconfigRow]:
         rows = self._conn.execute(
             "SELECT kubeconfig_id, name, description, cluster_name, server, created_by,"
             " created_at, replaced_at, deleted_at FROM kubeconfig"
-            " WHERE kubeconfig_id > %s"
-            " AND (%s OR deleted_at IS NULL) ORDER BY kubeconfig_id LIMIT %s",
-            (after_id or 0, include_deleted, limit),
+            " WHERE kubeconfig_id > %s ORDER BY kubeconfig_id LIMIT %s",
+            (after_id or 0, limit),
         ).fetchall()
         return [KubeconfigRow(*r) for r in rows]

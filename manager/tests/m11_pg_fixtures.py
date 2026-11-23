@@ -1014,6 +1014,10 @@ RETENTION_TABLES = (
     "user_token",
     "audit_log",
     "package",
+    # TS §5.2 (owner decision 2026-11-23): the ClusterMAX job tables.
+    "kubeconfig_fetch",
+    "cluster_audit_run",
+    "scan_file",
 )
 
 
