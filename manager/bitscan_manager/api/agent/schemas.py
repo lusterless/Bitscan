@@ -312,13 +312,14 @@ class CmaxCheck(_Closed):
 
 class CmaxVars(_Closed):
     """TS §3.8: only the allow-listed variables, as a closed object (a job
-    holds no open object). The manager checks each value; the helper again."""
+    holds no open object), each present and null when unset (TS §6.5). The
+    manager checks each value; the helper again."""
 
-    CLUSTERMAX_K8S_GPU_DRA: StrictStr | None = None
-    CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS: StrictStr | None = None
-    CLUSTERMAX_K8S_GPU_DRA_DRIVER: StrictStr | None = None
-    CLUSTERMAX_AUDIT_K8S_NAMESPACE: StrictStr | None = None
-    CLUSTERMAX_AUDIT_TENANT_NAMESPACE: StrictStr | None = None
+    CLUSTERMAX_K8S_GPU_DRA: StrictStr | None
+    CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS: StrictStr | None
+    CLUSTERMAX_K8S_GPU_DRA_DRIVER: StrictStr | None
+    CLUSTERMAX_AUDIT_K8S_NAMESPACE: StrictStr | None
+    CLUSTERMAX_AUDIT_TENANT_NAMESPACE: StrictStr | None
 
 
 class CmaxJob(_Closed):

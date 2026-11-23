@@ -262,7 +262,7 @@ POST_M11_PINS = {
     # scan_job.cancel_reason and the max_parallel_jobs setting.
     "services/jobs/queue.py": (
         # ClusterMAX scans (TS §4.4; work/decisions.md 2026-11-23).
-        "a64e7b84b9b9ae628752fd933c5c1f893ba5791eb8cf9758e7d835d6a5ac7457"
+        "4a39de7d2a2ca019e40825df873dee0ef1a3fb78b7083d37edffdaf3c90632b1"
     ),
     "services/jobs/cmax.py": (
         "d9273c42e83f7c6f5c8d8da2639027ad86b68c18902076cc26ac4cce9591e19b"

@@ -9,6 +9,7 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,7 +71,98 @@ type Job struct {
 	Kind              JobKind      `json:"kind"`
 	PickupBy          Time         `json:"pickup_by"`
 	Plugins           []PluginSpec `json:"plugins" wire:"max=5000,only=compliance"`
-	RedactionPatterns []string     `json:"redaction_patterns" wire:"max=50,nul,only=compliance"`
+	Cmax              *CmaxJob     `json:"cmax" wire:"only=cluster_audit"`
+	RedactionPatterns []string     `json:"redaction_patterns" wire:"max=50,nul,only=compliance|cluster_audit"`
+}
+
+// MarshalJSON writes only the keys of the job's kind (TS §6.5), so a
+// compliance job carries no cmax key and an inventory job no plugins.
+func (j Job) MarshalJSON() ([]byte, error) {
+	type head struct {
+		JobID    UUID    `json:"job_id"`
+		AgentID  UUID    `json:"agent_id"`
+		Kind     JobKind `json:"kind"`
+		PickupBy Time    `json:"pickup_by"`
+	}
+	h := head{j.JobID, j.AgentID, j.Kind, j.PickupBy}
+	var v any
+	switch j.Kind {
+	case KindCompliance:
+		v = struct {
+			head
+			Plugins           []PluginSpec `json:"plugins"`
+			RedactionPatterns []string     `json:"redaction_patterns"`
+		}{h, j.Plugins, j.RedactionPatterns}
+	case KindClusterAudit:
+		v = struct {
+			head
+			Cmax              *CmaxJob `json:"cmax"`
+			RedactionPatterns []string `json:"redaction_patterns"`
+		}{h, j.Cmax, j.RedactionPatterns}
+	default:
+		v = h
+	}
+	return encodePlain(v)
+}
+
+// encodePlain is JSON without HTML escaping and without a trailing newline.
+func encodePlain(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, fmt.Errorf("wire: encode: %w", err)
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
+
+// CmaxJob is a cluster_audit job's fixed audit inputs (TS §3.8, §6.5; owner
+// decision 2026-11-23). Kubeconfig only says whether the job has one to fetch.
+type CmaxJob struct {
+	Target     string      `json:"target"`
+	Kubeconfig bool        `json:"kubeconfig"`
+	Vars       CmaxVars    `json:"vars"`
+	Checks     []CmaxCheck `json:"checks" wire:"min=1,max=5000"`
+}
+
+// CmaxVars holds only the TS §3.8 allow-listed variables (null when unset).
+// The manager checks each value; cmax-helper checks them again.
+type CmaxVars struct {
+	GPUDRA            *string `json:"CLUSTERMAX_K8S_GPU_DRA"`
+	GPUDRADeviceClass *string `json:"CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS"`
+	GPUDRADriver      *string `json:"CLUSTERMAX_K8S_GPU_DRA_DRIVER"`
+	AuditK8sNamespace *string `json:"CLUSTERMAX_AUDIT_K8S_NAMESPACE"`
+	TenantNamespace   *string `json:"CLUSTERMAX_AUDIT_TENANT_NAMESPACE"`
+}
+
+// Map is the set variables by name, for the helper request.
+func (v CmaxVars) Map() map[string]string {
+	out := map[string]string{}
+	for name, val := range map[string]*string{
+		"CLUSTERMAX_K8S_GPU_DRA":              v.GPUDRA,
+		"CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS": v.GPUDRADeviceClass,
+		"CLUSTERMAX_K8S_GPU_DRA_DRIVER":       v.GPUDRADriver,
+		"CLUSTERMAX_AUDIT_K8S_NAMESPACE":      v.AuditK8sNamespace,
+		"CLUSTERMAX_AUDIT_TENANT_NAMESPACE":   v.TenantNamespace,
+	} {
+		if val != nil {
+			out[name] = *val
+		}
+	}
+	return out
+}
+
+type CmaxCheck struct {
+	PluginUUID UUID   `json:"plugin_uuid"`
+	CheckID    string `json:"check_id" wire:"min=1,max=128"`
+}
+
+// CmaxRun goes once, in the final batch of a cluster_audit job (TS §6.5).
+type CmaxRun struct {
+	ExitCode   int64   `json:"exit_code" wire:"min=-2147483648,max=2147483647"`
+	ErrorLine  *string `json:"error_line" wire:"max=512"`
+	StartedAt  Time    `json:"started_at"`
+	FinishedAt Time    `json:"finished_at"`
 }
 
 type PluginSpec struct {
@@ -82,6 +174,22 @@ type PluginSpec struct {
 type ResultsRequest struct {
 	Results []ResultItem `json:"results" wire:"max=50"`
 	Final   bool         `json:"final"`
+	CmaxRun *CmaxRun     `json:"cmax_run" wire:"opt"`
+}
+
+// MarshalJSON leaves cmax_run out when it is nil: it goes only in the final
+// batch of a cluster_audit job, and a manager before 0.6.0 refuses the key
+// (TS §6.5, §8.7).
+func (r ResultsRequest) MarshalJSON() ([]byte, error) {
+	var v any = struct {
+		Results []ResultItem `json:"results"`
+		Final   bool         `json:"final"`
+	}{r.Results, r.Final}
+	if r.CmaxRun != nil {
+		type full ResultsRequest // no MarshalJSON method
+		v = full(r)
+	}
+	return encodePlain(v)
 }
 
 // ResultItem: stdout and stderr may hold U+0000 until M9 (TASK-048 plan).
@@ -243,16 +351,39 @@ func (h SHA256Hex) check() error      { return match(sha256Re, string(h)) }
 func (h HelperName) check() error     { return match(helperRe, string(h)) }
 func (a IPAddress) check() error      { return match(ipRe, string(a)) }
 func (s EnrolStatus) check() error    { return oneOf(string(s), "enrolled", "awaiting_approval") }
-func (k JobKind) check() error        { return oneOf(string(k), "inventory", "compliance") }
+func (k JobKind) check() error        { return oneOf(string(k), "inventory", "compliance", "cluster_audit") }
 func (e ResultError) check() error    { return oneOf(string(e), "spool_overflow", "runner_unavailable") }
 
 func (j Job) check() error {
-	if j.Kind == KindCompliance {
-		if len(j.Plugins) == 0 || j.RedactionPatterns == nil {
-			return errors.New("compliance job needs plugins (at least 1) and redaction_patterns")
+	switch j.Kind {
+	case KindCompliance:
+		if len(j.Plugins) == 0 || j.RedactionPatterns == nil || j.Cmax != nil {
+			return errors.New("compliance job needs plugins (at least 1) and redaction_patterns, and no cmax")
 		}
-	} else if j.Plugins != nil || j.RedactionPatterns != nil {
-		return errors.New("inventory job has no plugins or redaction_patterns")
+	case KindClusterAudit:
+		if j.Cmax == nil || j.RedactionPatterns == nil || j.Plugins != nil {
+			return errors.New("cluster_audit job needs cmax and redaction_patterns, and no plugins")
+		}
+	default:
+		if j.Plugins != nil || j.RedactionPatterns != nil || j.Cmax != nil {
+			return errors.New("inventory job has no plugins, cmax or redaction_patterns")
+		}
+	}
+	return nil
+}
+
+func (c CmaxJob) check() error {
+	if c.Kubeconfig && c.Target != "k8s" {
+		return errors.New("a kubeconfig needs target k8s")
+	}
+	return oneOf(c.Target, "auto", "standalone", "slurm", "k8s")
+}
+
+func (c CmaxCheck) check() error {
+	for _, r := range c.CheckID {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-') {
+			return errors.New("check_id: [A-Za-z0-9_.-] only")
+		}
 	}
 	return nil
 }
@@ -272,6 +403,7 @@ const (
 	StatusAwaitingApproval EnrolStatus = "awaiting_approval"
 	KindInventory          JobKind     = "inventory"
 	KindCompliance         JobKind     = "compliance"
+	KindClusterAudit       JobKind     = "cluster_audit"
 	ErrSpoolOverflow       ResultError = "spool_overflow"
 	ErrRunnerUnavailable   ResultError = "runner_unavailable"
 )

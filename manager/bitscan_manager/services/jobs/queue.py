@@ -233,7 +233,9 @@ def queue_cluster_scan(
     job_payload = {
         "target": options.target,
         "kubeconfig": options.kubeconfig_id is not None,
-        "vars": dict(options.vars),
+        # Every allow-listed name, null when unset (TS §6.5: nullable keys
+        # are present).
+        "vars": {name: options.vars.get(name) for name in cmax.ALLOWED_VARS},
         "checks": [
             {"plugin_uuid": str(c.plugin_uuid), "check_id": c.check_id} for c in checks
         ],

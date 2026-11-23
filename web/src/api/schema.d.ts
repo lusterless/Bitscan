@@ -1295,19 +1295,20 @@ export interface components {
     /**
      * CmaxVars
      * @description TS §3.8: only the allow-listed variables, as a closed object (a job
-     *     holds no open object). The manager checks each value; the helper again.
+     *     holds no open object), each present and null when unset (TS §6.5). The
+     *     manager checks each value; the helper again.
      */
     CmaxVars: {
       /** Clustermax Audit K8S Namespace */
-      CLUSTERMAX_AUDIT_K8S_NAMESPACE?: string | null;
+      CLUSTERMAX_AUDIT_K8S_NAMESPACE: string | null;
       /** Clustermax Audit Tenant Namespace */
-      CLUSTERMAX_AUDIT_TENANT_NAMESPACE?: string | null;
+      CLUSTERMAX_AUDIT_TENANT_NAMESPACE: string | null;
       /** Clustermax K8S Gpu Dra */
-      CLUSTERMAX_K8S_GPU_DRA?: string | null;
+      CLUSTERMAX_K8S_GPU_DRA: string | null;
       /** Clustermax K8S Gpu Dra Device Class */
-      CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS?: string | null;
+      CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS: string | null;
       /** Clustermax K8S Gpu Dra Driver */
-      CLUSTERMAX_K8S_GPU_DRA_DRIVER?: string | null;
+      CLUSTERMAX_K8S_GPU_DRA_DRIVER: string | null;
     };
     /** ComplianceJob */
     ComplianceJob: {

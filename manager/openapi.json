@@ -702,7 +702,7 @@
       },
       "CmaxVars": {
         "additionalProperties": false,
-        "description": "TS §3.8: only the allow-listed variables, as a closed object (a job\nholds no open object). The manager checks each value; the helper again.",
+        "description": "TS §3.8: only the allow-listed variables, as a closed object (a job\nholds no open object), each present and null when unset (TS §6.5). The\nmanager checks each value; the helper again.",
         "properties": {
           "CLUSTERMAX_AUDIT_K8S_NAMESPACE": {
             "anyOf": [
@@ -760,6 +760,13 @@
             "title": "Clustermax K8S Gpu Dra Driver"
           }
         },
+        "required": [
+          "CLUSTERMAX_K8S_GPU_DRA",
+          "CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS",
+          "CLUSTERMAX_K8S_GPU_DRA_DRIVER",
+          "CLUSTERMAX_AUDIT_K8S_NAMESPACE",
+          "CLUSTERMAX_AUDIT_TENANT_NAMESPACE"
+        ],
         "title": "CmaxVars",
         "type": "object"
       },

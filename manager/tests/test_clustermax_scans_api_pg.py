@@ -126,7 +126,14 @@ def test_admin_queues_one_cluster_audit_job_per_scanner(
     assert (
         payload["cmax"]["target"] == "slurm" and payload["cmax"]["kubeconfig"] is False
     )
-    assert payload["cmax"]["vars"] == {"CLUSTERMAX_K8S_GPU_DRA": "1"}
+    # TS §6.5: every allow-listed name is present, null when unset.
+    assert payload["cmax"]["vars"] == {
+        "CLUSTERMAX_K8S_GPU_DRA": "1",
+        "CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS": None,
+        "CLUSTERMAX_K8S_GPU_DRA_DRIVER": None,
+        "CLUSTERMAX_AUDIT_K8S_NAMESPACE": None,
+        "CLUSTERMAX_AUDIT_TENANT_NAMESPACE": None,
+    }
     assert [c["check_id"] for c in payload["cmax"]["checks"]] == CHECKS
     assert "execute" not in str(payload) and "plugins" not in payload
     assert len(jobs[0][3]["plugins"]) == len(CHECKS)  # graded on the manager only

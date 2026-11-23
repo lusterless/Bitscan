@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -105,7 +106,7 @@ func checkShape(raw []byte, t reflect.Type, path string) error {
 			fr := parseRule(f.Tag.Get("wire"))
 			only := fr.only
 			val, present := obj[name]
-			wanted := only == "" || only == kind
+			wanted := only == "" || slices.Contains(strings.Split(only, "|"), kind)
 			switch {
 			case present && !wanted:
 				return fmt.Errorf("wire: %s.%s: key not allowed here", path, name)
