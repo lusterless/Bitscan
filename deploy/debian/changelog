@@ -1,3 +1,24 @@
+bitscan-agent (0.6.0-1) unstable; urgency=medium
+
+  * Release 0.6.0 of the Bitscan agent, with manager 0.6.0: the ClusterMAX
+    scanner role (TS 3.8).
+  * The agent runs cluster_audit jobs, one at a time: it fetches the job's
+    kubeconfig once into a sealed memory file, asks cmax-helper for one
+    "cmax audit -vvv -y" with the chosen target and allow-listed variables,
+    reads each check from the redacted report, sends the run summary with
+    the final batch, and uploads the redacted report.txt, run.log,
+    audit.out and audit.values.json. The agent process is non-dumpable.
+  * cmax-helper accepts only the bitscan user, one JSON request with at
+    most one sealed memfd, refuses any other variable, answers BUSY while
+    an audit runs and stops an audit after 4 hours. Its socket is
+    root:bitscan; its unit sets MemorySwapMax=0 and LimitCORE=0.
+  * cmax-trigger and the wait plugins are removed. The heartbeat reports
+    "scanner" instead of "cmax".
+  * Supported with manager 0.6.0 and manager 0.5.7. Manager 0.6.0 supports
+    agents 0.6.0-1 and 0.5.7-1; only 0.6.0-1 hosts can be scanners.
+
+ -- Bitdeer-Security <kaiquan.koh@bitdeer.com>  Tue, 24 Nov 2026 00:00:00 +0000
+
 bitscan-agent (0.5.7-1) unstable; urgency=medium
 
   * Release 0.5.7 of the Bitscan agent, with manager 0.5.7 (its code is
