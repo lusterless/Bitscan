@@ -407,3 +407,21 @@ def test_helper_refuses_to_start_outside_systemd(
 def test_main_usage() -> None:
     assert helper_mod.main([]) == 2
     assert helper_mod.main(["collect"]) == 2
+
+
+def test_helper_runs_on_python_3_10() -> None:
+    """The agent package depends on python3 (>= 3.10), Ubuntu 22.04's version:
+    no 3.11+ syntax or names (datetime.UTC crashed the helper on 22.04)."""
+    import ast
+
+    source = (HERE.parent / "src" / "cmax_helper.py").read_text()
+    ast.parse(source, feature_version=(3, 10))
+    for name in (
+        "datetime.UTC",
+        "import UTC",
+        "tomllib",
+        "StrEnum",
+        "typing.Self",
+        "ExceptionGroup",
+    ):
+        assert name not in source, name

@@ -35,7 +35,6 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 CMAX = "/usr/lib/clustermax/bin/cmax"
 WORK_DIR = "/run/cmax-work"
@@ -195,7 +194,7 @@ def check_memfd(fd: int) -> None:
 
 
 def _now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _find(work_dir: str, name: str) -> str | None:
