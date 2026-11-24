@@ -33,7 +33,8 @@ _JOB: Final = sql.SQL(
     " a.status = 'decommissioned' FROM scan_job j"
     " JOIN scan s ON s.scan_id = j.scan_id JOIN policy p ON p.policy_id = s.policy_id"
     " JOIN agent a ON a.agent_id = j.agent_id"
-    " WHERE j.job_id = %s AND j.kind = 'compliance' FOR UPDATE OF j SKIP LOCKED"
+    " WHERE j.job_id = %s AND j.kind IN ('compliance', 'cluster_audit') FOR UPDATE"
+    " OF j SKIP LOCKED"
 )
 
 
@@ -63,7 +64,7 @@ def past_deadline(conn: Conn, now: datetime, limit: int = 1000) -> list[UUID]:
     """Compliance jobs dispatched or running whose deadline is strictly past
     (#127 (b)); no lock, the caller locks each with lock_for_sweep."""
     rows = conn.execute(
-        "SELECT job_id FROM scan_job WHERE kind = 'compliance'"
+        "SELECT job_id FROM scan_job WHERE kind IN ('compliance', 'cluster_audit')"
         " AND state IN ('dispatched', 'running') AND deadline_at < %s"
         " ORDER BY deadline_at, job_id LIMIT %s",
         (now, limit),
@@ -77,7 +78,7 @@ def never_started(
     """Compliance jobs dispatched strictly more than `after` ago that never
     started (TS §4.4 L575: 24 h); no lock."""
     rows = conn.execute(
-        "SELECT job_id FROM scan_job WHERE kind = 'compliance'"
+        "SELECT job_id FROM scan_job WHERE kind IN ('compliance', 'cluster_audit')"
         " AND state = 'dispatched' AND started_at IS NULL AND dispatched_at < %s"
         " ORDER BY dispatched_at, job_id LIMIT %s",
         (now - after, limit),
@@ -145,7 +146,7 @@ def end_job(conn: Conn, job_id: UUID, state: str, now: datetime) -> bool:
         raise ValueError("unsupported job ending")
     cur = conn.execute(
         "UPDATE scan_job SET state = CAST(%s AS scan_state), finished_at = %s"
-        " WHERE job_id = %s AND kind = 'compliance'"
+        " WHERE job_id = %s AND kind IN ('compliance', 'cluster_audit')"
         " AND state IN ('dispatched', 'running')",
         (state, now, job_id),
     )

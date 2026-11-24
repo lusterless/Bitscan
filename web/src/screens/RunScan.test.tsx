@@ -56,9 +56,14 @@ function server(post: Handler, policies = [policy(7), policy(8)]): void {
   });
 }
 
-async function mount(policyId: string | null = null) {
+async function mount(
+  policyId: string | null = null,
+  role: "operator" | "admin" = "operator",
+) {
   const links = mockLinks();
-  const view = render(<RunScan policyId={policyId} links={links} />);
+  const view = render(
+    <RunScan policyId={policyId} role={role} links={links} />,
+  );
   await settle();
   return { view, links };
 }
@@ -375,5 +380,111 @@ describe("CHK-M11-272 the Run scan screen", () => {
     });
     expect(view.container.textContent).toContain(SCRIPT);
     expect(noInjectedMarkup(view.container)).toEqual({ scripts: 0, imgs: 0 });
+  });
+});
+
+// TS §3.8, §4.4 (owner decision 2026-11-23): a ClusterMAX profile adds the
+// target, kubeconfig and allow-listed variables; only an admin may run one.
+describe("ClusterMAX profiles", () => {
+  const KUBECONFIGS = "/api/v1/kubeconfigs";
+  const kubeconfig = (id: number, deleted: string | null = null) => ({
+    kubeconfig_id: id,
+    name: "cluster-" + String(id),
+    description: "",
+    cluster_name: "c",
+    server: "https://k:6443",
+    created_at: "2026-11-23T00:00:00Z",
+    created_by: 1,
+    replaced_at: null,
+    deleted_at: deleted,
+  });
+  const cmaxPolicies = [
+    policy(7),
+    policy(9, { family_name: "Clustermax", policy_name: "ClusterMAX" }),
+  ];
+
+  function cmaxServer(): void {
+    answer((call) => {
+      if (call.path === POLICIES)
+        return json(200, { items: cmaxPolicies, next_cursor: null });
+      if (call.path === KUBECONFIGS)
+        return json(200, {
+          items: [kubeconfig(3), kubeconfig(4, "2026-11-23T01:00:00Z")],
+          next_cursor: null,
+        });
+      if (call.path === SCANS && call.method === "POST") return accepted();
+      return json(599, { type: "unexpected" });
+    });
+  }
+
+  function set(name: string, value: string): void {
+    fireEvent.change(screen.getByLabelText(name), { target: { value } });
+  }
+
+  it("sends the target and the set variables, leaving blank ones out", async () => {
+    cmaxServer();
+    await mount(null, "admin");
+    choose("9");
+    set("Target", "slurm");
+    set("CLUSTERMAX_K8S_GPU_DRA", "1");
+    set("CLUSTERMAX_AUDIT_K8S_NAMESPACE", "  audit  ");
+    fireEvent.click(submitButton());
+    await settle();
+    expect(JSON.parse(at(posts(), 0).body)).toEqual({
+      policy_id: 9,
+      target: { all: true },
+      cmax: {
+        target: "slurm",
+        vars: {
+          CLUSTERMAX_K8S_GPU_DRA: "1",
+          CLUSTERMAX_AUDIT_K8S_NAMESPACE: "audit",
+        },
+      },
+    });
+  });
+
+  it("a kubeconfig forces target k8s and offers only kubeconfigs not deleted", async () => {
+    cmaxServer();
+    await mount(null, "admin");
+    choose("9");
+    const options = Array.from(
+      (screen.getByLabelText("Kubeconfig") as HTMLSelectElement).options,
+    ).map((o) => o.textContent);
+    expect(options).toEqual(["None", "cluster-3"]);
+    set("Kubeconfig", "3");
+    expect(
+      (screen.getByLabelText("Target") as HTMLSelectElement).disabled,
+    ).toBe(true);
+    fireEvent.click(submitButton());
+    await settle();
+    expect(JSON.parse(at(posts(), 0).body).cmax).toEqual({
+      target: "k8s",
+      kubeconfig_id: 3,
+      vars: {},
+    });
+  });
+
+  it("an operator cannot run it and never lists kubeconfigs", async () => {
+    cmaxServer();
+    await mount(null, "operator");
+    choose("9");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Only an admin can run a ClusterMAX scan.",
+    );
+    expect(submitButton().disabled).toBe(true);
+    expect(callsTo(KUBECONFIGS)).toHaveLength(0);
+  });
+
+  it("another profile sends no cmax object", async () => {
+    cmaxServer();
+    await mount(null, "admin");
+    choose("7");
+    expect(screen.queryByRole("group", { name: "ClusterMAX" })).toBeNull();
+    fireEvent.click(submitButton());
+    await settle();
+    expect(JSON.parse(at(posts(), 0).body)).toEqual({
+      policy_id: 7,
+      target: { all: true },
+    });
   });
 });

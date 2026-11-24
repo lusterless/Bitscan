@@ -189,7 +189,20 @@ def kind_value(schema: dict[str, Any], variant: dict[str, Any]) -> str:
 def test_job_variants_exact() -> None:
     schema = schemas.JobsResponse.model_json_schema(mode="serialization")
     variants = {kind_value(schema, v): v for v in job_variants(schema)}
-    assert set(variants) == {"inventory", "compliance"}
+    # TS §3.8, §6.5 (owner decision 2026-11-23): the cluster_audit variant.
+    assert set(variants) == {"inventory", "compliance", "cluster_audit"}
+    cluster = variants["cluster_audit"]
+    assert set(cluster["properties"]) == {
+        "job_id",
+        "agent_id",
+        "kind",
+        "pickup_by",
+        "cmax",
+        "redaction_patterns",
+    }
+    cmax = resolve(schema, cluster["properties"]["cmax"])
+    assert set(cmax["properties"]) == {"target", "kubeconfig", "vars", "checks"}
+    assert "execute" not in json.dumps(cmax) and "plugins" not in cluster["properties"]
     base = {"job_id", "agent_id", "kind", "pickup_by"}
     inv, comp = variants["inventory"], variants["compliance"]
     assert set(inv["properties"]) == base
@@ -233,7 +246,9 @@ def test_heartbeat_response_exact() -> None:
 
 def test_results_contract_exact() -> None:
     schema = schemas.ResultsRequest.model_json_schema(mode="validation")
-    assert set(schema["properties"]) == {"results", "final"}
+    # TS §6.5 (owner decision 2026-11-23): cmax_run, once, for cluster_audit.
+    assert set(schema["properties"]) == {"results", "final", "cmax_run"}
+    assert "cmax_run" not in schema.get("required", [])
     results = resolve(schema, schema["properties"]["results"])
     assert results.get("maxItems") == 50
     item = resolve(schema, results["items"])

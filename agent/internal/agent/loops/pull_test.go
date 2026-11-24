@@ -750,13 +750,17 @@ func TestNoOtherJobSourceStatic(t *testing.T) {
 			}
 		}
 		if m := unixRe.FindAllString(src, -1); len(m) > 0 {
-			if pkg == "runnerclient" {
+			// cmaxclient reaches cmax-helper's socket only (TS §3.8, owner
+			// decision 2026-11-23); it never names runner.sock.
+			switch {
+			case pkg == "cmaxclient" && !strings.Contains(src, "runner.sock"):
+			case pkg == "runnerclient":
 				runnerSites += len(m)
-			} else {
+			default:
 				t.Errorf("%s reaches the runner socket or AF_UNIX (%v): only internal/agent/runnerclient may", p, m)
 			}
 		}
-		if m := dialRe.FindAllString(src, -1); len(m) > 0 && pkg != "runnerclient" && pkg != "transport" {
+		if m := dialRe.FindAllString(src, -1); len(m) > 0 && pkg != "runnerclient" && pkg != "transport" && pkg != "cmaxclient" {
 			t.Errorf("%s opens a socket (%v): only runnerclient and transport may", p, m)
 		}
 		if m := listenRe.FindAllString(src, -1); len(m) > 0 {

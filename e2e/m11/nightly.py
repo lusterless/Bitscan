@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import hashlib
 import http.client
 import io
@@ -76,7 +77,13 @@ EXPECTED: list[tuple[str, str]] = (
     + [("CHK-M11-300", "manager"), ("CHK-M11-301", "manager")]
     + [("CHK-M11-301", h) for h in GUESTS] + [("CHK-M11-302", h) for h in GUESTS]
     + [("CHK-M11-302", "csv"), ("CHK-M11-302", "viewer"), ("CHK-M11-303", "all")]
+    # 0.6.0 (TS §3.8; owner decision 2026-11-23): a real ClusterMAX standalone
+    # audit through the scanner role on the 24.04 guest.
+    + [("CHK-M11-310", "u2404"), ("CHK-M11-311", "u2404"), ("CHK-M11-312", "u2404")]
 )
+CMAX_GUEST = "u2404"
+CMAX_BIT = "bits/samples/clustermax-0.3.0.bit"
+CMAX_FILES = ("report.txt", "run.log")  # always; audit.out and audit.values.json when ClusterMAX wrote them
 
 ROWS: list[dict] = []
 SECRETS: list[str] = []
@@ -386,6 +393,84 @@ def scan(api: Api, pid: int, aids: dict[str, str]) -> str:
     return sid
 
 
+def import_bit(api: Api, path: Path) -> int:
+    """One .bit by upload; its policy id, or 0."""
+    data = path.read_bytes()
+    boundary = "m11n-" + secrets.token_hex(12)
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{path.name}\"\r\n"
+            "Content-Type: application/xml\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    st, _, out = api.raw("POST", f"{V1}/policies/import", body, headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        res = json.loads(out)
+    except ValueError:
+        return 0
+    return int(res.get("policy_id") or 0) if st == 200 and isinstance(res, dict) and res.get("outcome") == "success" else 0
+
+
+def clustermax(api: Api, tree: Path, aid: str, viewer: str) -> None:
+    """TS §3.8, §4.4: the guest reports the scanner role; an admin ClusterMAX scan
+    (target standalone) runs one real audit there; the scan shows the verdict and
+    counts, every check has a result, and the redacted files download (operators
+    and admins only)."""
+    h = CMAX_GUEST
+
+    def helpers() -> list[str] | None:
+        st, body = api.json("GET", f"{V1}/agents/{aid}")
+        got = body.get("runner_helpers") if st == 200 and isinstance(body, dict) else None
+        return got if isinstance(got, list) and "scanner" in got else None
+
+    got = wait(helpers, 420, 15)
+    pid = import_bit(api, tree / CMAX_BIT)
+    st, body = (api.json("POST", f"{V1}/scans", {"policy_id": pid, "target": {"agents": [aid]}, "cmax": {"target": "standalone"}},
+                         headers={"Idempotency-Key": str(uuid.uuid4())}) if pid and got else (0, None))
+    sid = str((body or {}).get("scan_id", "")) if isinstance(body, dict) else ""
+    if not row("CHK-M11-310", h, "the scanner role is reported; a ClusterMAX profile imported; an admin ClusterMAX scan queued",
+               bool(got) and bool(pid) and st == 202 and bool(sid),
+               f"runner_helpers {got}; policy {pid}; POST /scans {st} {json.dumps(body)[:200] if isinstance(body, dict) else body}"):
+        notrun("CHK-M11-311", h, "ClusterMAX verdict", "no ClusterMAX scan (CHK-M11-310)")
+        notrun("CHK-M11-312", h, "ClusterMAX files", "no ClusterMAX scan (CHK-M11-310)")
+        return
+
+    def finished() -> dict | None:
+        s2, d = api.json("GET", f"{V1}/scans/{sid}")
+        return d if s2 == 200 and isinstance(d, dict) and d.get("finished_at") else None
+
+    det = wait(finished, 1800, 20) or {}
+    x = next(iter(det.get("hosts", [])), {})
+    cm = x.get("clustermax") or {}
+    items: list[dict] = []
+    cur = None
+    while True:
+        pst, page = api.json("GET", f"{V1}/scans/{sid}/results?limit=500" + (f"&cursor={cur}" if cur else ""))
+        if pst != 200 or not isinstance(page, dict):
+            break
+        items += page.get("items", [])
+        cur = page.get("next_cursor")
+        if not cur:
+            break
+    status = next((i for i in items if " - status - " in str(i.get("plugin_name"))), {})
+    missing = [i.get("plugin_name") for i in items if str(i.get("stdout", "")).startswith("MISSING")]
+    ok = (det.get("state") == "completed" and cm.get("verdict") in ("pass", "fail") and cm.get("exit_code") == 0
+          and len(items) == 83 and all(i.get("result") is not None for i in items)
+          and str(status.get("stdout", "")).startswith("ok ") and str(status.get("stdout", "")).endswith(" 0.3.0"))
+    row("CHK-M11-311", h, "the ClusterMAX scan completed: exit 0, a pass or fail verdict with counts, a result for each of the 83 plugins",
+        ok, f"scan {det.get('state')}; clustermax {json.dumps(cm)}; {len(items)} results; status {str(status.get('stdout'))[:60]!r}; "
+            f"MISSING {missing[:5]}")
+    fst, files = api.json("GET", f"{V1}/scans/{sid}/files")
+    names = [f.get("name") for f in (files or {}).get("items", [])] if isinstance(files, dict) else []
+    job = next(iter((files or {}).get("items", [])), {}).get("job_id", "") if isinstance(files, dict) else ""
+    dst, dh, raw = api.raw("GET", f"{V1}/scans/{sid}/jobs/{job}/files/report.txt") if job else (0, {}, b"")
+    try:
+        report = gzip.decompress(raw).decode("utf-8", errors="replace") if dst == 200 else ""
+    except OSError:
+        report = ""
+    vst, _ = api.json("GET", f"{V1}/scans/{sid}/files", token=viewer)
+    ok = (fst == 200 and all(n in names for n in CMAX_FILES) and set(names) <= {*CMAX_FILES, "audit.out", "audit.values.json"}
+          and dst == 200 and "# ClusterMAX audit report" in report and vst == 403)
+    row("CHK-M11-312", h, "the redacted ClusterMAX files list and download (gzip) for an admin; a viewer is refused",
+        ok, f"GET files {fst}: {names}; report.txt {dst} {dh.get('content-disposition')} {len(report)} chars; viewer {vst}")
+
+
 def runner_done(h: str) -> int:
     """The runner's own count of finished plugins on the guest (its line holds ids, exit code and
     duration, never output)."""
@@ -563,6 +648,11 @@ def main() -> int:
             notrun("CHK-M11-302", "viewer", "viewer results", "no scan")
         else:
             results(api, sid, aids, tok.get("viewer", ""))
+        if aids.get(CMAX_GUEST):
+            clustermax(api, a.tree, aids[CMAX_GUEST], tok.get("viewer", ""))
+        else:
+            for c in ("CHK-M11-310", "CHK-M11-311", "CHK-M11-312"):
+                notrun(c, CMAX_GUEST, "ClusterMAX", f"guest {CMAX_GUEST} not enrolled (CHK-M11-296..299)")
         sweep(a)
     except Exception as exc:  # recorded, then the run fails
         row("CHK-M11-294", "harness", "no harness exception", False, f"{type(exc).__name__}: {exc}")

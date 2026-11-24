@@ -6,7 +6,8 @@ go 1.27.2
 // is imported only by _test.go files (the TP-M4-01 contract test), so it and
 // golang.org/x/text are never linked into a shipped binary.
 // PD-41 (a): golang.org/x/sys is pinned here and in go.sum, for the Linux
-// calls of internal/runner, internal/sdsock and internal/capread only.
+// calls of internal/runner, internal/sdsock and internal/capread, and (TS
+// §3.8, 0.6.0) the sealed kubeconfig memfd of internal/agent/cmaxclient.
 require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	go.yaml.in/yaml/v3 v3.0.5

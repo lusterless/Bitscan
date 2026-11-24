@@ -34,6 +34,7 @@ APP_UPDATE = frozenset(
         "app_user",
         "user_token",
         "task",
+        "kubeconfig",  # replace and soft delete (TS §5.2, owner decision 2026-11-23)
     }
 )
 APP_UPDATE_COLUMNS = {
@@ -56,6 +57,9 @@ RETENTION_DELETE = frozenset(
         "user_token",
         "audit_log",
         "package",
+        "kubeconfig_fetch",
+        "cluster_audit_run",
+        "scan_file",
     }
 )
 NEVER_APP_WRITE = (

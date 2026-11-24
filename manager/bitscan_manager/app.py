@@ -43,6 +43,10 @@ BODY_CAP_CLASSES: Final[Mapping[str, int]] = {
     # the body may add a 64 KiB multipart envelope (#99 (a)).
     "bit": 5 * MIB + 64 * 1024,
     "inventory": 10 * MIB,
+    # TS §6.2: a kubeconfig is at most 1 MiB; JSON escaping may grow it.
+    "kubeconfig": 2 * MIB,
+    # TS §3.8, §6.1: one ClusterMAX file, gzip as sent.
+    "scan_file": 32 * MIB,
 }
 
 
@@ -84,6 +88,21 @@ ROUTE_BODY_CAPS: list[RouteCap] = [
         "bit",
         BODY_CAP_CLASSES["bit"],
         after_auth=True,
+    ),
+    # TS §3.8, §6.1 (owner decision 2026-11-23): one ClusterMAX file, read by
+    # the route after its token check.
+    RouteCap(
+        "/api/v1/agent/{id}/jobs/{job_id}/files/{name}",
+        "scan_file",
+        BODY_CAP_CLASSES["scan_file"],
+        after_auth=True,
+    ),
+    # TS §6.2 (owner decision 2026-11-23): one kubeconfig upload or replacement.
+    RouteCap("/api/v1/kubeconfigs", "kubeconfig", BODY_CAP_CLASSES["kubeconfig"]),
+    RouteCap(
+        "/api/v1/kubeconfigs/{kubeconfig_id}",
+        "kubeconfig",
+        BODY_CAP_CLASSES["kubeconfig"],
     ),
 ]
 

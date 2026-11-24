@@ -38,11 +38,29 @@ _LABELS: Final = {0: "PASS", 1: "FAIL", 2: "ERROR"}  # scan_result.eval_code
 _ENDED: Final = frozenset({"completed", "partial", "failed"})  # #127 (c)
 
 
+class IntakeRun(Protocol):  # api.agent.schemas.CmaxRun
+    @property
+    def exit_code(self) -> int: ...
+    @property
+    def error_line(self) -> str | None: ...
+    @property
+    def started_at(self) -> datetime: ...
+    @property
+    def finished_at(self) -> datetime: ...
+
+
 class IntakeBatch(Protocol):  # api.agent.schemas.ResultsRequest
     @property
     def results(self) -> Sequence[IntakeItem]: ...
     @property
     def final(self) -> bool: ...
+    @property
+    def cmax_run(self) -> IntakeRun | None: ...
+
+
+# TS §3.8: the helper stops the audit after 4 h; the job deadline is start +
+# 4 h 10 min (deadline_at adds the 10 minutes).
+CLUSTER_AUDIT_SECONDS: Final = 4 * 3600
 
 
 @dataclass(frozen=True)
@@ -83,7 +101,7 @@ def _intake(
     if job is None or job.agent_id != agent_id:
         raise _not_acceptable()
     if not states.accepts_results(job.kind, job.state, job.dispatched_at, now):
-        own = job.kind == "compliance" and job.state == "cancelled"
+        own = job.kind in states.JOB_KINDS and job.state == "cancelled"
         raise _not_acceptable(own)
     try:
         spec = parse_eval_spec(job.eval_spec)
@@ -92,8 +110,19 @@ def _intake(
             "result batch refused: eval_spec unreadable (%s)", type(exc).__name__
         )
         raise _Refusal(Refused("eval_spec_invalid", False)) from None
-    items = job.payload["plugins"]
-    commands = {UUID(p["plugin_uuid"]): str(p["execute"]) for p in items}
+    cluster = job.kind == "cluster_audit"
+    if cluster:  # TS §3.8: the plugins name the checks; nothing was run as typed
+        checks = job.payload["cmax"]["checks"]
+        commands = {
+            UUID(c["plugin_uuid"]): f"cmax-check {c['check_id']}" for c in checks
+        }
+    else:
+        items = job.payload["plugins"]
+        commands = {UUID(p["plugin_uuid"]): str(p["execute"]) for p in items}
+    if batch.cmax_run is not None:
+        if not cluster:
+            raise _not_acceptable()
+        job_intake.insert_cluster_run(conn, job.job_id, batch.cmax_run, now)
     unit = [(job.job_id, job.created_at)]
     other = job_intake.sibling(conn, job)
     if other is not None:
@@ -114,7 +143,11 @@ def _intake(
     state = job.state
     if outcome.start:
         parallel = read_settings(SettingsRepo(conn)).max_parallel_plugins
-        timeouts = [int(p["timeout_s"]) for p in items]
+        timeouts = (
+            [CLUSTER_AUDIT_SECONDS * parallel]
+            if cluster
+            else [int(p["timeout_s"]) for p in items]
+        )
         if job_intake.start(
             conn, job.job_id, now, states.deadline_at(now, timeouts, parallel)
         ):

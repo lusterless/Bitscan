@@ -495,6 +495,325 @@
         "title": "AuditItem",
         "type": "object"
       },
+      "ClusterAuditJob": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "cmax": {
+            "$ref": "#/components/schemas/CmaxJob"
+          },
+          "job_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "cluster_audit",
+            "title": "Kind",
+            "type": "string"
+          },
+          "pickup_by": {
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])[Tt]([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,9})?([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$",
+            "title": "Pickup By",
+            "type": "string"
+          },
+          "redaction_patterns": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Redaction Patterns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job_id",
+          "agent_id",
+          "kind",
+          "pickup_by",
+          "cmax",
+          "redaction_patterns"
+        ],
+        "title": "ClusterAuditJob",
+        "type": "object"
+      },
+      "ClusterMaxVerdict": {
+        "description": "TS §3.8: a ClusterMAX scan's run on this scanner; counts of the\nClusterMAX verdict words (n/a = SKIPPED). No raw output.",
+        "properties": {
+          "exit_code": {
+            "title": "Exit Code",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "not_applicable": {
+            "title": "Not Applicable",
+            "type": "integer"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "fail",
+              "error"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "warning": {
+            "title": "Warning",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "verdict",
+          "exit_code",
+          "passed",
+          "failed",
+          "warning",
+          "not_applicable"
+        ],
+        "title": "ClusterMaxVerdict",
+        "type": "object"
+      },
+      "CmaxCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "check_id": {
+            "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+            "title": "Check Id",
+            "type": "string"
+          },
+          "plugin_uuid": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "title": "Plugin Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_uuid",
+          "check_id"
+        ],
+        "title": "CmaxCheck",
+        "type": "object"
+      },
+      "CmaxJob": {
+        "additionalProperties": false,
+        "description": "TS §3.8, §6.5 (owner decision 2026-11-23): the fixed audit's inputs.\n`kubeconfig` only says whether the job has one to fetch.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CmaxCheck"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Checks",
+            "type": "array"
+          },
+          "kubeconfig": {
+            "title": "Kubeconfig",
+            "type": "boolean"
+          },
+          "target": {
+            "enum": [
+              "auto",
+              "standalone",
+              "slurm",
+              "k8s"
+            ],
+            "title": "Target",
+            "type": "string"
+          },
+          "vars": {
+            "$ref": "#/components/schemas/CmaxVars"
+          }
+        },
+        "required": [
+          "target",
+          "kubeconfig",
+          "vars",
+          "checks"
+        ],
+        "title": "CmaxJob",
+        "type": "object"
+      },
+      "CmaxOptions": {
+        "additionalProperties": false,
+        "description": "TS §4.4 (owner decision 2026-11-23): the choices of a ClusterMAX scan.\nThe values are checked by services.jobs.cmax.",
+        "properties": {
+          "kubeconfig_id": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kubeconfig Id"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "standalone",
+                  "slurm",
+                  "k8s"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "vars": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "maxProperties": 16,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vars"
+          }
+        },
+        "title": "CmaxOptions",
+        "type": "object"
+      },
+      "CmaxRun": {
+        "additionalProperties": false,
+        "description": "TS §6.5: once, in the final batch of a cluster_audit job.",
+        "properties": {
+          "error_line": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Line"
+          },
+          "exit_code": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "title": "Exit Code",
+            "type": "integer"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])[Tt]([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,9})?([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$",
+            "title": "Finished At",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])[Tt]([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,9})?([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "exit_code",
+          "error_line",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "CmaxRun",
+        "type": "object"
+      },
+      "CmaxVars": {
+        "additionalProperties": false,
+        "description": "TS §3.8: only the allow-listed variables, as a closed object (a job\nholds no open object), each present and null when unset (TS §6.5). The\nmanager checks each value; the helper again.",
+        "properties": {
+          "CLUSTERMAX_AUDIT_K8S_NAMESPACE": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clustermax Audit K8S Namespace"
+          },
+          "CLUSTERMAX_AUDIT_TENANT_NAMESPACE": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clustermax Audit Tenant Namespace"
+          },
+          "CLUSTERMAX_K8S_GPU_DRA": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clustermax K8S Gpu Dra"
+          },
+          "CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clustermax K8S Gpu Dra Device Class"
+          },
+          "CLUSTERMAX_K8S_GPU_DRA_DRIVER": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clustermax K8S Gpu Dra Driver"
+          }
+        },
+        "required": [
+          "CLUSTERMAX_K8S_GPU_DRA",
+          "CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS",
+          "CLUSTERMAX_K8S_GPU_DRA_DRIVER",
+          "CLUSTERMAX_AUDIT_K8S_NAMESPACE",
+          "CLUSTERMAX_AUDIT_TENANT_NAMESPACE"
+        ],
+        "title": "CmaxVars",
+        "type": "object"
+      },
       "ComplianceJob": {
         "additionalProperties": false,
         "properties": {
@@ -958,6 +1277,29 @@
         "title": "EnrolStartResponse",
         "type": "object"
       },
+      "FileAccepted": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size_bytes",
+          "sha256"
+        ],
+        "title": "FileAccepted",
+        "type": "object"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -1226,6 +1568,16 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "clustermax": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClusterMaxVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "errors": {
             "title": "Errors",
             "type": "integer"
@@ -1273,7 +1625,8 @@
           "failed",
           "errors",
           "not_run",
-          "score"
+          "score",
+          "clustermax"
         ],
         "title": "HostSummary",
         "type": "object"
@@ -1571,6 +1924,7 @@
             "items": {
               "discriminator": {
                 "mapping": {
+                  "cluster_audit": "#/components/schemas/ClusterAuditJob",
                   "compliance": "#/components/schemas/ComplianceJob",
                   "inventory": "#/components/schemas/InventoryJob"
                 },
@@ -1582,6 +1936,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/ComplianceJob"
+                },
+                {
+                  "$ref": "#/components/schemas/ClusterAuditJob"
                 }
               ]
             },
@@ -1594,6 +1951,145 @@
           "jobs"
         ],
         "title": "JobsResponse",
+        "type": "object"
+      },
+      "KubeconfigAnswer": {
+        "properties": {
+          "kubeconfig": {
+            "title": "Kubeconfig",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kubeconfig"
+        ],
+        "title": "KubeconfigAnswer",
+        "type": "object"
+      },
+      "KubeconfigItem": {
+        "properties": {
+          "cluster_name": {
+            "title": "Cluster Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "integer"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "kubeconfig_id": {
+            "title": "Kubeconfig Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "replaced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaced At"
+          },
+          "server": {
+            "title": "Server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kubeconfig_id",
+          "name",
+          "description",
+          "cluster_name",
+          "server",
+          "created_by",
+          "created_at",
+          "replaced_at",
+          "deleted_at"
+        ],
+        "title": "KubeconfigItem",
+        "type": "object"
+      },
+      "KubeconfigReplace": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 1048576,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "KubeconfigReplace",
+        "type": "object"
+      },
+      "KubeconfigUpload": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 1048576,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "content"
+        ],
+        "title": "KubeconfigUpload",
         "type": "object"
       },
       "LoginRequest": {
@@ -2304,6 +2800,34 @@
           "next_cursor"
         ],
         "title": "Page[ImportItem]",
+        "type": "object"
+      },
+      "Page_KubeconfigItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KubeconfigItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[KubeconfigItem]",
         "type": "object"
       },
       "Page_PackageGroupItem_": {
@@ -3419,6 +3943,17 @@
       "ResultsRequest": {
         "additionalProperties": false,
         "properties": {
+          "cmax_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CmaxRun"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "final": {
             "title": "Final",
             "type": "boolean"
@@ -3652,6 +4187,68 @@
         "title": "ScanDetailItem",
         "type": "object"
       },
+      "ScanFileItem": {
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "job_id",
+          "agent_id",
+          "name",
+          "size_bytes",
+          "sha256",
+          "truncated",
+          "received_at"
+        ],
+        "title": "ScanFileItem",
+        "type": "object"
+      },
+      "ScanFiles": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScanFileItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ScanFiles",
+        "type": "object"
+      },
       "ScanItem": {
         "description": "#145 (a). `state` is read from `scan.state`, never re-derived.",
         "properties": {
@@ -3795,8 +4392,18 @@
       },
       "ScanRequest": {
         "additionalProperties": false,
-        "description": "#122 (a), (b): `target` is exactly one of {\"agents\": [...]},\n{\"tags\": [...]} or {\"all\": true}.",
+        "description": "#122 (a), (b): `target` is exactly one of {\"agents\": [...]},\n{\"tags\": [...]} or {\"all\": true}. `cmax` only for a ClusterMAX profile.",
         "properties": {
+          "cmax": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CmaxOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "policy_id": {
             "maximum": 9007199254740991.0,
             "minimum": 1.0,
@@ -5027,7 +5634,7 @@
   },
   "info": {
     "title": "Bitscan",
-    "version": "0.5.7"
+    "version": "0.6.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5403,6 +6010,262 @@
           }
         },
         "summary": "Pull Jobs",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/{id}/jobs/{job_id}/files/{name}": {
+      "put": {
+        "operationId": "upload_file_api_v1_agent__id__jobs__job_id__files__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Bitscan-Truncated",
+            "required": false,
+            "schema": {
+              "default": "false",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "title": "X-Bitscan-Truncated",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/gzip": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Upload File",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/{id}/jobs/{job_id}/kubeconfig": {
+      "post": {
+        "operationId": "fetch_kubeconfig_api_v1_agent__id__jobs__job_id__kubeconfig_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeconfigAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Fetch Kubeconfig",
         "tags": [
           "agent"
         ]
@@ -7944,6 +8807,493 @@
         ]
       }
     },
+    "/api/v1/kubeconfigs": {
+      "get": {
+        "description": "Every kubeconfig, deleted ones included (deleted_at set), so old scans\ncan still name theirs.",
+        "operationId": "list_kubeconfigs_api_v1_kubeconfigs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_KubeconfigItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Kubeconfigs",
+        "tags": [
+          "kubeconfigs"
+        ]
+      },
+      "post": {
+        "operationId": "upload_kubeconfig_api_v1_kubeconfigs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubeconfigUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeconfigItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Upload Kubeconfig",
+        "tags": [
+          "kubeconfigs"
+        ]
+      }
+    },
+    "/api/v1/kubeconfigs/{kubeconfig_id}": {
+      "delete": {
+        "operationId": "delete_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kubeconfig_id",
+            "required": true,
+            "schema": {
+              "title": "Kubeconfig Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Delete Kubeconfig",
+        "tags": [
+          "kubeconfigs"
+        ]
+      },
+      "get": {
+        "operationId": "get_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kubeconfig_id",
+            "required": true,
+            "schema": {
+              "title": "Kubeconfig Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeconfigItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Kubeconfig",
+        "tags": [
+          "kubeconfigs"
+        ]
+      },
+      "put": {
+        "operationId": "replace_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kubeconfig_id",
+            "required": true,
+            "schema": {
+              "title": "Kubeconfig Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubeconfigReplace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeconfigItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Replace Kubeconfig",
+        "tags": [
+          "kubeconfigs"
+        ]
+      }
+    },
     "/api/v1/metrics": {
       "get": {
         "operationId": "metrics_api_v1_metrics_get",
@@ -10195,6 +11545,207 @@
           }
         },
         "summary": "Cancel",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{id}/files": {
+      "get": {
+        "operationId": "list_files_api_v1_scans__id__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanFiles"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Files",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{id}/jobs/{job_id}/files/{name}": {
+      "get": {
+        "operationId": "download_file_api_v1_scans__id__jobs__job_id__files__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/gzip": {}
+            },
+            "description": "The file, gzip"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Download File",
         "tags": [
           "scans"
         ]

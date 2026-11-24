@@ -66,6 +66,35 @@ SESSION_OPS = {
     ("delete", "/api/v1/auth/sessions/{session_id}"),
 }
 SESSION_SCHEMAS = {"CurrentSession", "Page_SessionItem_", "SessionItem"}
+# TS §6.2 (owner decision 2026-11-23): the kubeconfig routes and their models.
+KUBECONFIG_OPS = {
+    ("get", "/api/v1/kubeconfigs"),
+    ("post", "/api/v1/kubeconfigs"),
+    ("get", "/api/v1/kubeconfigs/{kubeconfig_id}"),
+    ("put", "/api/v1/kubeconfigs/{kubeconfig_id}"),
+    ("delete", "/api/v1/kubeconfigs/{kubeconfig_id}"),
+    ("post", "/api/v1/agent/{id}/jobs/{job_id}/kubeconfig"),
+    ("put", "/api/v1/agent/{id}/jobs/{job_id}/files/{name}"),
+    ("get", "/api/v1/scans/{id}/files"),
+    ("get", "/api/v1/scans/{id}/jobs/{job_id}/files/{name}"),
+}
+KUBECONFIG_SCHEMAS = {
+    "KubeconfigItem",
+    "KubeconfigReplace",
+    "KubeconfigUpload",
+    "Page_KubeconfigItem_",
+    "CmaxOptions",  # POST /scans cmax (TS §4.4, owner decision 2026-11-23)
+    "CmaxCheck",
+    "CmaxJob",
+    "CmaxRun",
+    "CmaxVars",
+    "ClusterAuditJob",
+    "FileAccepted",
+    "KubeconfigAnswer",
+    "ScanFileItem",
+    "ScanFiles",
+    "ClusterMaxVerdict",  # GET /scans/{id} hosts[].clustermax (TS §3.8)
+}
 UUID_RE = (
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
@@ -117,6 +146,8 @@ HOST_SUMMARY = {
     "errors",
     "not_run",
     "score",
+    # TS §3.8 (owner decision 2026-11-23): a ClusterMAX scan's verdict.
+    "clustermax",
 }
 RESULT_ITEM = {
     "agent_id",
@@ -168,6 +199,21 @@ def without_parallel_jobs(schemas: dict[str, Any]) -> dict[str, Any]:
             s["required"].remove("max_parallel_jobs")
         if "description" in s:
             s["description"] = s["description"].replace("eight keys", "seven keys")
+    # TS §4.4 (owner decision 2026-11-23): POST /scans gained the optional cmax.
+    scan = out["ScanRequest"]
+    del scan["properties"]["cmax"]
+    scan["description"] = scan["description"].replace(
+        " `cmax` only for a ClusterMAX profile.", ""
+    )
+    # TS §3.8, §6.5: the cluster_audit job variant and the cmax_run field.
+    items = out["JobsResponse"]["properties"]["jobs"]["items"]
+    del items["discriminator"]["mapping"]["cluster_audit"]
+    items["oneOf"] = [
+        v
+        for v in items["oneOf"]
+        if v != {"$ref": "#/components/schemas/ClusterAuditJob"}
+    ]
+    del out["ResultsRequest"]["properties"]["cmax_run"]
     return out
 
 
@@ -216,7 +262,7 @@ def test_exactly_the_six_operations_are_added(doc: dict[str, Any]) -> None:
     assert all(p.startswith(PREFIX + "/") for _, p in M11_OPS)
     rest: dict[str, dict[str, Any]] = {}
     for path, item in doc["paths"].items():
-        added = M11_OPS | SESSION_OPS
+        added = M11_OPS | SESSION_OPS | KUBECONFIG_OPS
         kept = {m: o for m, o in item.items() if (m, path) not in added}
         if kept:
             rest[path] = kept
@@ -408,7 +454,7 @@ def test_earlier_components_are_byte_identical(doc: dict[str, Any]) -> None:
     """REQ-273 (3): every component schema present at 6efe0fb (the agent-route
     ones, ResultItem among them) is unchanged; M11 only adds."""
     schemas = doc["components"]["schemas"]
-    added = M11_SCHEMAS | SESSION_SCHEMAS
+    added = M11_SCHEMAS | SESSION_SCHEMAS | KUBECONFIG_SCHEMAS
     old = {k: v for k, v in schemas.items() if k not in added}
     assert len(old) == BASE_SCHEMA_COUNT
     assert digest(without_parallel_jobs(old)) == BASE_SCHEMAS

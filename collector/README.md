@@ -1,19 +1,19 @@
-# ClusterMAX collector
+# ClusterMAX scanner role
 
-The ClusterMAX collector helper (TS §3.8). It lets a Bitscan scan of the
-ClusterMAX policy run `cmax audit -vvv -y` as root on a host, while
-`bitscan-agent` and `bitscan-runner` keep their privileges. Since the owner
-decision of 2026-11-15 it is part of the `bitscan-agent` package and on by
-default on every agent host; there is no separate collector package.
+The ClusterMAX scanner helper (TS §3.8). When an admin starts a ClusterMAX
+scan, `bitscan-agent` on the chosen scanner host asks it to run
+`cmax audit -vvv -y` as root, with an optional target, an optional kubeconfig
+(passed as a sealed memfd) and allow-listed variables, and gets the report,
+run log, `audit.out` and `audit.values.json` back. It is part of the
+`bitscan-agent` package and on by default on every agent host.
 
 | Path | What |
 |---|---|
-| `src/cmax_helper.py` | `/usr/sbin/cmax-helper`: root, socket-activated, runs the one fixed audit, keeps the report in memory |
-| `src/cmax_trigger.py` | `/usr/bin/cmax-trigger`: the client plugins call (`collect`, `get <check-id>`, `get header`, `get status`) |
+| `src/cmax_helper.py` | `/usr/sbin/cmax-helper`: root, socket-activated, accepts only uid `bitscan`, runs the one fixed audit and returns its files |
 | `systemd/` | `cmax-helper.socket` and `cmax-helper.service`, verbatim from TS §3.8 |
 | `packaging/` | `stage.sh`, the hash-pinned `requirements.txt` and the `cmax` entry point |
-| `tools/gen_clustermax_bit.py` | Generates `bits/samples/clustermax-0.3.0.bit` (84 plugins) from `tools/clustermax-0.3.0-checks.txt`; `tools/plugin-ids.json` keeps the plugin ids stable |
-| `tests/` | Helper and client tests; `fixtures/report-vm.txt` is a real ClusterMAX 0.3.0 report |
+| `tools/gen_clustermax_bit.py` | Generates `bits/samples/clustermax-0.3.0.bit` (83 plugins: header, status and the 81 checks; each Execute is `cmax-check <id>` and is never run) from `tools/clustermax-0.3.0-checks.txt`; `tools/plugin-ids.json` keeps the plugin ids stable |
+| `tests/` | Helper tests; `fixtures/report-vm.txt` is a real ClusterMAX 0.3.0 report |
 
 ## Build
 
@@ -39,8 +39,9 @@ To turn it on again:
 sudo systemctl enable --now cmax-helper.socket
 ```
 
-With `-y`, ClusterMAX auto-detects standalone, Slurm or Kubernetes on each
-host, so target the policy with a dedicated tag.
+With `-y` and target `auto`, ClusterMAX detects standalone, Slurm or
+Kubernetes on the scanner host. Standalone audits only that host; Slurm and
+Kubernetes audits reach the whole cluster from it.
 
 ## Tests
 

@@ -1,11 +1,11 @@
 # cmax-helper.socket
 [Unit]
-Description=ClusterMAX collector helper socket
+Description=ClusterMAX scanner helper socket
 
 [Socket]
 ListenStream=/run/clustermax/collect.sock
 SocketUser=root
-SocketGroup=bitscan-runner
+SocketGroup=bitscan
 SocketMode=0660
 DirectoryMode=0755
 

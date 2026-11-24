@@ -381,6 +381,7 @@ describe("CHK-M5-280 navigation per role", () => {
       [
         ...common,
         "Schedules #/schedules",
+        "Kubeconfigs #/kubeconfigs",
         "Upload policy #/catalog/upload",
         "Import history #/catalog/imports",
         "Rebuild catalog #/catalog/rebuild",

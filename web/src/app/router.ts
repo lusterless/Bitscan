@@ -19,7 +19,8 @@ export type Route =
   | { readonly name: "scan"; readonly scanId: string }
   | { readonly name: "scan-results"; readonly scanId: string }
   | { readonly name: "run-scan"; readonly policyId: string | null }
-  | { readonly name: "schedules" };
+  | { readonly name: "schedules" }
+  | { readonly name: "kubeconfigs" };
 
 export type RouteName = Route["name"];
 
@@ -37,6 +38,7 @@ const SESSIONS: Route = Object.freeze({ name: "sessions" });
 const SCANS: Route = Object.freeze({ name: "scans" });
 const RUN_SCAN: Route = Object.freeze({ name: "run-scan", policyId: null });
 const SCHEDULES: Route = Object.freeze({ name: "schedules" });
+const KUBECONFIGS: Route = Object.freeze({ name: "kubeconfigs" });
 
 const HOST_PREFIX = "/hosts/";
 const PROFILE_PREFIX = "/profiles/";
@@ -117,6 +119,8 @@ export function parseHash(hash: string): Route {
       return RUN_SCAN;
     case "/schedules":
       return SCHEDULES;
+    case "/kubeconfigs":
+      return KUBECONFIGS;
   }
   if (path.startsWith(HOST_PREFIX)) {
     const id = path.slice(HOST_PREFIX.length);
@@ -188,6 +192,8 @@ export function formatHash(route: Route): string {
         : "#" + RUN_SCAN_PREFIX + route.policyId;
     case "schedules":
       return "#/schedules";
+    case "kubeconfigs":
+      return "#/kubeconfigs";
     default: {
       const unhandled: never = route;
       return unhandled;

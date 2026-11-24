@@ -208,6 +208,8 @@ def _compliance(s: Stores) -> ComplianceRepos:
 
 
 def _planned(job: SweepJob) -> list[UUID]:
+    if job.payload.get("kind") == "cluster_audit":  # TS §3.8
+        return [UUID(c["plugin_uuid"]) for c in job.payload["cmax"]["checks"]]
     return [UUID(p["plugin_uuid"]) for p in job.payload["plugins"]]
 
 
@@ -222,6 +224,8 @@ def _end(
     if (
         state not in ("failed", "partial")
         or job.retry_of is not None  # a retry is never retried
+        # TS §3.8: a cluster_audit retry would run the whole audit again.
+        or job.payload.get("kind") == "cluster_audit"
         or job.policy_deleted
         or job.agent_decommissioned
     ):

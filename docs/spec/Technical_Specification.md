@@ -19,9 +19,9 @@ The platform (working name **Bitscan**) is a manager + agent system that invento
 
 ### 1.2 Out of scope (v1)
 
-- Network/remote (agentless) scanning, Windows or macOS endpoints. **Exception:** the ClusterMAX collector helper (§3.8) runs `cmax audit`, which in Slurm or Kubernetes mode starts jobs or pods on other hosts of that cluster. Bitscan itself still opens no connection to any host.
+- Network/remote (agentless) scanning, Windows or macOS endpoints. **Exception:** the ClusterMAX scanner role (§3.8) runs `cmax audit`, which in Slurm or Kubernetes mode starts jobs or pods on other hosts of that cluster, and with an uploaded kubeconfig talks to that cluster's Kubernetes API from the scanner host. The manager itself still opens no connection to any host or cluster.
 - CVE vulnerability matching against packages (the inventory is designed so it can be added in v2, see §7.4).
-- Automatic remediation. Plugins only read and report state. **Exception:** a plugin may ask the ClusterMAX collector helper (§3.8) to run its fixed audit, which changes some host state as part of its checks (§3.8, "Effects on the host").
+- Automatic remediation. Plugins only read and report state. **Exception:** a ClusterMAX scan (§3.8) runs the fixed ClusterMAX audit, which changes some host and cluster state as part of its checks (§3.8, "Effects on the host").
 - A signed APT repository for the agent package. v1 ships the `.deb` file with a published SHA-256.
 
 ### 1.3 Terminology
@@ -72,7 +72,7 @@ flowchart LR
     RN["bitscan-runner<br/>user bitscan-runner<br/>CAP_DAC_READ_SEARCH only"]
     PL["Plugins<br/>sandboxed sh -c Execute"]
     CR["bitscan-capread<br/>on by default"]
-    CMX["cmax-helper (in bitscan-agent)<br/>root, on by default<br/>fixed cmax audit -vvv -y"]
+    CMX["cmax-helper: ClusterMAX scanner role (in bitscan-agent)<br/>root, on by default<br/>fixed cmax audit -vvv -y"]
   end
 
   U --> UI --> UR
@@ -107,7 +107,7 @@ Agents poll the API; the scheduler writes jobs to the database; the evaluator sc
 | Result evaluator | Compare stdout with ExpectedResult using the Operator (§4.5), compute scores | In the API process, on result arrival |
 | Database | Single source of truth | PostgreSQL 16 (`pg_trgm`, `debversion`) |
 | Agent | Heartbeat, job pull, inventory; runner executes plugins | Go (a currently supported release), static binaries, `.deb`, systemd |
-| ClusterMAX collector helper | Runs the fixed ClusterMAX audit as root for the runner and returns its report (§3.8) | Part of the agent `.deb`, with pinned ClusterMAX (Python), systemd socket activation |
+| ClusterMAX scanner role | Runs the fixed ClusterMAX audit as root for the agent when an admin starts a ClusterMAX scan, and returns its report and files (§3.8) | Part of the agent `.deb`, with pinned ClusterMAX (Python), systemd socket activation |
 
 ### 2.2 Design principles
 
@@ -158,7 +158,7 @@ The agent is one `.deb`, `bitscan-agent_<version>_<arch>.deb` (amd64, arm64), fo
 
 | Item | Value |
 | --- | --- |
-| Binaries | `/usr/sbin/bitscan-agent`, `/usr/sbin/bitscan-runner`, `/usr/sbin/bitscan-capread`; the ClusterMAX collector: `/usr/sbin/cmax-helper`, `/usr/bin/cmax-trigger` and ClusterMAX under `/usr/lib/clustermax/` (§3.8) |
+| Binaries | `/usr/sbin/bitscan-agent`, `/usr/sbin/bitscan-runner`, `/usr/sbin/bitscan-capread`; the ClusterMAX scanner role: `/usr/sbin/cmax-helper` and ClusterMAX under `/usr/lib/clustermax/` (§3.8) |
 | Units | `bitscan-agent.service`, `bitscan-runner.socket`, `bitscan-runner.service`; `bitscan-capread.socket` and `.service`. Installed with `dh_installsystemd`; `--no-enable` for `bitscan-runner.service` (started by its socket). `bitscan-capread.socket` is enabled and started on install (owner decision 2026-11-16); `bitscan-capread.service` is `--no-enable`, started by its socket (§3.7). `cmax-helper.socket` is enabled and started on install (owner decision 2026-11-15); `cmax-helper.service` is `--no-enable`, started by its socket (§3.8). The helper sockets start before `bitscan-agent.service`, so the agent's first heartbeat reports them. |
 | Config | `/etc/bitscan/agent.yaml` (`root:bitscan`, 0640); written only by `postinst` or root, never by the agent |
 | D-Bus policy | `/etc/dbus-1/system.d/bitscan-runner.conf` (§3.7) |
@@ -179,7 +179,7 @@ If the manager URL or enrolment token is missing, `postinst` fails with a clear 
 
 **Distribution.** v1 ships the `.deb` file directly, with its SHA-256 published on the release page (a different origin from the download host). Builds are reproducible Go builds, and every release ships an SBOM. A signed APT repository is deferred (§1.2).
 
-**ClusterMAX collector in the agent package (owner decision 2026-11-15).** `bitscan-agent` also installs ClusterMAX at a pinned commit with hash-pinned, pure-Python dependencies under `/usr/lib/clustermax/`, the client `/usr/bin/cmax-trigger`, the server `/usr/sbin/cmax-helper`, the units `cmax-helper.socket` and `cmax-helper.service` (§3.8), and ClusterMAX's `LICENSE` (Apache-2.0) under `/usr/share/doc/bitscan-agent/`. The package depends on `python3 (>= 3.10)` and `jq`, which ClusterMAX needs (owner decision 2026-11-16). ClusterMAX is fetched at build time and pinned by commit and version, so the build stays reproducible. There is no separate collector package.
+**ClusterMAX collector in the agent package (owner decision 2026-11-15).** `bitscan-agent` also installs ClusterMAX at a pinned commit with hash-pinned, pure-Python dependencies under `/usr/lib/clustermax/`, the root helper `/usr/sbin/cmax-helper`, the units `cmax-helper.socket` and `cmax-helper.service` (§3.8), and ClusterMAX's `LICENSE` (Apache-2.0) under `/usr/share/doc/bitscan-agent/`. The package depends on `python3 (>= 3.10)` and `jq`, which ClusterMAX needs (owner decision 2026-11-16). ClusterMAX is fetched at build time and pinned by commit and version, so the build stays reproducible. There is no separate collector package. Since 0.6.0 (owner decision 2026-11-23) the package has no `cmax-trigger`: the agent talks to the helper itself (§3.8).
 
 ### 3.2 Enrolment
 
@@ -215,7 +215,7 @@ The agent runs two independent timers. The heartbeat only reports status; jobs a
 - The manager never opens a connection to an agent, and the agent has no listening port. There is no push, wake-up or remote-shell channel.
 - Nothing in a heartbeat response can make the agent run anything.
 - The agent runs only jobs it fetched itself from the manager, over verified TLS, in response to its own authenticated request. The agent and the runner each run a job only if it (1) is addressed to this host's `agent_id`, (2) has `pickup_by` in the future and no more than 25 h away, and (3) has not been run before. The agent remembers job ids for 7 days in its state directory; the runner remembers them in memory. Jobs are not signed, so these checks keep honest jobs correct but do not stop a compromised agent process (§3.7). Hosts must be NTP-synced; the manager alerts on clock skew over 5 minutes, reported in the heartbeat.
-- The manager builds jobs only from the active plugins of enabled policies. There is no API to queue an ad-hoc command.
+- The manager builds jobs only from the active plugins of enabled policies. There is no API to queue an ad-hoc command. **Exception (owner decision 2026-11-23):** a ClusterMAX scan builds one `cluster_audit` job (§3.8, §4.4) whose command is fixed; its only inputs are a target mode, a kubeconfig reference and allow-listed variables.
 - At most 10 jobs are returned per pull; the rest wait for the next pull.
 
 **Idle.** If a pull returns an empty list, the agent does nothing until the next timer fires: no extra polling and no collection. Target idle cost: < 0.1 % CPU, < 30 MB RSS.
@@ -524,46 +524,54 @@ Plugins call `bitscan-capread nft_ruleset`, `bitscan-capread audit_rules` or `bi
 - Write-like commands are rejected at import (BIT102), and the sandbox blocks writes even if one slips through.
 - **Local users.** Plugins must never execute, source or `cd` into files or directories that non-root users can write; they read them only as data. Otherwise a local user could get their own code run with the runner's read-any-file capability. BIT102 rejects the usual ways of doing so, and the runner can execute only system binaries.
 
-### 3.8 ClusterMAX collector helper (`cmax-helper`)
+### 3.8 ClusterMAX scanner role (`cmax-helper`)
 
-Owner decisions 2026-11-14 and 2026-11-15. Part of the `bitscan-agent` package (§3.1) and on by default on every agent host: `postinst` enables and starts `cmax-helper.socket`. A root user can turn it off on a host with `systemctl disable --now cmax-helper.socket`; a later upgrade keeps it off (the package enables the socket only on first install).
+Owner decisions 2026-11-14, 2026-11-15 and 2026-11-23 (release 0.6.0). The scanner role is part of the `bitscan-agent` package (§3.1) and on by default on every agent host: `postinst` enables and starts `cmax-helper.socket`. A root user can turn it off on a host with `systemctl disable --now cmax-helper.socket`; a later upgrade keeps it off. The manager never installs, enables, disables or configures the helper; it only sends `cluster_audit` jobs (§4.4) to hosts that report the role.
 
-**Purpose.** Lets a compliance scan run the full ClusterMAX audit (`lusterless/clustermax`, `cmax audit`), which needs root, devices and, in cluster mode, cluster credentials, while `bitscan-agent` and `bitscan-runner` keep the privileges in §3.7 unchanged.
+**Purpose.** An admin runs the full ClusterMAX audit (`lusterless/clustermax`, `cmax audit -vvv -y`) from a chosen agent host, the scanner. The audit needs root, devices and, for a cluster, credentials, while `bitscan-agent` and `bitscan-runner` keep the privileges in §3.7. The target follows `cmax audit -vvv -y`: on the scanner host ClusterMAX detects standalone, Slurm (`sbatch` on `PATH`, so a Slurm login node) or Kubernetes (a kubeconfig). Standalone audits only the scanner host itself; Slurm and Kubernetes audits reach the whole cluster from it. The per-host plugin path of 0.5.x (`cmax-trigger`, `collect`/`get`, wait plugins) is removed; old results stay as read-only history.
 
 **Who runs as what**
 
 | Process | Runs as | Does |
 | --- | --- | --- |
-| `cmax-trigger` | `bitscan-runner` (inside a plugin) | Sends one request name over the socket and prints the answer |
-| `cmax-helper` | root | Accepts requests, runs the fixed audit, keeps the report in memory |
+| `bitscan-agent` | `bitscan` | Pulls the `cluster_audit` job, fetches the job's kubeconfig into an anonymous memory file, sends one audit request to the helper, redacts and uploads the results and files |
+| `cmax-helper` | root | Checks the request again, runs the fixed audit, returns its report and files, then deletes them |
 | `cmax audit -vvv -y` | root (child of the helper) | The ClusterMAX audit, run unmodified |
 
-**Protocol**
+**Audit request (agent → helper)**
 
-- Socket `/run/clustermax/collect.sock`, `root:bitscan-runner`, 0660, in a root-owned 0755 directory.
-- The helper accepts only peers with uid `bitscan-runner` (`SO_PEERCRED`). It takes a request name, never a command line or arguments.
-- `collect`: if no audit is running, start `/usr/lib/clustermax/bin/cmax audit -vvv -y` with an empty environment except `PATH` (the system directories plus `/var/lib/rancher/rke2/bin`, `/opt/slurm/bin`, `/snap/bin` and `/usr/local/cuda/bin`), `HOME=/root` (as under `sudo`), `CLUSTERMAX_RUNS_ROOT=/run/cmax-work`, `PYTHONPATH=/usr/lib/clustermax/site` (the check scripts run with the system `python3`), `LANG=C.UTF-8`, `KUBECONFIG` (the first of `/root/.kube/config`, `/etc/rancher/k3s/k3s.yaml`, `/etc/rancher/rke2/rke2.yaml` and `/etc/kubernetes/admin.conf` that exists) and `SLURM_CONF` (when `slurm.conf` is only in `/etc/slurm-llnl` or `/opt/slurm/etc`; owner decision 2026-11-21), and answer `started <run-id>`; if one is running, answer `running <run-id>` with that run's id and start nothing. Every `collect` that finds no running audit starts a new one; a finished report is never reused by a later `collect` (owner decision 2026-11-14).
-- `get <run-id> wait` waits for the run (up to 590 s) and answers `done` or `running`; the ClusterMAX policy's 10 wait plugins use it, so a long audit on a large cluster has about one hour (owner decision 2026-11-21). `get <run-id> <check-id>`: wait for run `<run-id>` (up to 590 s), then return the report line whose trailing `[<check-id>]` matches, and its `Observed:` line as `<verdict> observed=<value>`, followed on the next lines by the check's own text (description, `Reproduce:`, `Recommendation:`; `References:` are left out; owner decision 2026-11-17). `get <run-id> header` returns that run's target block (command, target, host, system, selection). `get <run-id> status` returns `ok <age-seconds> <cmax-version>`, `running` or `failed <exit-code>`. An unknown or dropped run id returns `MISSING`.
-- `<run-id>` is 32 lowercase hexadecimal characters chosen by the helper. The helper keeps at most the 4 most recent runs' reports in memory.
-- **One audit per scan job.** `cmax-trigger get <check-id>` takes a lock on `cmax-run.lock` in its job's temp directory (the parent of its working directory, §3.7). The first plugin of the job sends `collect` and writes the returned run id to `cmax-run` there; every later plugin of the job reads it. The runner deletes the job's temp directory when the job ends, so the next scan starts a new audit.
-- One audit at a time; concurrent `collect` requests share the same run.
-- `<check-id>` must match `^[A-Za-z0-9_.-]{1,128}$`; any other request is refused.
+- Socket `/run/clustermax/collect.sock`, `root:bitscan`, 0660, in a root-owned 0755 directory. The helper accepts only peers with uid `bitscan` (`SO_PEERCRED`).
+- One request per connection: a JSON line `{"job_id": "<uuid>", "target": "auto"|"standalone"|"slurm"|"k8s", "vars": {"<NAME>": "<value>", …}}`, at most 4 KiB, plus at most one file descriptor passed with `SCM_RIGHTS` when the job has a kubeconfig. The helper refuses any other field, a second descriptor, a descriptor that is not a sealed `memfd`, a variable not in the allow-list below or a value that does not match its pattern, and answers `REFUSED <reason>`.
+- One audit at a time per host; a second request while one runs gets `BUSY`.
+- Command: `/usr/lib/clustermax/bin/cmax audit -vvv -y`, plus `--standalone`, `--slurm` or `--k8s` when `target` is not `auto`. A job with a kubeconfig always has `target` `k8s`. Nothing else is ever added to the command line.
+- Environment: empty except `PATH` (the system directories plus `/var/lib/rancher/rke2/bin`, `/opt/slurm/bin`, `/snap/bin` and `/usr/local/cuda/bin`), `HOME=/root`, `CLUSTERMAX_RUNS_ROOT=/run/cmax-work`, `PYTHONPATH=/usr/lib/clustermax/site`, `LANG=C.UTF-8`, `KUBECACHEDIR=/run/cmax-work/kube-cache`, the request's allow-listed variables, and either `KUBECONFIG=/proc/<helper-pid>/fd/<n>` (the passed memory file) or, without one, `KUBECONFIG` set to the first of `/root/.kube/config`, `/etc/rancher/k3s/k3s.yaml`, `/etc/rancher/rke2/rke2.yaml` and `/etc/kubernetes/admin.conf` that exists; `SLURM_CONF` when `slurm.conf` is only in `/etc/slurm-llnl` or `/opt/slurm/etc`. The passed kubeconfig is given through `KUBECONFIG`, never `--kubeconfig`, which needs a real file.
+- The helper stops the audit after 4 h and answers with exit code `124`.
+- **Answer (helper → agent):** a JSON line `{"exit_code", "started_at", "finished_at", "files": [{"name", "size"}…]}` followed by the files as raw bytes in that order: `report.txt` (the audit's stdout), `run.log` (its stderr), `audit.out` and `audit.values.json` (from `CLUSTERMAX_RUNS_ROOT`; absent when ClusterMAX wrote none). Each file is capped at 64 MiB and cut at the cap with the cut recorded. The helper then deletes `/run/cmax-work/*`, closes the kubeconfig descriptor and forgets the run.
 
-**Non-persistence.** The report text is held only in the helper's memory. ClusterMAX writes its own files under `CLUSTERMAX_RUNS_ROOT=/run/cmax-work`, (`RuntimeDirectory=`, tmpfs; the helper empties it after each run) and its private `/tmp`, both removed by systemd when the service stops. The helper stops when no audit runs and no request has arrived for 30 minutes, which drops every report. The helper writes nothing to persistent storage. Results reach the manager through the normal result path (§3.5), including the agent's spool.
+**Allowed variables (one scan only; changing this list is a spec change).** `CLUSTERMAX_K8S_GPU_DRA` (`0` or `1`); `CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS`, `CLUSTERMAX_K8S_GPU_DRA_DRIVER` (a DNS name, `^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`); `CLUSTERMAX_AUDIT_K8S_NAMESPACE`, `CLUSTERMAX_AUDIT_TENANT_NAMESPACE` (a Kubernetes namespace, `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`). Variables that choose an image, a command, a file or a URL are never allowed. The manager and the helper check the same list.
 
-**Effects on the host (accepted, §8.1).** `cmax audit -vvv -y` runs unmodified, so its normal effects apply: `nvidia-smi boost-slider --vboost 2`, `enroot import docker://hello-world` where Enroot exists, outbound HTTPS to `ipinfo.io`, and, when ClusterMAX auto-detects Slurm or Kubernetes, `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace that ClusterMAX does not delete. `-y` skips ClusterMAX's host role check, so the scan target alone decides which hosts audit a whole cluster.
+**Kubeconfig handling on the scanner.** The agent fetches the job's kubeconfig once (§6.1), writes it into an anonymous memory file (`memfd_create` with `MFD_CLOEXEC | MFD_ALLOW_SEALING`), seals it, passes it to the helper and closes its own copy; neither process writes it to any file system, the spool, a log or swap (`MemorySwapMax=0`, `LimitCORE=0`, both processes non-dumpable). The helper closes the descriptor when the audit ends, fails or times out. While an audit runs, root on the scanner host can read it through `/proc` (accepted, §8.1).
+
+**Results.** The agent:
+1. Reads each check from `report.txt` (the line `^(PASS|FAIL|WARNING|SKIPPED|INFO)\s+.*\[(<check-id>)\]\s*$`, then `Observed:`, the description, `Reproduce:` and `Recommendation:`; `References:` are left out) and builds one result per plugin of the job (§6.5): stdout `<verdict> observed=<value>` and the check's text, with `SKIPPED` shown as `n/a`. A check not in the report gets `MISSING <check-id> is not in the ClusterMAX report`. The reserved check ids `header` (the target block) and `status` (`ok <seconds> <cmax-version>` or `failed <exit-code>: <the cmax: error: line>`) are filled from the run.
+2. Redacts every result and every file with the job's redaction patterns and the built-in patterns (§3.5) before the data reaches the spool or leaves the host.
+3. Sends the results through the normal result path (§3.5, spool included) and uploads the four files once, gzip-compressed, to the files route (§6.1), retrying until the job deadline; the files are not spooled.
+
+The manager grades each result with the plugin's ExpectedResult (§4.5). The scan's ClusterMAX verdict is `error` when the exit code is not 0, `pass` when every graded check passes, otherwise `fail`, shown with the counts of PASS, FAIL, WARNING and n/a.
+
+**Effects on the host and cluster (accepted, §8.1).** `cmax audit -vvv -y` runs unmodified, so its normal effects apply: `nvidia-smi boost-slider --vboost 2`, `enroot import docker://hello-world` where Enroot exists, outbound HTTPS to `ipinfo.io`, and in Slurm or Kubernetes mode `srun` jobs or pods, including a privileged pod in the `clustermax-audit` namespace that ClusterMAX does not delete. `-y` skips ClusterMAX's host role check, so the admin's choice of scanner and target decides what is audited.
 
 **Units**
 
 ```ini
 # cmax-helper.socket
 [Unit]
-Description=ClusterMAX collector helper socket
+Description=ClusterMAX scanner helper socket
 
 [Socket]
 ListenStream=/run/clustermax/collect.sock
 SocketUser=root
-SocketGroup=bitscan-runner
+SocketGroup=bitscan
 SocketMode=0660
 DirectoryMode=0755
 
@@ -574,7 +582,7 @@ WantedBy=sockets.target
 ```ini
 # cmax-helper.service
 [Unit]
-Description=ClusterMAX collector helper
+Description=ClusterMAX scanner helper
 Requires=cmax-helper.socket
 
 [Service]
@@ -589,6 +597,8 @@ CPUQuota=200%
 Nice=10
 IOSchedulingClass=idle
 MemoryMax=4G
+MemorySwapMax=0
+LimitCORE=0
 TimeoutStopSec=30
 ```
 
@@ -599,14 +609,12 @@ No `ProtectSystem=`, `PrivateDevices=` or network restriction is set, because Cl
 | Path | Owner | Mode |
 | --- | --- | --- |
 | `/usr/lib/clustermax/` | `root:root` | 0755 directories, 0644 files, 0755 executables |
-| `/usr/sbin/cmax-helper`, `/usr/bin/cmax-trigger` | `root:root` | 0755 |
+| `/usr/sbin/cmax-helper` | `root:root` | 0755 |
 | `/run/clustermax/` | `root:root` | 0755 |
-| `/run/clustermax/collect.sock` | `root:bitscan-runner` | 0660 |
+| `/run/clustermax/collect.sock` | `root:bitscan` | 0660 |
 | `/run/cmax-work/` | `root:root` | 0700 (tmpfs, removed on stop) |
 
-**Reporting.** The agent reports `"cmax"` in the heartbeat's `runner_helpers` (§6.5) when `/run/clustermax/collect.sock` exists. The manager shows it on the host page and audit-logs any change, as for `"capread"`.
-
-**The manager never installs, enables, disables or configures the helper.**
+**Reporting.** The agent reports `"scanner"` in the heartbeat's `runner_helpers` (§6.5) when `/run/clustermax/collect.sock` exists. The manager shows it on the host page, audit-logs any change as for `"capread"`, and offers only hosts that report it as ClusterMAX scanners. `bitscan-agent.service` needs no new privilege: it connects to the socket as `bitscan`.
 
 ## 4. Compliance Engine
 
@@ -663,6 +671,7 @@ Rebuild is the recovery path for a corrupted catalog. It does not truncate the c
 - **No duplicate run (owner decision 2026-11-14):** when a scan is queued, a target agent that already has a `dispatched` or `running` compliance job of the same policy gets its job from this scan inserted as `cancelled` with `cancel_reason = 'already_running'` and `finished_at` = now; it is never sent. The agent's own rule (§3.3) also keeps two jobs of one policy from running at the same time.
 - **Refused:** a scan of a disabled policy returns 409.
 - **Version:** each scan records the `policy.version` it was built from.
+- **ClusterMAX scans (owner decision 2026-11-23, §3.8):** a policy whose Family is `Clustermax` is a ClusterMAX profile. Each plugin's `Execute` is `cmax-check <check-id>` and is never run; it names the check (`header` and `status` are reserved ids). Only an admin with a TOTP session starts one (`POST /scans` with a `cmax` object), and only manually: a schedule of a ClusterMAX profile is refused (409). The admin chooses one or more scanner hosts (agents that report `"scanner"`; others are refused with 409), an optional target mode (`auto` default, `standalone`, `slurm`, `k8s`), an optional kubeconfig (then exactly one scanner, and the target is `k8s`) and optional allow-listed variables (§3.8). The manager builds one `cluster_audit` job per scanner, with the plugins' check ids in its payload and the plugins' ExpectedResults in `eval_spec`. The job's deadline is start + 4 h 10 min. Choices are stored in `scan.clustermax`, never the kubeconfig itself. Jobs of a ClusterMAX profile are never sent as `compliance` jobs, so agents before 0.6.0 never get them.
 
 **Job states**
 
@@ -971,12 +980,13 @@ CREATE TABLE scan (
   requested_by   BIGINT,
   state          scan_state NOT NULL DEFAULT 'queued',
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  finished_at    TIMESTAMPTZ
+  finished_at    TIMESTAMPTZ,
+  clustermax     JSONB                  -- ClusterMAX scans only: {"target", "kubeconfig_id", "vars"} (§4.4); never a kubeconfig
 );
 
 CREATE TABLE scan_job (                  -- compliance (one per scan and agent) and inventory jobs
   job_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  kind          VARCHAR(16) NOT NULL CHECK (kind IN ('compliance','inventory')),
+  kind          VARCHAR(16) NOT NULL CHECK (kind IN ('compliance','inventory','cluster_audit')),
   scan_id       UUID REFERENCES scan(scan_id) ON DELETE CASCADE,
   agent_id      UUID NOT NULL REFERENCES agent(agent_id),
   retry_of      UUID REFERENCES scan_job(job_id),
@@ -990,12 +1000,52 @@ CREATE TABLE scan_job (                  -- compliance (one per scan and agent) 
   deadline_at   TIMESTAMPTZ,
   finished_at   TIMESTAMPTZ,
   cancel_reason VARCHAR(32) CHECK (cancel_reason IN ('already_running')), -- set only when a new scan's job is not run (§4.4); NULL otherwise
-  CHECK ((kind = 'compliance') = (scan_id IS NOT NULL)),
+  CHECK ((kind IN ('compliance','cluster_audit')) = (scan_id IS NOT NULL)),
   CHECK (kind = 'inventory' OR eval_spec IS NOT NULL)
 );
 CREATE INDEX ix_job_pending ON scan_job(agent_id) WHERE state = 'queued';
 CREATE INDEX ix_job_scan     ON scan_job(scan_id);   -- retention and scan reads by scan
 CREATE INDEX ix_job_retry_of ON scan_job(retry_of);  -- the retry_of FK check on job deletes
+
+CREATE TABLE kubeconfig (                -- uploaded cluster credentials for ClusterMAX scans (§3.8); admin only
+  kubeconfig_id BIGSERIAL PRIMARY KEY,
+  name          VARCHAR(128) NOT NULL UNIQUE,
+  description   VARCHAR(1000) NOT NULL DEFAULT '',
+  cluster_name  VARCHAR(253) NOT NULL,   -- from the current context, shown in the UI
+  server        VARCHAR(2048) NOT NULL,  -- API server URL of that cluster, shown in the UI
+  content_enc   TEXT NOT NULL,           -- the whole kubeconfig, encrypted with a vault key; never returned by the API
+  created_by    BIGINT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  replaced_at   TIMESTAMPTZ,
+  deleted_at    TIMESTAMPTZ               -- soft delete: content_enc is overwritten with '' and old scans keep the reference
+);
+
+CREATE TABLE kubeconfig_fetch (          -- the one allowed kubeconfig fetch per cluster_audit job (§6.1); insert only
+  job_id        UUID PRIMARY KEY REFERENCES scan_job(job_id) ON DELETE CASCADE,
+  kubeconfig_id BIGINT NOT NULL REFERENCES kubeconfig(kubeconfig_id),
+  fetched_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  source_ip     INET NOT NULL
+);
+
+CREATE TABLE cluster_audit_run (         -- one row per finished cluster_audit job, written once
+  job_id        UUID PRIMARY KEY REFERENCES scan_job(job_id) ON DELETE CASCADE,
+  exit_code     INTEGER NOT NULL,
+  error_line    VARCHAR(512),            -- the redacted `cmax: error:` line, when exit_code <> 0
+  started_at    TIMESTAMPTZ NOT NULL,
+  finished_at   TIMESTAMPTZ NOT NULL,
+  received_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE scan_file (                 -- redacted ClusterMAX files of a cluster_audit job (§3.8)
+  job_id        UUID NOT NULL REFERENCES scan_job(job_id) ON DELETE CASCADE,
+  name          VARCHAR(32) NOT NULL CHECK (name IN ('report.txt','run.log','audit.out','audit.values.json')),
+  size_bytes    BIGINT NOT NULL,         -- uncompressed
+  sha256        CHAR(64) NOT NULL,       -- of the uncompressed content
+  truncated     BOOLEAN NOT NULL DEFAULT false,
+  content_gz    BYTEA NOT NULL,          -- gzip, at most 64 MiB each
+  received_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (job_id, name)
+);
 
 CREATE TABLE scan_result (
   job_id            UUID NOT NULL REFERENCES scan_job(job_id) ON DELETE CASCADE,
@@ -1108,14 +1158,14 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO bitscan_app;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO bitscan_retention;
 -- Retention deletes only from tables that have a retention rule (§5.3); partitions are dropped by db maintain
 GRANT DELETE ON scan, scan_job, scan_result, scan_result_reeval, inventory_snapshot,
-  enrollment_request, user_token, audit_log, package TO bitscan_retention;
+  enrollment_request, user_token, audit_log, package, kubeconfig_fetch, cluster_audit_run, scan_file TO bitscan_retention;
 GRANT INSERT ON audit_log TO bitscan_retention;   -- checkpoint entries (§5.3)
 GRANT USAGE ON SEQUENCE audit_log_audit_id_seq TO bitscan_retention;
 -- Tables the app may change. Never: audit_log, scan_result and its partitions,
 -- scan_result_reeval, bit_import. No DELETE on scan, scan_job, agent, policy or system_schedule.
 GRANT UPDATE ON policy, family, plugin, agent, enrollment_token, enrollment_request, os_info,
   agent_package, agent_ip_seen, scan_schedule, setting, system_schedule,
-  app_user, user_token, task TO bitscan_app;
+  app_user, user_token, task, kubeconfig TO bitscan_app;
 -- Jobs and scans: only their progress columns, so results can never be moved to another host or scan
 GRANT UPDATE (state, dispatched_at, started_at, deadline_at, finished_at) ON scan_job TO bitscan_app;
 GRANT UPDATE (state, finished_at) ON scan TO bitscan_app;
@@ -1174,11 +1224,15 @@ One versioned REST API at `/api/v1`, JSON over HTTPS (TLS 1.2+), described by an
 | POST | `/agent/{id}/jobs/{job_id}/results` | `bsa_` | Return results in batches |
 | PUT | `/agent/{id}/inventory` | `bsa_` | Upload `os_info` + packages; `?job_id=` completes an inventory job |
 | POST | `/agent/{id}/token/rotate` | `bsa_` | New agent token, only inside the rotation window |
+| POST | `/agent/{id}/jobs/{job_id}/kubeconfig` | `bsa_` | The kubeconfig of a `cluster_audit` job, once (§3.8) |
+| PUT | `/agent/{id}/jobs/{job_id}/files/{name}` | `bsa_` | Upload one redacted ClusterMAX file of a `cluster_audit` job, gzip (§3.8) |
 
 - The `{id}` in the path must match the token's agent, otherwise 403.
 - An agent awaiting approval gets 403 `pending_approval` on every route.
 - A result post is accepted only for a job addressed to that agent, within `dispatched_at` + 7 days, and only for plugin ids listed in that job; anything else returns 409 and is audit-logged. A second result for the same plugin is ignored (first wins).
 - The manager re-checks every size cap itself (§3.4, §4.5); it never trusts the agent's own limits.
+- **Kubeconfig fetch:** accepted only for a `cluster_audit` job of that agent that is `dispatched` or `running`, whose scan has a kubeconfig that is not deleted, and only once per job (`kubeconfig_fetch` primary key); a second request gets 409 `job_not_acceptable` and alerts. The answer is `Cache-Control: no-store` and is never logged, audit-logged by content or stored outside `kubeconfig`; the fetch itself is audit-logged (job, agent, kubeconfig name, source IP).
+- **Files:** accepted only for a `cluster_audit` job of that agent, within `dispatched_at` + 7 days, for the four names in §3.8, each once, at most 64 MiB uncompressed and 32 MiB compressed; the manager checks the size and SHA-256 itself. Each upload is audit-logged with name, size and SHA-256, never content.
 
 ### 6.2 User endpoints
 
@@ -1230,12 +1284,17 @@ Users sign in with a local account and receive an opaque token. Scripts send it 
 | CRUD | `/enrollment-tokens` | Create / revoke enrolment tokens | admin, TOTP session |
 | GET | `/packages/search`, `/packages/search.csv` | Fleet-wide package search (§7), JSON or CSV | viewer |
 | GET | `/scans` | List scans (filter by policy, host, state, date) | viewer |
-| POST | `/scans` | `{ policy_id, target }` → manual scan | operator |
+| POST | `/scans` | `{ policy_id, target }` → manual scan. For a ClusterMAX profile also `cmax: { target?, kubeconfig_id?, vars? }` (§4.4) | operator; ClusterMAX profiles: admin, TOTP session |
 | GET | `/scans/{id}` | Scan state + per-host summary; each host job carries `cancel_reason` (`"already_running"` or `null`) | viewer |
 | GET | `/scans/{id}/results`, `/results.csv` | Results, filterable by status and host. `stdout` and `stderr` are included only for operator and admin. | viewer |
 | POST | `/scans/{id}/cancel` | Cancel queued or running jobs | operator |
 | POST | `/scans/{id}/reevaluate` | Re-evaluate against the policy's current version | admin, TOTP session |
-| CRUD | `/scan-schedules` | Scheduled scans | operator |
+| CRUD | `/scan-schedules` | Scheduled scans; a ClusterMAX profile is refused (409) | operator |
+| GET | `/scans/{id}/files` | The ClusterMAX files of each `cluster_audit` job (name, size, SHA-256, truncated) | operator |
+| GET | `/scans/{id}/jobs/{job_id}/files/{name}` | Download one redacted ClusterMAX file (gzip) | operator |
+| GET | `/kubeconfigs` | Name, description, cluster name, server, dates; never the content | admin |
+| POST, PUT | `/kubeconfigs`, `/kubeconfigs/{id}` | Upload or replace a kubeconfig (§3.8). Refused (422): more than 1 MiB, not YAML, more than one context, a user with `exec`, `auth-provider`, `tokenFile`, `client-certificate`, `client-key` or any other file path, a cluster with `certificate-authority` as a path, `insecure-skip-tls-verify: true` | admin, TOTP session |
+| DELETE | `/kubeconfigs/{id}` | Soft delete: the encrypted content is erased; old scans keep the name | admin, TOTP session |
 | CRUD | `/users` | Accounts, roles, revoke a user's tokens; delete means disable | admin, TOTP session |
 | GET, PATCH | `/settings` | Runtime settings (§8.6) | admin (PATCH: TOTP session) |
 | GET | `/audit-log` | Audit trail | admin |
@@ -1275,7 +1334,7 @@ These are the field-level contracts for the agent routes. The OpenAPI document c
 
 **Enrol** — request `{ "hostname", "machine_id", "agent_version", "os_id", "os_version_id", "os_pretty_name" }` → `{ "agent_id", "agent_token", "issued_at", "expires_at", "status": "enrolled" | "awaiting_approval" }`.
 
-**Heartbeat** — request `{ "agent_version", "uptime_s", "last_pull_at", "current_job_id", "spool_bytes", "last_error", "runner_helpers": ["capread"], "clock": "<RFC 3339>" }` → `{ "job_pull_seconds": 300, "max_parallel_plugins": 2, "max_parallel_jobs": 2, "server_time": "<RFC 3339>" }`; `max_parallel_jobs` (1–4) is present only when the request's `agent_version` is 0.5.0 or later, because older agents refuse an unknown key. Skew between `clock` and `server_time` over 5 minutes alerts.
+**Heartbeat** — request `{ "agent_version", "uptime_s", "last_pull_at", "current_job_id", "spool_bytes", "last_error", "runner_helpers": ["capread", "scanner"], "clock": "<RFC 3339>" }` → `{ "job_pull_seconds": 300, "max_parallel_plugins": 2, "max_parallel_jobs": 2, "server_time": "<RFC 3339>" }`; `max_parallel_jobs` (1–4) is present only when the request's `agent_version` is 0.5.0 or later, because older agents refuse an unknown key. Skew between `clock` and `server_time` over 5 minutes alerts.
 
 **Job pull** → `{ "jobs": [ <Job> ] }`, where a Job is:
 
@@ -1295,6 +1354,21 @@ These are the field-level contracts for the agent routes. The OpenAPI document c
 ```
 
 Inventory jobs have `kind: "inventory"` and no `plugins` or `redaction_patterns`.
+
+A `cluster_audit` job (§3.8; agent 0.6.0 or later, only to agents that report `"scanner"`) has `kind: "cluster_audit"`, `redaction_patterns`, and instead of `plugins`:
+
+```json
+{
+  "cmax": {
+    "target": "auto",
+    "kubeconfig": true,
+    "vars": {"CLUSTERMAX_K8S_GPU_DRA": "1"},
+    "checks": [{"plugin_uuid": "3bde17c0-474e-4333-a5f5-d5f3572b4501", "check_id": "status"}]
+  }
+}
+```
+
+`kubeconfig` says only whether the job has one to fetch (§6.1). Results are posted per `plugin_uuid` as for compliance jobs, with `exit_code` 0, plus once `{"cmax_run": {"exit_code", "error_line", "started_at", "finished_at"}}` in the final batch.
 
 **Results** — request `{ "results": [ { "plugin_uuid", "exit_code", "stdout", "stderr", "started_at", "finished_at", "timed_out", "truncated", "error": null | "spool_overflow" | "runner_unavailable" } ], "final": true | false }` → `{ "accepted": n, "duplicates": n }`.
 
@@ -1353,7 +1427,7 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 
 | Risk | Control |
 | --- | --- |
-| Erroneous or unintended command sent to endpoints | Pull-only agent: no listening port and no push channel; jobs built only from active plugins of enabled policies; no API for ad-hoc commands; agent and runner reject jobs for another agent, past their deadline, more than 25 h out, or already run |
+| Erroneous or unintended command sent to endpoints | Pull-only agent: no listening port and no push channel; jobs built only from active plugins of enabled policies, plus the fixed `cluster_audit` job of a ClusterMAX scan (§3.8); no API for ad-hoc commands; agent and runner reject jobs for another agent, past their deadline, more than 25 h out, or already run |
 | Manager compromise | **Accepted risk.** Jobs are not signed, so anyone who controls the manager, or can write to its database, can make every host read and return any file, including password hashes, SSH and TLS private keys, agent tokens and service credentials. That is fleet-wide credential exposure, and from it root on hosts and access to other systems that trust those credentials. The runner sandbox does not prevent this; it only stops plugins writing files themselves. Controls that make it less likely or quicker to detect: least-privilege DB roles, admin TOTP, the hash-chained and externally shipped audit log, alerts on every import. |
 | Unintended or malicious policy | Only admins can upload policies, and only server administrators can write the policy folder; every import is validated, audit-logged and alerted; write-like commands are rejected (BIT102) and the sandbox blocks writes |
 | Stolen admin credentials | TOTP for admin sign-in; API tokens expire, are revocable, cannot create API tokens or change TOTP, and are revoked with their owner; every import, delete and settings change alerts. **Accepted risk:** a stolen admin session or admin API token can upload a policy that reads any file on every host, with the same fleet-wide credential exposure as a manager compromise. |
@@ -1375,8 +1449,10 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | Audit sink outage | Entries queue on disk, an alert fires at once, and sensitive actions are refused after 15 minutes of outage (§5.3) |
 | Flooding from one agent | Rate limits; at most one unscheduled inventory upload per 10 minutes; hard caps on every upload; unreferenced packages pruned; alert on bursts of new packages |
 | Install and supply chain | `.deb` published with its SHA-256 on a separate origin; debconf inputs (no secrets in shell history); reproducible builds; SBOM per release; hashed Python dependencies. A signed APT repository is deferred (§1.2). |
-| Root ClusterMAX run started by a scan | `cmax-helper` (§3.8) is installed and on by default on every agent host (owner decision 2026-11-15); one fixed command; no arguments; only uid `bitscan-runner` can connect; one run at a time; report in memory only; CPU, memory and I/O limits. **Accepted risk:** anyone who controls the manager, or holds an admin session or admin API token, can make every agent host where the helper is on (all hosts by default) run `cmax audit -vvv -y` as root, which changes the GPU vBoost setting, downloads an image, makes outbound HTTPS requests and, in cluster mode, starts jobs or privileged pods. A bug in ClusterMAX or its dependencies runs as root. |
-| Wrong host audits a whole cluster | **Accepted:** with `-y`, ClusterMAX's host role check is skipped, so the scan target alone decides which hosts run a cluster audit. Use a dedicated tag for ClusterMAX targets. |
+| Root ClusterMAX run started by a scan | The scanner role (`cmax-helper`, §3.8) is on by default on every agent host (owner decisions 2026-11-15, 2026-11-23); one fixed command with only a target mode and allow-listed variables; only uid `bitscan` can connect; one audit at a time; 4 h limit; files deleted after each run; CPU, memory and I/O limits; only an admin with a TOTP session starts a ClusterMAX scan, only manually, and each one is audit-logged. **Accepted risk:** anyone who controls the manager, or holds an admin TOTP session, can make any agent host where the role is on (all hosts by default) run `cmax audit -vvv -y` as root, which changes the GPU vBoost setting, downloads an image, makes outbound HTTPS requests and, in cluster mode, starts jobs or privileged pods. A bug in ClusterMAX or its dependencies runs as root. |
+| Wrong host or target audits a whole cluster | The admin chooses the scanner host and target mode for each scan. **Accepted:** with `-y`, ClusterMAX's host role check is skipped. |
+| Uploaded cluster-admin kubeconfigs (owner decision 2026-11-23) | Upload, replace and delete only by an admin with a TOTP session; encrypted with a vault key; never returned by the API, logged or put in a job payload, result or file; credentials only inline (no `exec`, `auth-provider` or file paths); fetched once per job by the chosen scanner only, kept in a sealed memory file, never on disk or swap; every use audit-logged and alerted. **Accepted risks:** anyone who controls the manager, its database together with the vault, or holds an admin TOTP session, controls every uploaded cluster; root on the scanner host can read a kubeconfig while its audit runs. |
+| ClusterMAX files | Redacted on the scanner before they leave it; only operator and admin download them; kept and deleted with their scan (§5.3). They hold host names, addresses and cluster details that redaction does not remove (accepted). |
 | Supply chain of the ClusterMAX collector | Pinned ClusterMAX commit and version, hash-pinned dependencies, recorded in the package (`/usr/share/doc/bitscan-agent/clustermax-SOURCE`); covered by the agent package's SHA-256; upgrades reviewed against the upstream diff |
 | Secrets in config | Manager secrets from a vault or root-only files (§8.6), never in the repo |
 
@@ -1403,7 +1479,7 @@ Because `.bit` files run shell commands that can read every file on every endpoi
 | End-to-end | Enrol → approve enrolment → heartbeat → inventory → import → scan → results | Nightly, 3 VMs |
 | Load | 10,000 simulated agents heartbeating | p95 heartbeat < 200 ms |
 | Security | Expired, foreign and replayed jobs rejected by agent and runner; tokens rejected on the wrong route group; API tokens refused for sensitive actions, token creation and TOTP changes; non-admins refused for policy upload and delete; uploads with hostile file names stored safely; first result wins under concurrent retries; BIT015 / BIT102 rejections; agent refuses a manager certificate that fails verification or its pin | Every PR touching importer, auth, agent or runner |
-| Collector helper | The socket refuses any uid other than `bitscan-runner`; unknown request names and bad check ids are refused; only one audit runs under concurrent `collect`; every `collect` after a finished run starts a new one; plugins of one job share one run id through the job's temp directory; no report on persistent storage after the service stops (`/run/cmax-work` gone, no new files under `/root`, `/var` or `/tmp`); the helper exits after its idle timeout; `cmax-trigger` works from inside the runner sandbox; the ClusterMAX policy passes BIT102 | Every PR touching the collector or the agent package; Ubuntu 22.04 and 24.04, amd64 |
+| ClusterMAX scanner | The socket refuses any uid other than `bitscan`; a request with an unknown field, a variable outside the allow-list, a bad value, a second or unsealed descriptor is refused; a second request while one runs gets `BUSY`; the command line is exactly the fixed audit plus the one target flag; a kubeconfig is fetched once per job (a second fetch gets 409), exists only as a sealed memory file, never in any file, the spool, logs, results or files (checked with a canary token); `/run/cmax-work` is empty after each run; files are redacted and within their caps; a ClusterMAX profile is refused for schedules, operators and API tokens; jobs reach only agents 0.6.0 or later that report `"scanner"`; end to end on a k3s VM with an uploaded kubeconfig and on a standalone VM | Every PR touching the collector, the agent package, the scan routes or kubeconfigs; Ubuntu 22.04 and 24.04, amd64 |
 
 ### 8.4 Observability
 

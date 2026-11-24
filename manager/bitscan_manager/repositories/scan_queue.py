@@ -240,3 +240,125 @@ def cancel_older_queued(
         },
     ).fetchall()
     return sorted(UUID(str(r[0])) for r in rows)
+
+
+# ---------------------------------------------------------------- ClusterMAX
+# TS §3.8, §4.4 (owner decision 2026-11-23): one cluster_audit job per scanner.
+
+
+def policy_family(conn: Conn, policy_id: int) -> str | None:
+    row = conn.execute(
+        "SELECT f.family_name FROM policy p JOIN family f ON f.family_id = p.family_id"
+        " WHERE p.policy_id = %s",
+        (policy_id,),
+    ).fetchone()
+    return None if row is None else str(row[0])
+
+
+@dataclass(frozen=True)
+class ScannerCandidate:
+    agent_id: UUID
+    agent_version: str
+    runner_helpers: list[str]
+
+
+def scanner_candidates(conn: Conn, agent_ids: Sequence[UUID]) -> list[ScannerCandidate]:
+    """The listed agents that are not decommissioned or awaiting approval,
+    with what the scanner check needs (version and helpers)."""
+    rows = conn.execute(
+        "SELECT agent_id, agent_version, runner_helpers FROM agent"
+        " WHERE agent_id = ANY(CAST(%s AS uuid[]))"
+        " AND status NOT IN ('decommissioned', 'awaiting_approval')"
+        " ORDER BY agent_id",
+        (list(agent_ids),),
+    ).fetchall()
+    return [
+        ScannerCandidate(
+            UUID(str(r[0])),
+            str(r[1] or ""),
+            [str(h) for h in (r[2] or []) if isinstance(h, str)],
+        )
+        for r in rows
+    ]
+
+
+def kubeconfig_is_usable(conn: Conn, kubeconfig_id: int) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM kubeconfig WHERE kubeconfig_id = %s AND deleted_at IS NULL"
+        " FOR SHARE",
+        (kubeconfig_id,),
+    ).fetchone()
+    return row is not None
+
+
+def insert_cluster_scan(
+    conn: Conn,
+    *,
+    policy_id: int,
+    policy_version: int,
+    target_json: Mapping[str, Any],
+    clustermax: Mapping[str, Any],
+    requested_by: int,
+    created_at: datetime,
+) -> UUID:
+    row = conn.execute(
+        "INSERT INTO scan (policy_id, policy_version, trigger, schedule_id, target,"
+        " requested_by, state, created_at, clustermax)"
+        " VALUES (%s, %s, 'manual', NULL, %s, %s, 'queued', %s, %s) RETURNING scan_id",
+        (
+            policy_id,
+            policy_version,
+            Jsonb(dict(target_json)),
+            requested_by,
+            created_at,
+            Jsonb(dict(clustermax)),
+        ),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("INSERT … RETURNING returned no row")
+    return UUID(str(row[0]))
+
+
+_CLUSTER_JOBS: Final = sql.SQL(
+    "INSERT INTO scan_job (job_id, kind, scan_id, agent_id, state, payload,"
+    " eval_spec, created_at, pickup_by)"
+    " SELECT t.job_id, 'cluster_audit', %(scan)s, t.agent_id, 'queued',"
+    " jsonb_build_object('job_id', t.job_id::text, 'agent_id', t.agent_id::text,"
+    " 'kind', 'cluster_audit', 'pickup_by', CAST(%(text)s AS text),"
+    " 'cmax', CAST(%(cmax)s AS jsonb),"
+    " 'redaction_patterns', CAST(%(patterns)s AS jsonb)),"
+    " CAST(%(spec)s AS jsonb), %(created)s, %(pickup)s"
+    " FROM unnest(CAST(%(jobs)s AS uuid[]), CAST(%(agents)s AS uuid[]))"
+    " AS t(job_id, agent_id)"
+)
+
+
+def insert_cluster_jobs(
+    conn: Conn,
+    *,
+    scan_id: UUID,
+    agent_ids: Sequence[UUID],
+    job_ids: Sequence[UUID],
+    created_at: datetime,
+    pickup_by: datetime,
+    pickup_text: str,
+    cmax_json: Mapping[str, Any],
+    patterns: Sequence[str],
+    eval_spec_json: Mapping[str, Any],
+) -> int:
+    if not agent_ids or len(agent_ids) != len(job_ids):
+        raise ValueError("one job id per agent is required")
+    return conn.execute(
+        _CLUSTER_JOBS,
+        {
+            "scan": scan_id,
+            "text": pickup_text,
+            "cmax": Jsonb(dict(cmax_json)),
+            "patterns": Jsonb(list(patterns)),
+            "spec": Jsonb(dict(eval_spec_json)),
+            "created": created_at,
+            "pickup": pickup_by,
+            "jobs": list(job_ids),
+            "agents": list(agent_ids),
+        },
+    ).rowcount

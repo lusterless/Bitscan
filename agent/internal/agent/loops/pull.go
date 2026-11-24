@@ -20,13 +20,14 @@ type Seen interface {
 }
 
 // Puller is the job pull loop and its dispatch. Run, Seen and Inventory are
-// required. A nil Compliance is refused: every compliance job is refused and
-// logged, and inventory jobs still run (TS §1.1 G2).
+// required. A nil Compliance or ClusterAudit is refused: every job of that
+// kind is refused and logged, and inventory jobs still run (TS §1.1 G2).
 type Puller struct {
-	Run        *Run
-	Seen       Seen
-	Inventory  InventoryRunner
-	Compliance ComplianceHandler
+	Run          *Run
+	Seen         Seen
+	Inventory    InventoryRunner
+	Compliance   ComplianceHandler
+	ClusterAudit ComplianceHandler // cluster_audit jobs, one at a time (TS §3.8)
 }
 
 // Loop pulls once after the first heartbeat attempt, then every
@@ -44,17 +45,18 @@ func (p *Puller) Loop() {
 	case <-r.Context().Done():
 		return
 	}
-	inv, comp := make(chan wire.Job, 10), make(chan wire.Job, 10)
+	inv, comp, audit := make(chan wire.Job, 10), make(chan wire.Job, 10), make(chan wire.Job, 10)
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); p.work(inv, func(j wire.Job) { p.Inventory.RunJob(r.Context(), j.JobID) }) }()
 	go func() { defer wg.Done(); p.pool(comp, p.compliance) }()
+	go func() { defer wg.Done(); p.work(audit, p.clusterAudit) }()
 	defer wg.Wait()
 	back := schedule.NewBackoff(r.Rand())
 	for {
 		var wait time.Duration
 		follow := false
-		switch p.pull(inv, comp) {
+		switch p.pull(inv, comp, audit) {
 		case transport.Stop:
 			return
 		case transport.Wait, transport.Retry:
@@ -91,7 +93,7 @@ func (p *Puller) sleep(d time.Duration, follow bool) bool {
 }
 
 // pull makes one pull and hands each accepted job on, in pull order.
-func (p *Puller) pull(inv, comp chan<- wire.Job) transport.Class {
+func (p *Puller) pull(inv, comp, audit chan<- wire.Job) transport.Class {
 	r := p.Run
 	resp, _ := r.Call(r.Context(), transport.Request{Op: transport.OpJobs})
 	if resp.Class != transport.Success {
@@ -109,8 +111,11 @@ func (p *Puller) pull(inv, comp chan<- wire.Job) transport.Class {
 			continue
 		}
 		ch := comp
-		if job.Kind == "inventory" {
+		switch job.Kind {
+		case wire.KindInventory:
 			ch = inv // runs at once, alongside compliance jobs (TS §3.3 L222)
+		case wire.KindClusterAudit:
+			ch = audit // one at a time, alongside the others (TS §3.8)
 		}
 		select {
 		case ch <- job:

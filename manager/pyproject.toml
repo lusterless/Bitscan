@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bitscan-manager"
-version = "0.5.7"
+version = "0.6.0"
 description = "Bitscan manager: inventory and compliance for Ubuntu and Debian endpoints"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -27,6 +27,9 @@ dependencies = [
     # PD-33 (a): the low-level multipart parser for in-memory `.bit` uploads
     # (TS §4.1, §6.3); its high-level form API spools to disk and is not used.
     "python-multipart>=0.0.20",
+    # TS §6.2 (owner decision 2026-11-23): kubeconfig uploads, read with
+    # yaml.safe_load only.
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +39,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-defusedxml",
+    "types-PyYAML",
     "testcontainers>=4.8",
     # PD-21: the contract suite validates the shared fixtures against the
     # exported JSON Schemas; the fuzz suite drives the inventory decoder.

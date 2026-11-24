@@ -370,6 +370,9 @@ Ids agreed with tester-m11e 2026-11-08; that tester writes the rows of this sect
 | CHK-M11-307 | APP | Upgrade walk once at the gate (#153 (d)): manager 0.1.0 with agent 0.1.0 → migrate and manager N → heartbeat and inventory go on → agent upgraded to N → a scan completes | CI; W |
 | CHK-M11-308 | APP | Agent N with manager 0.1.0: enrol, approve, heartbeat, inventory (REQ-288) | CI; W |
 | CHK-M11-309 | APP | Agent N with manager 0.1.0: no compliance job is ever sent; token sweep over the N / N−1 runs | CI; W |
+| CHK-M11-310 | APP | 0.6.0 (TS §3.8, owner decision 2026-11-23): the 24.04 guest reports `scanner`; `clustermax-0.3.0.bit` imports; an admin ClusterMAX scan (target `standalone`) is queued (202) | CI; W |
+| CHK-M11-311 | APP | The real ClusterMAX standalone audit finishes: scan `completed`, host `clustermax` verdict `pass` or `fail` with exit 0, a result for each of the 83 plugins, `status` `ok <seconds> 0.3.0` | CI; W |
+| CHK-M11-312 | APP | `GET /scans/{id}/files` lists `report.txt` and `run.log` (and `audit.out`, `audit.values.json` when written); `report.txt` downloads gzip and holds the report; a viewer gets 403 | CI; W |
 | CHK-M11-370 | APP (plant) | An agent `.deb` whose runner returns no results (throwaway copy: `emit(res)` dropped in `agent/internal/runner/job.go`) → CHK-M11-302 FAIL | W; CI |
 | CHK-M11-371 | APP (plant) | A manager tree whose results route leaves out a host → CHK-M11-302 FAIL (after TASK-244) | W; CI |
 | CHK-M11-372 | APP (plant) | A manager tree that refuses the 0.1.0 heartbeat body → CHK-M11-305 FAIL | W; CI |

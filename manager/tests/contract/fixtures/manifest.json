@@ -2375,6 +2375,84 @@
       "class": "range",
       "reason": "TASK-048 r1 round 3 (reviewer): non-finite numbers refused in raw; NaN/Infinity are not JSON (RFC 8259), 1e400 overflows float64",
       "schema_gap": "nan_inf"
+    },
+    {
+      "file": "jobs/response_valid_cluster_audit.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": true,
+      "reason": "TS §3.8, §6.5 (owner decision 2026-11-23): cluster_audit job, cmax with all five variables (null when unset)"
+    },
+    {
+      "file": "jobs/response_invalid_cluster_audit_with_plugins.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "TS §6.5: a cluster_audit job has no plugins"
+    },
+    {
+      "file": "jobs/response_invalid_cluster_audit_var_not_allowed.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "TS §3.8: only the allow-listed variables"
+    },
+    {
+      "file": "jobs/response_invalid_cluster_audit_missing_nullable_var.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "Q2 ruling: nullable keys are required"
+    },
+    {
+      "file": "jobs/response_invalid_cluster_audit_target.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "enum",
+      "reason": "TS §3.8: target auto | standalone | slurm | k8s"
+    },
+    {
+      "file": "jobs/response_invalid_cluster_audit_checks_empty.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "range",
+      "reason": "TS §6.5: 1..5,000 checks"
+    },
+    {
+      "file": "jobs/response_invalid_cluster_audit_missing_cmax.json",
+      "route": "jobs",
+      "direction": "response",
+      "valid": false,
+      "class": "missing_key",
+      "reason": "TS §6.5: cluster_audit requires cmax"
+    },
+    {
+      "file": "results/request_valid_cmax_run.json",
+      "route": "results",
+      "direction": "request",
+      "valid": true,
+      "reason": "TS §6.5: cmax_run once, in the final batch of a cluster_audit job"
+    },
+    {
+      "file": "results/request_invalid_cmax_run_exit_code_float.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "wrong_type",
+      "reason": "integer"
+    },
+    {
+      "file": "results/request_invalid_cmax_run_extra_key.json",
+      "route": "results",
+      "direction": "request",
+      "valid": false,
+      "class": "extra_key",
+      "reason": "cmax_run is exactly exit_code, error_line, started_at, finished_at"
     }
   ],
   "schema_gaps": {

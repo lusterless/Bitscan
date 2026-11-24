@@ -152,7 +152,6 @@ sub_contents() {
         for b in $BINS; do echo "-rwxr-xr-x root/root ./usr/sbin/$b"; done
         for u in $UNITS $CMAX_UNITS; do echo "-rw-r--r-- root/root ./lib/systemd/system/$u"; done
         echo "-rwxr-xr-x root/root ./usr/sbin/cmax-helper"
-        echo "-rwxr-xr-x root/root ./usr/bin/cmax-trigger"
         echo "-rw-r--r-- root/root ./usr/share/doc/bitscan-agent/LICENSE.clustermax.gz"
         echo "-rw-r--r-- root/root ./usr/share/doc/bitscan-agent/clustermax-SOURCE"
         echo "-rw-r--r-- root/root ./etc/dbus-1/system.d/bitscan-runner.conf"

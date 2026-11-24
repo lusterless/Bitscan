@@ -54,6 +54,9 @@ AGENT_OPS = {
     ("POST", V1 + "/agent/{}/jobs/{}/results"),
     ("PUT", V1 + "/agent/{}/inventory"),
     ("POST", V1 + "/agent/{}/token/rotate"),
+    # TS §3.8, §6.1 (owner decision 2026-11-23): the cluster_audit routes.
+    ("POST", V1 + "/agent/{}/jobs/{}/kubeconfig"),
+    ("PUT", V1 + "/agent/{}/jobs/{}/files/{}"),
 }
 # TS §6.2 L1095-L1127, every milestone (later milestones add routes from here).
 USER_OPS = {
@@ -106,6 +109,16 @@ USER_OPS = {
 USER_OPS |= _crud(V1 + "/enrollment-tokens")
 USER_OPS |= _crud(V1 + "/scan-schedules")
 USER_OPS |= _crud(V1 + "/users")
+# TS §6.2 (owner decision 2026-11-23): list, read, upload, replace, delete.
+USER_OPS |= {
+    ("GET", V1 + "/kubeconfigs"),
+    ("POST", V1 + "/kubeconfigs"),
+    ("GET", V1 + "/kubeconfigs/{}"),
+    ("PUT", V1 + "/kubeconfigs/{}"),
+    ("DELETE", V1 + "/kubeconfigs/{}"),
+    ("GET", V1 + "/scans/{}/files"),
+    ("GET", V1 + "/scans/{}/jobs/{}/files/{}"),
+}
 HEALTH_OPS = {("GET", "/healthz"), ("GET", "/readyz")}  # #5
 # M5 (REQ-118, REQ-088 (1) as changed for M5; #6 M5 half, decisions 2026-10-24):
 # the built web UI, served without a token and not in the OpenAPI document.

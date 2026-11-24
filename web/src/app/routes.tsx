@@ -3,6 +3,7 @@ import { EnrolmentTokens } from "../screens/EnrolmentTokens";
 import { HostDetail } from "../screens/HostDetail";
 import { Hosts } from "../screens/Hosts";
 import { Imports } from "../screens/Imports";
+import { Kubeconfigs } from "../screens/Kubeconfigs";
 import { MySessions } from "../screens/MySessions";
 import { PackageSearch } from "../screens/PackageSearch";
 import { PasswordChange } from "../screens/PasswordChange";
@@ -57,6 +58,8 @@ export const ROUTE_ROLES: Readonly<Record<RouteName, readonly Role[]>> =
     "scan-results": EVERYONE,
     "run-scan": OPERATOR,
     schedules: OPERATOR,
+    // TS §6.2 (owner decision 2026-11-23): kubeconfigs are admin only.
+    kubeconfigs: ADMIN,
   });
 
 export function isAllowed(name: RouteName, role: Role): boolean {
@@ -105,6 +108,12 @@ const NAV: readonly NavEntry[] = Object.freeze([
     label: "Schedules",
     group: "Compliance",
     icon: "schedules",
+  },
+  {
+    route: { name: "kubeconfigs" },
+    label: "Kubeconfigs",
+    group: "Compliance",
+    icon: "tokens",
   },
   {
     route: { name: "policy-upload" },
@@ -280,11 +289,14 @@ export function RouteView({ route, role, onPasswordChanged }: RouteViewProps) {
         <RunScan
           key={route.policyId ?? ""}
           policyId={route.policyId}
+          role={role}
           links={SCAN_LINKS}
         />
       );
     case "schedules":
       return <Schedules />;
+    case "kubeconfigs":
+      return <Kubeconfigs />;
     default: {
       const unhandled: never = route;
       return unhandled;

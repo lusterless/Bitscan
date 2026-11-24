@@ -47,6 +47,7 @@ _REFUSALS: Final[dict[type[Exception], str]] = {
     queue.PolicyDeleted: "policy_disabled",  # its schedules are disabled (L550)
     queue.PolicyHasNoPlugins: "policy_has_no_plugins",
     queue.NoTargetAgents: "no_target_agents",  # #3
+    queue.ClusterMaxProfile: "clustermax_profile",  # TS §4.4, 2026-11-23
 }
 
 

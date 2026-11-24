@@ -81,6 +81,7 @@ def build_agent_router() -> APIRouter:
     (TS §6 L1056); never the user dependency. Route modules (TASK-067, 072
     to 075) add one include line each."""
     from bitscan_manager.api.agent import (  # route modules import this package
+        cluster_audit,
         enrol,
         heartbeat,
         inventory,
@@ -94,6 +95,7 @@ def build_agent_router() -> APIRouter:
     router.include_router(jobs.router)
     router.include_router(inventory.router)
     router.include_router(rotate.router)
+    router.include_router(cluster_audit.router)  # TS §3.8 (2026-11-23)
     return router
 
 

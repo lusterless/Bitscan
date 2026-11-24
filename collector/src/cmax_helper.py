@@ -1,64 +1,74 @@
 #!/usr/bin/python3 -I
-"""cmax-helper: run the fixed ClusterMAX audit for the Bitscan runner (TS §3.8).
+"""cmax-helper: the ClusterMAX scanner role's root helper (TS §3.8; owner
+decisions 2026-11-14, 2026-11-15, 2026-11-23).
 
 Started by systemd socket activation (cmax-helper.socket). Accepts only peers
-with uid `bitscan-runner`, takes a request name and never a command line, runs
-exactly `cmax audit -vvv -y`, and keeps the reports only in memory. It exits
-when it has been idle for IDLE_EXIT_S, which drops every report.
+with uid `bitscan` (the agent). One request per connection: a JSON line
+{"job_id", "target", "vars"} of at most MAX_REQUEST bytes, plus at most one
+file descriptor (SCM_RIGHTS), a sealed memfd holding the job's kubeconfig.
+It runs exactly `cmax audit -vvv -y` (plus --standalone, --slurm or --k8s when
+the target is not auto) with the allow-listed variables, one audit at a time,
+and answers with a JSON line followed by the files. It never takes a command
+line, a path or any other variable, and writes nothing that outlives the run.
 
-Requests (one line, at most MAX_REQUEST bytes):
-  collect                    start an audit unless one runs:
-                             started <run-id> | running <run-id>
-  get <run-id> <check-id>    wait for that run, return the check's verdict line
-  get <run-id> header        wait for that run, return its target block
-  get <run-id> status        ok <age-s> <cmax-version> | running | failed <rc>
-
-Every collect that finds no running audit starts a new one; a finished report
-is never reused (owner decision 2026-11-14). The last KEEP_RUNS runs are kept.
+Answer: {"exit_code", "started_at", "finished_at", "cmax_version", "files":
+[{"name", "size", "truncated"}]} then each file's bytes in that order; the
+agent reads the checks from report.txt. A refused request gets
+`REFUSED <reason>` and a second request while one runs `BUSY`.
 """
 
 from __future__ import annotations
 
+import array
+import fcntl
+import json
 import os
 import pwd
 import re
-import secrets
 import shutil
 import socket
+import stat
 import struct
 import subprocess
 import sys
 import threading
 import time
-from collections import OrderedDict
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
 CMAX = "/usr/lib/clustermax/bin/cmax"
 WORK_DIR = "/run/cmax-work"
-ALLOWED_USER = "bitscan-runner"
+ALLOWED_USER = "bitscan"
 IDLE_EXIT_S = 30 * 60
-GET_WAIT_S = 590
-KEEP_RUNS = 4
-MAX_REQUEST = 256
-MAX_REPLY = 4000
-CHECK_ID = re.compile(r"[A-Za-z0-9_.-]{1,128}")
-RUN_ID = re.compile(r"[0-9a-f]{32}")
+AUDIT_LIMIT_S = 4 * 3600
+TIMEOUT_EXIT = 124
+MAX_REQUEST = 4096
+MAX_FILE = 64 * 1024 * 1024
+JOB_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
-VERDICT = re.compile(r"^(PASS|FAIL|WARNING|SKIPPED|INFO)\s+.*\[([A-Za-z0-9_.-]+)\]\s*$")
-# A ClusterMAX SKIPPED is "not applicable" (owner decision): printed as n/a.
-TOKEN = {
-    "PASS": "PASS",
-    "FAIL": "FAIL",
-    "WARNING": "WARNING",
-    "SKIPPED": "n/a",
-    "INFO": "PASS",
+TARGET_FLAGS = {
+    "auto": None,
+    "standalone": "--standalone",
+    "slurm": "--slurm",
+    "k8s": "--k8s",
 }
+_DNS = r"[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?"
+_NAMESPACE = r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+# TS §3.8: the same list as the manager's; changing it is a spec change.
+ALLOWED_VARS = {
+    "CLUSTERMAX_K8S_GPU_DRA": re.compile(r"[01]"),
+    "CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS": re.compile(_DNS),
+    "CLUSTERMAX_K8S_GPU_DRA_DRIVER": re.compile(_DNS),
+    "CLUSTERMAX_AUDIT_K8S_NAMESPACE": re.compile(_NAMESPACE),
+    "CLUSTERMAX_AUDIT_TENANT_NAMESPACE": re.compile(_NAMESPACE),
+}
+SEALS = fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
 
 
-def audit_command(cmax: str = CMAX) -> list[str]:
+def audit_command(target: str = "auto", cmax: str = CMAX) -> list[str]:
     """The one command this helper ever runs (TS §3.8)."""
-    return [cmax, "audit", "-vvv", "-y"]
+    flag = TARGET_FLAGS[target]
+    return [cmax, "audit", "-vvv", "-y"] + ([flag] if flag else [])
 
 
 # Where cluster tools and configs live when they are not on the default PATH
@@ -118,57 +128,6 @@ def audit_environment(
     return env
 
 
-def parse_check(report: str, check_id: str) -> str:
-    """Return '<VERDICT> observed=<value>' for one check, then the check's own
-    text (description, Reproduce, Recommendation) on the next lines, or
-    MISSING. References are left out. The first line keeps a space after the
-    verdict, so the policy's `^(PASS|n/a)( |$)` grading is unchanged."""
-    lines = report.splitlines()
-    for index, line in enumerate(lines):
-        match = VERDICT.match(line)
-        if match is None or match.group(2) != check_id:
-            continue
-        observed = ""
-        details: list[str] = []
-        in_refs = False
-        for detail in lines[index + 1 :]:
-            if VERDICT.match(detail) or not detail.startswith(" "):
-                break
-            stripped = detail.strip()
-            if not stripped:
-                continue
-            if stripped.startswith("References:"):
-                in_refs = True
-                continue
-            if in_refs and stripped.startswith("["):
-                continue
-            in_refs = False
-            if stripped.startswith("Observed:") and not observed:
-                observed = stripped[len("Observed:") :].strip()
-                continue
-            details.append(stripped)
-        reply = f"{TOKEN[match.group(1)]} observed={observed}"
-        if details:
-            reply += "\n" + "\n".join(details)
-        return reply[:MAX_REPLY]
-    return f"MISSING {check_id} is not in the ClusterMAX report"
-
-
-def parse_header(report: str) -> str:
-    """The target block cmax prints before it starts (command, target, host...)."""
-    block: list[str] = []
-    started = False
-    for line in report.splitlines():
-        if line.startswith("# ClusterMAX audit target"):
-            started = True
-            continue
-        if started:
-            if not line.startswith("  "):
-                break
-            block.append(line.strip())
-    return ("; ".join(block) or "MISSING no target block in the report")[:MAX_REPLY]
-
-
 def clear_dir(path: str) -> None:
     """Remove what the finished audit wrote under path; the report text is
     already held in memory."""
@@ -182,156 +141,152 @@ def clear_dir(path: str) -> None:
                 pass
 
 
-@dataclass
-class Run:
-    """One audit. Guarded by State.lock."""
-
-    running: bool = True
-    report: str | None = None
-    exit_code: int | None = None
-    finished_at: float = 0.0
+class Refused(Exception):
+    """The request is refused; the message is the reason sent to the agent."""
 
 
-@dataclass
-class State:
-    """Shared state. All fields are guarded by `lock`."""
+@dataclass(frozen=True)
+class Request:
+    job_id: str
+    target: str
+    vars: dict[str, str]
 
-    lock: threading.Condition = field(default_factory=threading.Condition)
-    runs: OrderedDict[str, Run] = field(default_factory=OrderedDict)  # oldest first
-    current: str | None = None  # the running audit's id
-    last_activity: float = field(default_factory=time.monotonic)
+
+def parse_request(line: bytes) -> Request:
+    try:
+        doc = json.loads(line.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise Refused("bad request") from None
+    if not isinstance(doc, dict) or set(doc) != {"job_id", "target", "vars"}:
+        raise Refused("bad request")
+    job_id, target, variables = doc["job_id"], doc["target"], doc["vars"]
+    if not isinstance(job_id, str) or JOB_ID.fullmatch(job_id) is None:
+        raise Refused("bad job_id")
+    if target not in TARGET_FLAGS:
+        raise Refused("bad target")
+    if not isinstance(variables, dict):
+        raise Refused("bad vars")
+    for name, value in variables.items():
+        pattern = ALLOWED_VARS.get(name)
+        if (
+            pattern is None
+            or not isinstance(value, str)
+            or pattern.fullmatch(value) is None
+        ):
+            raise Refused("variable not allowed")
+    return Request(job_id, target, dict(variables))
+
+
+def check_memfd(fd: int) -> None:
+    """The passed descriptor must be a sealed memfd: no file on any disk."""
+    try:
+        seals = fcntl.fcntl(fd, fcntl.F_GET_SEALS)
+        link = os.readlink(f"/proc/self/fd/{fd}")
+        mode = os.fstat(fd).st_mode
+    except OSError:
+        raise Refused("descriptor is not a sealed memfd") from None
+    if (
+        seals & SEALS != SEALS
+        or not link.startswith("/memfd:")
+        or not stat.S_ISREG(mode)
+    ):
+        raise Refused("descriptor is not a sealed memfd")
+
+
+def _now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _find(work_dir: str, name: str) -> str | None:
+    for root, _dirs, files in os.walk(work_dir):
+        if name in files:
+            return os.path.join(root, name)
+    return None
+
+
+def _capped(data: bytes) -> tuple[bytes, bool]:
+    return (data[:MAX_FILE], True) if len(data) > MAX_FILE else (data, False)
+
+
+@dataclass(frozen=True)
+class Outcome:
+    header: dict[str, object]
+    files: list[tuple[str, bytes]]
 
 
 class Helper:
     def __init__(
         self,
         *,
-        command: list[str],
-        environment: dict[str, str],
+        cmax: str,
+        environment: Mapping[str, str],
         work_dir: str,
         version: str,
+        limit_s: float = AUDIT_LIMIT_S,
         clock: Callable[[], float] = time.monotonic,
-        get_wait_s: float = GET_WAIT_S,
-        new_id: Callable[[], str] = lambda: secrets.token_hex(16),
     ) -> None:
-        self.command = command
-        self.environment = environment
+        self.cmax = cmax
+        self.environment = dict(environment)
         self.work_dir = work_dir
         self.version = version
+        self.limit_s = limit_s
         self.clock = clock
-        self.get_wait_s = get_wait_s
-        self.new_id = new_id
-        self.state = State(last_activity=clock())
+        self.lock = threading.Lock()
+        self.last_activity = clock()
 
-    # -- audit -----------------------------------------------------------
-    def collect(self) -> str:
-        s = self.state
-        with s.lock:
-            s.last_activity = self.clock()
-            if s.current is not None:
-                return f"running {s.current}"
-            run_id = self.new_id()
-            s.runs[run_id] = Run()
-            s.current = run_id
-            while len(s.runs) > KEEP_RUNS:  # the running one is the newest
-                s.runs.popitem(last=False)
-        threading.Thread(target=self._run, args=(run_id,), daemon=True).start()
-        return f"started {run_id}"
-
-    def _run(self, run_id: str) -> None:
+    def run(self, request: Request, kubeconfig_fd: int | None) -> Outcome:
+        """Runs one audit; the caller holds self.lock."""
+        env = dict(self.environment) | request.vars
+        env["KUBECACHEDIR"] = os.path.join(self.work_dir, "kube-cache")
+        if kubeconfig_fd is not None:
+            env["KUBECONFIG"] = f"/proc/{os.getpid()}/fd/{kubeconfig_fd}"
+        started = _now()
         try:
             done = subprocess.run(
-                self.command,
+                audit_command(request.target, self.cmax),
                 cwd=self.work_dir,
-                env=self.environment,
+                env=env,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                capture_output=True,
+                timeout=self.limit_s,
                 check=False,
             )
-            text, code = (
-                ANSI.sub("", done.stdout.decode("utf-8", "replace")),
-                done.returncode,
-            )
+            stdout, stderr, code = done.stdout, done.stderr, done.returncode
+        except subprocess.TimeoutExpired as exc:
+            stdout, stderr, code = exc.stdout or b"", exc.stderr or b"", TIMEOUT_EXIT
         except OSError as exc:
-            text, code = f"cmax could not start: {exc.strerror}", 127
+            stdout, stderr, code = (
+                b"",
+                f"cmax could not start: {exc.strerror}".encode(),
+                127,
+            )
+        finished = _now()
+        files: list[tuple[str, bytes]] = [
+            ("report.txt", ANSI.sub("", stdout.decode("utf-8", "replace")).encode()),
+            ("run.log", ANSI.sub("", stderr.decode("utf-8", "replace")).encode()),
+        ]
+        for name in ("audit.out", "audit.values.json"):
+            path = _find(self.work_dir, name)
+            if path is not None:
+                with open(path, "rb") as handle:
+                    files.append((name, handle.read(MAX_FILE + 1)))
         clear_dir(self.work_dir)
-        s = self.state
-        with s.lock:
-            run = s.runs.get(run_id)
-            if run is not None:
-                run.report, run.exit_code = text, code
-                run.running = False
-                run.finished_at = self.clock()
-            s.current = None
-            s.last_activity = self.clock()
-            s.lock.notify_all()
-
-    def _wait(self, run_id: str) -> Run | None:
-        """Wait for the run to finish; None when it is unknown or still running."""
-        s = self.state
-        deadline = self.clock() + self.get_wait_s
-        with s.lock:
-            while True:
-                run = s.runs.get(run_id)
-                if run is None or not run.running:
-                    return run
-                left = deadline - self.clock()
-                if left <= 0:
-                    return None
-                s.lock.wait(timeout=min(left, 5.0))
-
-    def get(self, run_id: str, what: str) -> str:
-        s = self.state
-        with s.lock:
-            s.last_activity = self.clock()
-            run = s.runs.get(run_id)
-            if run is None:
-                return f"MISSING run {run_id} is not held"
-            if what == "status":
-                if run.running:
-                    return "running"
-                if run.exit_code != 0:
-                    return f"failed {run.exit_code}"
-                return f"ok {int(self.clock() - run.finished_at)} {self.version}"
-        done = self._wait(run_id)
-        if done is None:
-            with s.lock:
-                held = run_id in s.runs
-            if held and what == "wait":
-                return "running"
-            return (
-                "TIMEOUT the audit is still running"
-                if held
-                else f"MISSING run {run_id} is not held"
-            )
-        if what == "wait":
-            return "done"
-        if done.exit_code != 0 or done.report is None:
-            return f"ERROR cmax exited {done.exit_code}"
-        if what == "header":
-            return parse_header(done.report)
-        return parse_check(done.report, what)
-
-    def handle(self, request: str) -> str:
-        words = request.split()
-        if words == ["collect"]:
-            return self.collect()
-        if (
-            len(words) == 3
-            and words[0] == "get"
-            and RUN_ID.fullmatch(words[1])
-            and (
-                words[2] in {"header", "status", "wait"} or CHECK_ID.fullmatch(words[2])
-            )
-        ):
-            return self.get(words[1], words[2])
-        return "REFUSED unknown request"
+        capped = [(name, *_capped(data)) for name, data in files]
+        header: dict[str, object] = {
+            "exit_code": code,
+            "started_at": started,
+            "finished_at": finished,
+            "cmax_version": self.version,
+            "files": [
+                {"name": n, "size": len(d), "truncated": t} for n, d, t in capped
+            ],
+        }
+        return Outcome(header, [(n, d) for n, d, _ in capped])
 
     def idle(self) -> bool:
-        s = self.state
-        with s.lock:
-            return s.current is None and self.clock() - s.last_activity >= IDLE_EXIT_S
+        return (
+            not self.lock.locked() and self.clock() - self.last_activity > IDLE_EXIT_S
+        )
 
 
 def peer_uid(conn: socket.socket) -> int:
@@ -340,36 +295,93 @@ def peer_uid(conn: socket.socket) -> int:
     return uid
 
 
-def read_request(conn: socket.socket) -> str | None:
+def read_request(conn: socket.socket) -> tuple[bytes, list[int]]:
+    """The request line and the descriptors sent with it (closed by the
+    caller). More than one descriptor, or a line over MAX_REQUEST, is refused."""
+    fds = array.array("i")
     data = b""
+    received: list[int] = []
     while b"\n" not in data and len(data) <= MAX_REQUEST:
-        chunk = conn.recv(MAX_REQUEST + 1 - len(data))
-        if not chunk:
+        msg, ancdata, _flags, _addr = conn.recvmsg(
+            MAX_REQUEST + 1 - len(data), socket.CMSG_SPACE(2 * fds.itemsize)
+        )
+        for level, kind, payload in ancdata:
+            if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                got = array.array("i")
+                got.frombytes(payload[: len(payload) - len(payload) % got.itemsize])
+                received.extend(got)
+        if not msg:
             break
-        data += chunk
+        data += msg
     if len(data) > MAX_REQUEST or b"\n" not in data:
-        return None
-    try:
-        return data.split(b"\n", 1)[0].decode("ascii")
-    except UnicodeDecodeError:
-        return None
+        raise _Bad(received, "bad request")
+    if len(received) > 1:
+        raise _Bad(received, "more than one descriptor")
+    return data.split(b"\n", 1)[0], received
+
+
+class _Bad(Exception):
+    def __init__(self, fds: list[int], reason: str) -> None:
+        super().__init__(reason)
+        self.fds = fds
+        self.reason = reason
+
+
+def _drain(conn: socket.socket) -> None:
+    """Reads what the peer still sends (at most 64 KiB, 1 s), so closing does
+    not reset the connection before it reads the refusal."""
+    conn.shutdown(socket.SHUT_WR)
+    conn.settimeout(1)
+    left = 64 * 1024
+    while left > 0 and (chunk := conn.recv(min(left, 4096))):
+        left -= len(chunk)
 
 
 def serve_connection(helper: Helper, conn: socket.socket, allowed_uid: int) -> None:
+    fds: list[int] = []
     with conn:
-        conn.settimeout(10)
         try:
-            request = read_request(conn)
+            conn.settimeout(10)
+            try:
+                line, fds = read_request(conn)
+            except _Bad as bad:
+                fds = bad.fds
+                conn.sendall(f"REFUSED {bad.reason}\n".encode())
+                _drain(conn)
+                return
             if peer_uid(conn) != allowed_uid:
-                # The request is read (bounded) and ignored, so the client gets
-                # this answer instead of a reset connection.
                 conn.sendall(b"REFUSED peer is not allowed\n")
                 return
-            reply = "REFUSED bad request" if request is None else helper.handle(request)
+            try:
+                request = parse_request(line)
+                if fds:
+                    check_memfd(fds[0])
+                    if request.target != "k8s":
+                        raise Refused("a kubeconfig needs target k8s")
+            except Refused as exc:
+                conn.sendall(f"REFUSED {exc}\n".encode())
+                return
+            if not helper.lock.acquire(blocking=False):
+                conn.sendall(b"BUSY\n")
+                return
+            try:
+                helper.last_activity = helper.clock()
+                outcome = helper.run(request, fds[0] if fds else None)
+            finally:
+                for fd in fds:
+                    os.close(fd)
+                fds = []
+                helper.last_activity = helper.clock()
+                helper.lock.release()
             conn.settimeout(None)
-            conn.sendall(reply.encode("utf-8", "replace") + b"\n")
+            conn.sendall(json.dumps(outcome.header).encode() + b"\n")
+            for _name, data in outcome.files:
+                conn.sendall(data)
         except OSError:
             return
+        finally:
+            for fd in fds:
+                os.close(fd)
 
 
 def serve(helper: Helper, listener: socket.socket, allowed_uid: int) -> None:
@@ -414,10 +426,13 @@ def main(argv: list[str]) -> int:
     if os.geteuid() != 0:
         print("cmax-helper: must run as root", file=sys.stderr)
         return 1
+    import ctypes  # Linux only, at start-up
+
+    ctypes.CDLL(None).prctl(4, 0, 0, 0, 0)  # PR_SET_DUMPABLE 0: no core, no ptrace
     allowed_uid = pwd.getpwnam(ALLOWED_USER).pw_uid
     listener = systemd_listener()
     helper = Helper(
-        command=audit_command(),
+        cmax=CMAX,
         environment=audit_environment(),
         work_dir=WORK_DIR,
         version=cmax_version(),

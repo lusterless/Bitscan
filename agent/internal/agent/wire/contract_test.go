@@ -43,7 +43,8 @@ var (
 )
 
 // Number of entries in manifest.json when this test was written (TP-M3-01).
-const manifestEntries = 276
+// 286 since the cluster_audit fixtures (TS §3.8, §6.5; owner decision 2026-11-23).
+const manifestEntries = 286
 
 type modelRef struct {
 	Model string `json:"model"`
@@ -746,7 +747,11 @@ func TestContractNoOmitemptyAndExactKeys(t *testing.T) {
 		{reflect.TypeFor[wire.HeartbeatRequest](), []string{"HeartbeatRequest"}},
 		{reflect.TypeFor[wire.HeartbeatResponse](), []string{"HeartbeatResponse"}},
 		{reflect.TypeFor[wire.JobsResponse](), []string{"JobsResponse"}},
-		{reflect.TypeFor[wire.Job](), []string{"InventoryJob", "ComplianceJob"}},
+		{reflect.TypeFor[wire.Job](), []string{"InventoryJob", "ComplianceJob", "ClusterAuditJob"}},
+		{reflect.TypeFor[wire.CmaxJob](), []string{"CmaxJob"}},
+		{reflect.TypeFor[wire.CmaxVars](), []string{"CmaxVars"}},
+		{reflect.TypeFor[wire.CmaxCheck](), []string{"CmaxCheck"}},
+		{reflect.TypeFor[wire.CmaxRun](), []string{"CmaxRun"}},
 		{reflect.TypeFor[wire.PluginSpec](), []string{"PluginSpec"}},
 		{reflect.TypeFor[wire.ResultsRequest](), []string{"ResultsRequest"}},
 		{reflect.TypeFor[wire.ResultItem](), []string{"ResultItem"}},

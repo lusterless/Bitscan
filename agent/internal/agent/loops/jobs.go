@@ -142,6 +142,15 @@ func (p *Puller) setCurrent(running []*pooled) {
 	p.Run.SetCurrentJob(&id)
 }
 
+// clusterAudit hands one cluster_audit job to its handler, or refuses it.
+func (p *Puller) clusterAudit(job wire.Job) {
+	if p.ClusterAudit == nil {
+		p.refuse(job, "no cluster_audit handler")
+		return
+	}
+	p.ClusterAudit.Handle(p.Run.Context(), job)
+}
+
 // compliance hands one compliance job to the handler. Without a handler
 // the job is refused, never run another way; inventory is not affected.
 func (p *Puller) compliance(job wire.Job) {

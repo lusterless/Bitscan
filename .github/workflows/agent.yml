@@ -148,7 +148,7 @@ jobs:
           refused='level=ERROR msg="start-up refused" reason='
           usage='bitscan-capread: usage: bitscan-capread nft_ruleset|audit_rules|apparmor_profiles'
           expect "runner, full bounding set" 1 \
-            "$refused\"runner: refusing to start: CapBnd holds capabilities beyond CAP_DAC_READ_SEARCH\"" \
+            "$refused\"runner: refusing to start: CapBnd holds capabilities beyond CAP_DAC_READ_SEARCH, CAP_DAC_OVERRIDE and CAP_SYS_RAWIO\"" \
             "$all" "${self[@]}" "$bins/bitscan-runner"
           expect "runner, the unit's user and bounding set, no LISTEN_*" 1 \
             "$refused\"sdsock: LISTEN_PID is not this process\"" \

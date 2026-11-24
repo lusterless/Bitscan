@@ -1,6 +1,6 @@
 # cmax-helper.service
 [Unit]
-Description=ClusterMAX collector helper
+Description=ClusterMAX scanner helper
 Requires=cmax-helper.socket
 
 [Service]
@@ -15,4 +15,6 @@ CPUQuota=200%
 Nice=10
 IOSchedulingClass=idle
 MemoryMax=4G
+MemorySwapMax=0
+LimitCORE=0
 TimeoutStopSec=30

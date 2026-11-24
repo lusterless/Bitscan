@@ -92,6 +92,7 @@ export function host(i: number, extra: Partial<HostSummary> = {}): HostSummary {
     errors: 5,
     not_run: 2,
     score: 0.75,
+    clustermax: null,
     ...extra,
   };
 }

@@ -30,7 +30,8 @@ type Conn = psycopg.Connection[Any]
 # keeps it equal to scan_job.created_at).
 _EFFECTIVE: Final = sql.SQL(
     "WITH jobs AS MATERIALIZED (SELECT job_id, agent_id, created_at, retry_of,"
-    " payload FROM scan_job WHERE scan_id = %(scan_id)s AND kind = 'compliance'),"
+    " payload FROM scan_job WHERE scan_id = %(scan_id)s AND"
+    " kind IN ('compliance', 'cluster_audit')),"
     " latest AS (SELECT DISTINCT ON (e.job_id, e.plugin_uuid) e.job_id,"
     " e.plugin_uuid, e.reeval_id, e.eval_code, e.eval_detail, e.policy_version,"
     " e.reevaluated_by, e.reevaluated_at FROM scan_result_reeval e"
@@ -60,7 +61,8 @@ _RESULTS: Final = sql.SQL(
 _COUNTS: Final = sql.SQL(
     "{}, planned AS (SELECT DISTINCT j.agent_id,"
     " CAST(p.item ->> 'plugin_uuid' AS uuid) AS plugin_uuid FROM jobs j"
-    " LEFT JOIN LATERAL jsonb_array_elements(j.payload -> 'plugins') AS p(item)"
+    " LEFT JOIN LATERAL jsonb_array_elements(COALESCE(j.payload -> 'plugins',"
+    " j.payload -> 'cmax' -> 'checks')) AS p(item)"
     " ON true WHERE j.retry_of IS NULL)"
     " SELECT pl.agent_id, count(*) FILTER (WHERE e.code = 0),"
     " count(*) FILTER (WHERE e.code = 1), count(*) FILTER (WHERE e.code = 2),"

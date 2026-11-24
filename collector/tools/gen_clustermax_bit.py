@@ -7,9 +7,12 @@ Ids:    plugin-ids.json keeps every PluginId stable across regenerations;
         new entries get a fresh lowercase uuid4.
 Output: ../../bits/samples/clustermax-0.3.0.bit
 
-Each check plugin asks cmax-helper (TS §3.8) for one line of the report:
-`<PASS|FAIL|WARNING|n/a> observed=<value>`. PASS and n/a (ClusterMAX SKIPPED)
-pass; WARNING, FAIL and anything else fail (owner decisions).
+This is a ClusterMAX profile (TS §3.8, §4.4): each plugin's Execute is
+`cmax-check <check-id>`, which only names the check and is never run. A scan
+runs one `cmax audit -vvv -y` on the chosen scanner; the agent fills each
+plugin's result from the report as `<PASS|FAIL|WARNING|n/a> observed=<value>`.
+PASS and n/a (ClusterMAX SKIPPED) pass; WARNING, FAIL and anything else fail
+(owner decisions).
 """
 
 from __future__ import annotations
@@ -29,18 +32,15 @@ OUT = HERE.parent.parent / "bits" / "samples" / "clustermax-0.3.0.bit"
 GROUP = re.compile(r"^\[(\w+)\] (.+) \((\d+) checks\)$")
 CHECK = re.compile(r"^  ([A-Za-z0-9_.-]+): (.+)$")
 PASSING = r"^(PASS|n/a)( |$)"
-WAITS = 10
 
 POLICY_DESCRIPTION = (
-    "The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y). "
-    "Uses the ClusterMAX collector that the bitscan-agent package installs and turns on "
-    "(Technical Specification 3.8); where root turned it off, every plugin prints NOHELPER and fails. Every scan runs a fresh audit: the first "
-    "plugin of the scan's job on a host starts one root ClusterMAX audit through cmax-helper, and "
-    "every plugin of that job reads its own line from that audit's report, which is kept only in "
-    "the helper's memory. ClusterMAX PASS and SKIPPED (printed as n/a) "
-    "pass; WARNING and FAIL fail. With -y, ClusterMAX auto-detects standalone, Slurm or "
-    "Kubernetes on each targeted host, so target only the hosts that should run it, for example "
-    "with a dedicated tag."
+    "The 81 checks of ClusterMAX 0.3.0 (lusterless/clustermax f849f46, cmax audit -vvv -y), "
+    "as a ClusterMAX profile (Technical Specification 3.8, 4.4). An admin starts a scan of it "
+    "on one or more scanner hosts, with an optional target (auto, standalone, Slurm or "
+    "Kubernetes), an optional uploaded kubeconfig and optional allow-listed variables. Each "
+    "scanner runs one root ClusterMAX audit and returns its report, run log, audit.out and "
+    "audit.values.json; every plugin is graded from its own line of that report. ClusterMAX PASS "
+    "and SKIPPED (printed as n/a) pass; WARNING and FAIL fail."
 )
 
 
@@ -91,53 +91,21 @@ def main() -> int:
 
     plugins = [
         plugin(
-            "0.1 - collect - Run the ClusterMAX audit",
-            "Asks cmax-helper to run cmax audit -vvv -y as root for this scan, unless an audit is "
-            "already running, which this scan then shares. Prints started or running with the run "
-            "id every plugin of this scan reads; NOHELPER when the collector package is not "
-            "installed.",
-            pid("collect"),
-            "cmax-trigger collect",
-            30,
-            "regex",
-            r"^(started|running) [0-9a-f]{32}$",
-        ),
-    ]
-    # Each plugin may run at most 600 s (SR 2), so a long audit on a large
-    # Slurm or Kubernetes cluster is waited for by these plugins, which pass
-    # whether the audit is done or still running (owner decision 2026-11-21).
-    # With 2 plugins at once they add about 50 minutes to the header's 10.
-    for n in range(1, WAITS + 1):
-        plugins.append(
-            plugin(
-                f"0.1.{n} - wait - Wait for the ClusterMAX audit ({n} of {WAITS})",
-                "Waits up to about 10 minutes for this scan's audit and prints done or "
-                "running. Both pass: these plugins only give a long audit on a large "
-                "cluster more time. 0.3 status reports whether the audit succeeded.",
-                pid(f"wait{n}"),
-                "cmax-trigger get wait",
-                600,
-                "regex",
-                r"^(done|running)$",
-            )
-        )
-    plugins += [
-        plugin(
-            "0.2 - header - ClusterMAX target",
-            "Waits for the audit and prints the target block ClusterMAX reported: command, target, "
-            "host, system, access and selection. Evidence of what ran on this host.",
+            "0.1 - header - ClusterMAX target",
+            "The target block ClusterMAX reported: command, target, host, system, access and "
+            "selection. Evidence of what the audit ran against.",
             pid("header"),
-            "cmax-trigger get header",
+            "cmax-check header",
             600,
             "regex",
             r"^Command: cmax audit; ",
         ),
         plugin(
-            "0.3 - status - ClusterMAX run status and version",
-            "Waits for the audit, then prints ok <age-seconds> <cmax-version>. Passes only when the "
+            "0.2 - status - ClusterMAX run status and version",
+            "ok <seconds> <cmax-version>, or failed <exit-code>: <error>. Passes only when the "
             "audit finished without error and the installed ClusterMAX is 0.3.0.",
             pid("status"),
-            "cmax-trigger get header >/dev/null; cmax-trigger get status",
+            "cmax-check status",
             600,
             "regex",
             r"^ok [0-9]+ 0\.3\.0$",
@@ -151,10 +119,10 @@ def main() -> int:
             plugin(
                 f"{ref} - {check_id} - {label}",
                 f"ClusterMAX 0.3.0 check {check_id} ({group}). Prints the ClusterMAX verdict and its "
-                "Observed value from this host's report. PASS and SKIPPED (n/a) pass; WARNING and "
-                "FAIL fail; MISSING, ERROR, TIMEOUT or NOHELPER fail.",
+                "Observed value from the scan's report. PASS and SKIPPED (n/a) pass; WARNING and "
+                "FAIL fail; MISSING fails.",
                 pid(check_id),
-                f"cmax-trigger get {check_id}",
+                f"cmax-check {check_id}",
                 600,
                 "regex",
                 PASSING,

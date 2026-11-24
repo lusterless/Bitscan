@@ -93,3 +93,26 @@ export async function downloadResultsCsv(
     resultsCsvFileName(scanId),
   );
 }
+
+/** The name the manager gives a ClusterMAX file in its Content-Disposition. */
+export function scanFileName(jobId: string, name: string): string {
+  return jobId.toLowerCase() + "-" + name + ".gz";
+}
+
+/**
+ * TS §3.8, §6.2: one redacted ClusterMAX file of a cluster_audit job, saved
+ * gzip-compressed as the manager sends it (operators and admins).
+ */
+export async function downloadScanFile(
+  scanId: string,
+  jobId: string,
+  name: string,
+): Promise<ProblemInfo | null> {
+  return saveCsv(
+    api.GET("/api/v1/scans/{id}/jobs/{job_id}/files/{name}", {
+      params: { path: { id: scanId, job_id: jobId, name } },
+      parseAs: "blob",
+    }),
+    scanFileName(jobId, name),
+  );
+}

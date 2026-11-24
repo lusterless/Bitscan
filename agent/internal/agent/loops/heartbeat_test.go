@@ -410,8 +410,8 @@ func TestHeartbeatRunnerHelpers(t *testing.T) {
 	}
 }
 
-// TS §3.8: "cmax" is reported while a file exists at the ClusterMAX
-// collector's socket path, after "capread" when both exist.
+// TS §3.8 (0.6.0): "scanner" is reported while a file exists at the
+// ClusterMAX scanner helper's socket path, after "capread" when both exist.
 func TestHeartbeatReportsCmaxHelper(t *testing.T) {
 	h := newHarness(t, okHeartbeat)
 	if err := os.WriteFile(h.cmax, nil, 0o600); err != nil {
@@ -419,15 +419,15 @@ func TestHeartbeatReportsCmaxHelper(t *testing.T) {
 	}
 	h.start()
 	h.waitCalls(t, 1)
-	if _, m := decoded(t, h.f.req(0)); fmt.Sprint(m["runner_helpers"]) != "[cmax]" {
-		t.Fatalf("cmax only: %v", m["runner_helpers"])
+	if _, m := decoded(t, h.f.req(0)); fmt.Sprint(m["runner_helpers"]) != "[scanner]" {
+		t.Fatalf("scanner only: %v", m["runner_helpers"])
 	}
 	if err := os.WriteFile(h.sock, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h.clock.fire(t)
 	h.waitCalls(t, 2)
-	if _, m := decoded(t, h.f.req(1)); fmt.Sprint(m["runner_helpers"]) != "[capread cmax]" {
+	if _, m := decoded(t, h.f.req(1)); fmt.Sprint(m["runner_helpers"]) != "[capread scanner]" {
 		t.Fatalf("both: %v", m["runner_helpers"])
 	}
 	_ = os.Remove(h.cmax)

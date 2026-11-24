@@ -117,6 +117,8 @@ def _problem(exc: Exception) -> Problem:
         return Problem(404, "not_found", "No such policy.")
     if isinstance(exc, service.ScheduleConflict):
         return Problem(409, "conflict", "The policy is deleted.")
+    if isinstance(exc, service.ClusterMaxSchedule):
+        return Problem(409, "conflict", "A ClusterMAX profile cannot be scheduled.")
     return _not_found()  # ScheduleNotFound
 
 
@@ -124,6 +126,7 @@ _REFUSALS = (
     *_INVALID,
     PolicyNotFound,
     service.ScheduleConflict,
+    service.ClusterMaxSchedule,
     service.ScheduleNotFound,
 )
 

@@ -366,11 +366,13 @@ def test_valid_fixture_lines_match_the_file(name: str) -> None:
 def test_sample_policies_parse() -> None:
     samples = sorted(SAMPLES.glob("*.bit"))
     # #111: the two CIS samples; owner decision 2026-11-14: the ClusterMAX
-    # policy (TS §3.8) is the third.
+    # policy (TS §3.8) is the third; the owner's GPU baseline upload
+    # (65a5ef8, 2026-11-23) the fourth.
     assert [p.name for p in samples] == [
         "cis-ubuntu-22.04-l1-server.bit",
         "cis-ubuntu-24.04-l1-server.bit",
         "clustermax-0.3.0.bit",
+        "gpu-baseline-30-33_.bit",
     ]
     for path in samples:
         data = path.read_bytes()

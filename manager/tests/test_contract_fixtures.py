@@ -83,7 +83,7 @@ def test_required_shapes_present() -> None:
     """REQ-061 (1): the shapes the requirement names explicitly."""
     jobs = {f.file: f.body() for f in loader.select("jobs", "response") if f.valid}
     kinds = {j["kind"] for body in jobs.values() for j in body["jobs"]}
-    assert kinds == {"inventory", "compliance"}
+    assert kinds == {"inventory", "compliance", "cluster_audit"}
     assert {"jobs": []} in jobs.values()
     starts = [f.body() for f in loader.select("results", "request") if f.valid]
     assert {"results": [], "final": False} in starts

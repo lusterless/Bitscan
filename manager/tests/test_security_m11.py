@@ -103,6 +103,9 @@ RETENTION_TABLES = {
     "user_token",
     "audit_log",
     "package",
+    "kubeconfig_fetch",
+    "cluster_audit_run",
+    "scan_file",
 }
 
 M11_OPS = {
@@ -118,6 +121,9 @@ SCAN_OPS = {
     ("POST", V1 + "/scans"),
     ("POST", V1 + "/scans/{id}/cancel"),
     *M11_OPS,
+    # TS §3.8, §6.2 (owner decision 2026-11-23): the ClusterMAX file reads.
+    ("GET", V1 + "/scans/{id}/files"),
+    ("GET", V1 + "/scans/{id}/jobs/{job_id}/files/{name}"),
 }
 COMMAND_WORDS = {"execute", "command", "commands", "cmd", "script", "shell"}
 
@@ -255,10 +261,40 @@ POST_M11_PINS = {
     # 2026-11-14): queue_scan counts the jobs not run, and m0007 adds
     # scan_job.cancel_reason and the max_parallel_jobs setting.
     "services/jobs/queue.py": (
-        "719b773822432da68f64e1a8ea5875a0fe3971777fe609e5185bdbbc009bbbc4"
+        # ClusterMAX scans (TS §4.4; work/decisions.md 2026-11-23).
+        "4a39de7d2a2ca019e40825df873dee0ef1a3fb78b7083d37edffdaf3c90632b1"
+    ),
+    "services/jobs/cmax.py": (
+        "d9273c42e83f7c6f5c8d8da2639027ad86b68c18902076cc26ac4cce9591e19b"
+    ),
+    "api/user/scans.py": (
+        "17b327624d9bbd04a455b7bde668522d0da6097a2f28f2029ae2ea14260cc2fd"
+    ),
+    "api/user/scan_schedules.py": (
+        "cb677904b95055c76123e6084a40c3d8f27857f4e6708510f7572d75e3b8bd65"
+    ),
+    # cluster_audit results and reads (TS §3.8, §4.4; 2026-11-23).
+    "repositories/reeval.py": (
+        "278ef3076c0534fbc2946a4964cb969763cae06ebc39f6e4665b1593d6ab4957"
+    ),
+    "repositories/results.py": (
+        "3c3e9ef750ba0e9e878491d28c724b7a8ae3ff3913e1e66c0fc7ce8f15ddc47b"
+    ),
+    "repositories/scan_progress.py": (
+        "f0657bf1f7edac9a27eb233af1f28aea33494b0f013c0f34fd954ec72bbcda61"
+    ),
+    "services/jobs/intake.py": (
+        "d24a20ba38043439d93ca00ffb4af31b093d27d12de34df386beb11a7c20cb8a"
+    ),
+    "services/jobs/states.py": (
+        "52c80a074023379df2407fbddfd9bdbae376114508f790de7375886c8614c628"
     ),
     "db/migrations/versions/m0007_parallel_jobs.py": (
         "72cd3aa7a862ea87f01d4e0ba09d23dc817008ac0382e111f0840a8fd556887e"
+    ),
+    # ClusterMAX scanner role (TS §3.8, §5.2; work/decisions.md 2026-11-23).
+    "db/migrations/versions/m0008_cluster_audit.py": (
+        "f35ba5724a126a1702eb1061e1075e8af794d43dce98a20a0c2c6e3f0773c41c"
     ),
 }
 PINS = {**FROZEN, **POST_M11_PINS}

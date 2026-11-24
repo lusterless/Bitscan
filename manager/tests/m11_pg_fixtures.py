@@ -966,6 +966,9 @@ KEYS = {
     "agent_package": "agent_id, package_id",
     "os_info": "agent_id",
     "package": "package_id",
+    "kubeconfig_fetch": "job_id",
+    "cluster_audit_run": "job_id",
+    "scan_file": "job_id, name",
     "inventory_snapshot": "snapshot_id",
     "enrollment_token": "token_id",
     "enrollment_request": "request_id",
@@ -1014,6 +1017,10 @@ RETENTION_TABLES = (
     "user_token",
     "audit_log",
     "package",
+    # TS §5.2 (owner decision 2026-11-23): the ClusterMAX job tables.
+    "kubeconfig_fetch",
+    "cluster_audit_run",
+    "scan_file",
 )
 
 

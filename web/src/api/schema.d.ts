@@ -72,6 +72,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/agent/{id}/jobs/{job_id}/files/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Upload File */
+    put: operations["upload_file_api_v1_agent__id__jobs__job_id__files__name__put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agent/{id}/jobs/{job_id}/kubeconfig": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Fetch Kubeconfig */
+    post: operations["fetch_kubeconfig_api_v1_agent__id__jobs__job_id__kubeconfig_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/agent/{id}/jobs/{job_id}/results": {
     parameters: {
       query?: never;
@@ -506,6 +540,47 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/kubeconfigs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Kubeconfigs
+     * @description Every kubeconfig, deleted ones included (deleted_at set), so old scans
+     *     can still name theirs.
+     */
+    get: operations["list_kubeconfigs_api_v1_kubeconfigs_get"];
+    put?: never;
+    /** Upload Kubeconfig */
+    post: operations["upload_kubeconfig_api_v1_kubeconfigs_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/kubeconfigs/{kubeconfig_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Kubeconfig */
+    get: operations["get_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__get"];
+    /** Replace Kubeconfig */
+    put: operations["replace_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__put"];
+    post?: never;
+    /** Delete Kubeconfig */
+    delete: operations["delete_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/metrics": {
     parameters: {
       query?: never;
@@ -756,6 +831,40 @@ export interface paths {
      *     only (TS §4.4 L581); a repeat answers `cancelled_jobs: 0`.
      */
     post: operations["cancel_api_v1_scans__id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/scans/{id}/files": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Files */
+    get: operations["list_files_api_v1_scans__id__files_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/scans/{id}/jobs/{job_id}/files/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Download File */
+    get: operations["download_file_api_v1_scans__id__jobs__job_id__files__name__get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1104,6 +1213,125 @@ export interface components {
       /** Target */
       target: string | null;
     };
+    /** ClusterAuditJob */
+    ClusterAuditJob: {
+      /** Agent Id */
+      agent_id: string;
+      cmax: components["schemas"]["CmaxJob"];
+      /** Job Id */
+      job_id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "cluster_audit";
+      /**
+       * Pickup By
+       * Format: date-time
+       */
+      pickup_by: string;
+      /** Redaction Patterns */
+      redaction_patterns: string[];
+    };
+    /**
+     * ClusterMaxVerdict
+     * @description TS §3.8: a ClusterMAX scan's run on this scanner; counts of the
+     *     ClusterMAX verdict words (n/a = SKIPPED). No raw output.
+     */
+    ClusterMaxVerdict: {
+      /** Exit Code */
+      exit_code: number;
+      /** Failed */
+      failed: number;
+      /** Not Applicable */
+      not_applicable: number;
+      /** Passed */
+      passed: number;
+      /**
+       * Verdict
+       * @enum {string}
+       */
+      verdict: "pass" | "fail" | "error";
+      /** Warning */
+      warning: number;
+    };
+    /** CmaxCheck */
+    CmaxCheck: {
+      /** Check Id */
+      check_id: string;
+      /** Plugin Uuid */
+      plugin_uuid: string;
+    };
+    /**
+     * CmaxJob
+     * @description TS §3.8, §6.5 (owner decision 2026-11-23): the fixed audit's inputs.
+     *     `kubeconfig` only says whether the job has one to fetch.
+     */
+    CmaxJob: {
+      /** Checks */
+      checks: components["schemas"]["CmaxCheck"][];
+      /** Kubeconfig */
+      kubeconfig: boolean;
+      /**
+       * Target
+       * @enum {string}
+       */
+      target: "auto" | "standalone" | "slurm" | "k8s";
+      vars: components["schemas"]["CmaxVars"];
+    };
+    /**
+     * CmaxOptions
+     * @description TS §4.4 (owner decision 2026-11-23): the choices of a ClusterMAX scan.
+     *     The values are checked by services.jobs.cmax.
+     */
+    CmaxOptions: {
+      /** Kubeconfig Id */
+      kubeconfig_id?: number | null;
+      /** Target */
+      target?: ("auto" | "standalone" | "slurm" | "k8s") | null;
+      /** Vars */
+      vars?: {
+        [key: string]: string;
+      } | null;
+    };
+    /**
+     * CmaxRun
+     * @description TS §6.5: once, in the final batch of a cluster_audit job.
+     */
+    CmaxRun: {
+      /** Error Line */
+      error_line: string | null;
+      /** Exit Code */
+      exit_code: number;
+      /**
+       * Finished At
+       * Format: date-time
+       */
+      finished_at: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+    };
+    /**
+     * CmaxVars
+     * @description TS §3.8: only the allow-listed variables, as a closed object (a job
+     *     holds no open object), each present and null when unset (TS §6.5). The
+     *     manager checks each value; the helper again.
+     */
+    CmaxVars: {
+      /** Clustermax Audit K8S Namespace */
+      CLUSTERMAX_AUDIT_K8S_NAMESPACE: string | null;
+      /** Clustermax Audit Tenant Namespace */
+      CLUSTERMAX_AUDIT_TENANT_NAMESPACE: string | null;
+      /** Clustermax K8S Gpu Dra */
+      CLUSTERMAX_K8S_GPU_DRA: string | null;
+      /** Clustermax K8S Gpu Dra Device Class */
+      CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS: string | null;
+      /** Clustermax K8S Gpu Dra Driver */
+      CLUSTERMAX_K8S_GPU_DRA_DRIVER: string | null;
+    };
     /** ComplianceJob */
     ComplianceJob: {
       /** Agent Id */
@@ -1289,6 +1517,15 @@ export interface components {
       /** Secret */
       secret: string;
     };
+    /** FileAccepted */
+    FileAccepted: {
+      /** Name */
+      name: string;
+      /** Sha256 */
+      sha256: string;
+      /** Size Bytes */
+      size_bytes: number;
+    };
     /** Health */
     Health: {
       /**
@@ -1389,6 +1626,7 @@ export interface components {
        * Format: uuid
        */
       agent_id: string;
+      clustermax: components["schemas"]["ClusterMaxVerdict"] | null;
       /** Errors */
       errors: number;
       /** Failed */
@@ -1519,7 +1757,56 @@ export interface components {
       jobs: (
         | components["schemas"]["InventoryJob"]
         | components["schemas"]["ComplianceJob"]
+        | components["schemas"]["ClusterAuditJob"]
       )[];
+    };
+    /** KubeconfigAnswer */
+    KubeconfigAnswer: {
+      /** Kubeconfig */
+      kubeconfig: string;
+    };
+    /** KubeconfigItem */
+    KubeconfigItem: {
+      /** Cluster Name */
+      cluster_name: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By */
+      created_by: number;
+      /** Deleted At */
+      deleted_at: string | null;
+      /** Description */
+      description: string;
+      /** Kubeconfig Id */
+      kubeconfig_id: number;
+      /** Name */
+      name: string;
+      /** Replaced At */
+      replaced_at: string | null;
+      /** Server */
+      server: string;
+    };
+    /** KubeconfigReplace */
+    KubeconfigReplace: {
+      /** Content */
+      content: string;
+      /** Description */
+      description?: string | null;
+    };
+    /** KubeconfigUpload */
+    KubeconfigUpload: {
+      /** Content */
+      content: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** Name */
+      name: string;
     };
     /** LoginRequest */
     LoginRequest: {
@@ -1718,6 +2005,13 @@ export interface components {
     Page_ImportItem_: {
       /** Items */
       items: components["schemas"]["ImportItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** Page[KubeconfigItem] */
+    Page_KubeconfigItem_: {
+      /** Items */
+      items: components["schemas"]["KubeconfigItem"][];
       /** Next Cursor */
       next_cursor: string | null;
     };
@@ -2111,6 +2405,8 @@ export interface components {
     };
     /** ResultsRequest */
     ResultsRequest: {
+      /** @default null */
+      cmax_run: components["schemas"]["CmaxRun"] | null;
       /** Final */
       final: boolean;
       /** Results */
@@ -2211,6 +2507,37 @@ export interface components {
        */
       trigger: "manual" | "scheduled";
     };
+    /** ScanFileItem */
+    ScanFileItem: {
+      /**
+       * Agent Id
+       * Format: uuid
+       */
+      agent_id: string;
+      /**
+       * Job Id
+       * Format: uuid
+       */
+      job_id: string;
+      /** Name */
+      name: string;
+      /**
+       * Received At
+       * Format: date-time
+       */
+      received_at: string;
+      /** Sha256 */
+      sha256: string;
+      /** Size Bytes */
+      size_bytes: number;
+      /** Truncated */
+      truncated: boolean;
+    };
+    /** ScanFiles */
+    ScanFiles: {
+      /** Items */
+      items: components["schemas"]["ScanFileItem"][];
+    };
     /**
      * ScanItem
      * @description #145 (a). `state` is read from `scan.state`, never re-derived.
@@ -2280,9 +2607,10 @@ export interface components {
     /**
      * ScanRequest
      * @description #122 (a), (b): `target` is exactly one of {"agents": [...]},
-     *     {"tags": [...]} or {"all": true}.
+     *     {"tags": [...]} or {"all": true}. `cmax` only for a ClusterMAX profile.
      */
     ScanRequest: {
+      cmax?: components["schemas"]["CmaxOptions"] | null;
       /** Policy Id */
       policy_id: number;
       /** Target */
@@ -2939,6 +3267,185 @@ export interface operations {
       };
       /** @description Forbidden */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  upload_file_api_v1_agent__id__jobs__job_id__files__name__put: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Bitscan-Truncated"?: "true" | "false";
+      };
+      path: {
+        id: string;
+        job_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/gzip": string;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FileAccepted"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Request Entity Too Large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  fetch_kubeconfig_api_v1_agent__id__jobs__job_id__kubeconfig_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+        job_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["KubeconfigAnswer"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -4915,6 +5422,400 @@ export interface operations {
       };
     };
   };
+  list_kubeconfigs_api_v1_kubeconfigs_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Page_KubeconfigItem_"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  upload_kubeconfig_api_v1_kubeconfigs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["KubeconfigUpload"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["KubeconfigItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        kubeconfig_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["KubeconfigItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  replace_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        kubeconfig_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["KubeconfigReplace"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["KubeconfigItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  delete_kubeconfig_api_v1_kubeconfigs__kubeconfig_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        kubeconfig_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   metrics_api_v1_metrics_get: {
     parameters: {
       query?: never;
@@ -6280,6 +7181,160 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ScanCancelledItem"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_files_api_v1_scans__id__files_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ScanFiles"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  download_file_api_v1_scans__id__jobs__job_id__files__name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+        job_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The file, gzip */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/gzip": unknown;
         };
       };
       /** @description Bad Request */

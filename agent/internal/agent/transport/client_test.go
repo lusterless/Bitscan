@@ -823,3 +823,43 @@ func TestClientSourceStatic(t *testing.T) {
 		}
 	}
 }
+
+// TS §3.8, §6.1: the kubeconfig fetch and the file upload of a cluster_audit
+// job (owner decision 2026-11-23).
+func TestClientClusterAuditRoutes(t *testing.T) {
+	f := newFakeManager(t)
+	c := f.client(t)
+	cases := []struct {
+		req          transport.Request
+		method, path string
+		ct, trunc    string
+	}{
+		{transport.Request{Op: transport.OpKubeconfig, Token: bsaCanary, AgentID: agentID, JobID: jobID},
+			"POST", "/api/v1/agent/" + agentID + "/jobs/" + jobID + "/kubeconfig", "", ""},
+		{transport.Request{Op: transport.OpFile, Token: bsaCanary, AgentID: agentID, JobID: jobID, Name: "audit.out", Body: []byte{0x1f, 0x8b}, Gzip: true, Truncated: true},
+			"PUT", "/api/v1/agent/" + agentID + "/jobs/" + jobID + "/files/audit.out", "application/gzip", "true"},
+		{transport.Request{Op: transport.OpFile, Token: bsaCanary, AgentID: agentID, JobID: jobID, Name: "report.txt", Body: []byte{0x1f, 0x8b}},
+			"PUT", "/api/v1/agent/" + agentID + "/jobs/" + jobID + "/files/report.txt", "application/gzip", "false"},
+	}
+	for i, tc := range cases {
+		if resp, err := c.Do(context.Background(), tc.req); err != nil || resp.Class != transport.Success {
+			t.Fatalf("%d: resp %+v err %v", i, resp, err)
+		}
+		got := f.requests()[i]
+		if got.method != tc.method || got.path != tc.path {
+			t.Errorf("%d: %s %s", i, got.method, got.path)
+		}
+		if got.header.Get("Content-Type") != tc.ct || got.header.Get("X-Bitscan-Truncated") != tc.trunc || got.header.Get("Content-Encoding") != "" {
+			t.Errorf("%d: headers %v", i, got.header)
+		}
+	}
+	for _, bad := range []transport.Request{
+		{Op: transport.OpKubeconfig, AgentID: agentID},
+		{Op: transport.OpFile, AgentID: agentID, JobID: jobID, Name: "../etc/passwd"},
+		{Op: transport.OpFile, AgentID: agentID, JobID: jobID},
+	} {
+		if resp, err := c.Do(context.Background(), bad); err == nil || resp.Class != transport.Drop {
+			t.Errorf("%v: resp %+v err %v", bad, resp, err)
+		}
+	}
+}

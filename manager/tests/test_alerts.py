@@ -65,7 +65,9 @@ M7_KINDS = {
 # #129 (b), approved 2026-10-30 (REQ-227). Old → new: CHK-M7's 34 kinds →
 # CHK-M9-232, 35 kinds; every other assertion is unchanged.
 M9_KINDS = {"all_hosts_scan_api_token"}
-SPEC_KINDS = M2_KINDS | M3_KINDS | M7_KINDS | M9_KINDS
+# Owner decision 2026-11-23 (TS §8.1): kubeconfig uploads, replacements, deletes.
+M10_KINDS = {"kubeconfig_changed", "kubeconfig_refetch"}
+SPEC_KINDS = M2_KINDS | M3_KINDS | M7_KINDS | M9_KINDS | M10_KINDS
 # REQ-086 (TS §8.4 L1288): the registry the #70 route serves.
 REGISTRY_FAMILIES = {
     "bitscan_alerts",
@@ -150,14 +152,16 @@ def test_kinds_are_exactly_the_50_and_71_lists() -> None:
         M3_ALERT_KINDS,
         M7_ALERT_KINDS,
         M9_ALERT_KINDS,
+        M10_ALERT_KINDS,
     )
 
     assert set(M2_ALERT_KINDS) == M2_KINDS
     assert set(M3_ALERT_KINDS) == M3_KINDS
     assert set(M7_ALERT_KINDS) == M7_KINDS
     assert set(M9_ALERT_KINDS) == M9_KINDS
+    assert set(M10_ALERT_KINDS) == M10_KINDS
     assert set(ALERT_KINDS) == SPEC_KINDS
-    assert len(ALERT_KINDS) == 35
+    assert len(ALERT_KINDS) == 37
 
 
 @pytest.mark.parametrize("kind", sorted(SPEC_KINDS))

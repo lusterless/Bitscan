@@ -62,7 +62,7 @@ _JOBS: Final = (
     "SELECT j.job_id, j.agent_id, a.hostname, j.state::text, j.retry_of,"
     " j.dispatched_at, j.started_at, j.finished_at, j.cancel_reason FROM scan_job j"
     " JOIN agent a ON a.agent_id = j.agent_id"
-    " WHERE j.scan_id = %(scan_id)s AND j.kind = 'compliance'"
+    " WHERE j.scan_id = %(scan_id)s AND j.kind IN ('compliance', 'cluster_audit')"
     " ORDER BY a.hostname, j.agent_id, j.retry_of IS NOT NULL, j.created_at, j.job_id"
 )
 
@@ -215,6 +215,53 @@ def scan_detail(conn: Conn, scan_id: UUID) -> ScanDetailRow | None:
     if r is None:
         return None
     return ScanDetailRow(scan=_scan(r), target=dict(r[12]))
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterRunRow:
+    """One finished cluster_audit job of the scan (TS §3.8): its exit code,
+    the ClusterMAX verdict words of its results, and whether every result
+    graded PASS."""
+
+    job_id: UUID
+    exit_code: int
+    passed: int
+    failed: int
+    warning: int
+    not_applicable: int
+    all_graded_pass: bool
+
+
+_CLUSTER_RUNS: Final = (
+    "SELECT run.job_id, run.exit_code,"
+    " count(r.plugin_uuid) FILTER (WHERE split_part(r.stdout, ' ', 1) = 'PASS'),"
+    " count(r.plugin_uuid) FILTER (WHERE split_part(r.stdout, ' ', 1) = 'FAIL'),"
+    " count(r.plugin_uuid) FILTER (WHERE split_part(r.stdout, ' ', 1) = 'WARNING'),"
+    " count(r.plugin_uuid) FILTER (WHERE split_part(r.stdout, ' ', 1) = 'n/a'),"
+    " coalesce(bool_and(r.eval_code = 0), false)"
+    " FROM cluster_audit_run run JOIN scan_job j ON j.job_id = run.job_id"
+    " LEFT JOIN scan_result r"
+    " ON r.job_id = j.job_id AND r.job_created_at = j.created_at"
+    " WHERE j.scan_id = %(scan_id)s AND j.kind = 'cluster_audit'"
+    " GROUP BY run.job_id, run.exit_code"
+)
+
+
+def cluster_runs(conn: Conn, scan_id: UUID) -> dict[UUID, ClusterRunRow]:
+    """The finished cluster_audit jobs of the scan, by job id."""
+    out: dict[UUID, ClusterRunRow] = {}
+    for r in conn.execute(_CLUSTER_RUNS, {"scan_id": scan_id}).fetchall():
+        job_id = UUID(str(r[0]))
+        out[job_id] = ClusterRunRow(
+            job_id=job_id,
+            exit_code=int(r[1]),
+            passed=int(r[2]),
+            failed=int(r[3]),
+            warning=int(r[4]),
+            not_applicable=int(r[5]),
+            all_graded_pass=bool(r[6]),
+        )
+    return out
 
 
 def scan_jobs(conn: Conn, scan_id: UUID) -> list[JobRow]:

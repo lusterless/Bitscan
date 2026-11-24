@@ -174,6 +174,9 @@ def test_only_the_builder_and_two_repositories_write_a_compliance_payload() -> N
 M9_OPS = {
     ("/api/v1/scans", "post"),
     ("/api/v1/scans/{id}/cancel", "post"),
+    # TS §3.8, §6.2 (owner decision 2026-11-23): the ClusterMAX file reads.
+    ("/api/v1/scans/{id}/files", "get"),
+    ("/api/v1/scans/{id}/jobs/{job_id}/files/{name}", "get"),
     ("/api/v1/scan-schedules", "post"),
     ("/api/v1/scan-schedules", "get"),
     ("/api/v1/scan-schedules/{id}", "get"),

@@ -100,6 +100,18 @@ class HostJob(BaseModel):
     cancel_reason: Literal["already_running"] | None
 
 
+class ClusterMaxVerdict(BaseModel):
+    """TS §3.8: a ClusterMAX scan's run on this scanner; counts of the
+    ClusterMAX verdict words (n/a = SKIPPED). No raw output."""
+
+    verdict: Literal["pass", "fail", "error"]
+    exit_code: int
+    passed: int
+    failed: int
+    warning: int
+    not_applicable: int
+
+
 class HostSummary(BaseModel):
     """#145 (b), #120: effective counts; `score` in [0, 1], null = "n/a"."""
 
@@ -111,6 +123,7 @@ class HostSummary(BaseModel):
     errors: int
     not_run: int
     score: float | None
+    clustermax: ClusterMaxVerdict | None  # ClusterMAX scans, once run
 
 
 class ScanDetailItem(ScanItem):
@@ -233,6 +246,9 @@ def _host(h: views.HostView) -> HostSummary:
         errors=h.host.errors,
         not_run=h.host.not_run,
         score=h.host.score,
+        clustermax=None
+        if h.clustermax is None
+        else ClusterMaxVerdict.model_validate(h.clustermax, from_attributes=True),
     )
 
 

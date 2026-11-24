@@ -60,6 +60,7 @@ HOST_KEYS = {
     "errors",
     "not_run",
     "score",
+    "clustermax",  # null except on ClusterMAX scans (TS §3.8)
 }
 JOB_KEYS = {
     "job_id",

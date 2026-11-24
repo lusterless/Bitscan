@@ -57,6 +57,19 @@ class ScanFilters:
 
 
 @dataclass(frozen=True, slots=True)
+class ClusterVerdict:
+    """TS §3.8: `error` when the exit code is not 0, `pass` when every graded
+    check passes, otherwise `fail`, with the ClusterMAX verdict counts."""
+
+    verdict: str
+    exit_code: int
+    passed: int
+    failed: int
+    warning: int
+    not_applicable: int
+
+
+@dataclass(frozen=True, slots=True)
 class HostView:
     """One agent with an original job in the scan (#145 (b))."""
 
@@ -64,6 +77,24 @@ class HostView:
     hostname: str
     jobs: list[JobRow]  # the original first, then its retry
     host: HostScore  # effective counts and score
+    clustermax: ClusterVerdict | None = None  # a ClusterMAX scan's run
+
+
+def cluster_verdict(run: scan_reads.ClusterRunRow) -> ClusterVerdict:
+    if run.exit_code != 0:
+        verdict = "error"
+    elif run.all_graded_pass:
+        verdict = "pass"
+    else:
+        verdict = "fail"
+    return ClusterVerdict(
+        verdict,
+        run.exit_code,
+        run.passed,
+        run.failed,
+        run.warning,
+        run.not_applicable,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +133,9 @@ def agent_scans(
 
 
 def _hosts(
-    jobs: list[JobRow], counts: dict[UUID, results.HostCounts]
+    jobs: list[JobRow],
+    counts: dict[UUID, results.HostCounts],
+    runs: dict[UUID, scan_reads.ClusterRunRow],
 ) -> list[HostView]:
     """Jobs come ordered by hostname, agent_id, original first; a host is an
     agent with an original job, and its retry joins it."""
@@ -114,12 +147,14 @@ def _hosts(
         if all(j.retry_of is not None for j in unit):
             continue
         c = counts[agent_id]
+        run = next((runs[j.job_id] for j in unit if j.job_id in runs), None)
         hosts.append(
             HostView(
                 agent_id=agent_id,
                 hostname=unit[0].hostname,
                 jobs=unit,
                 host=host_score(c.passed, c.failed, c.errors, c.not_run),
+                clustermax=None if run is None else cluster_verdict(run),
             )
         )
     return hosts
@@ -135,4 +170,7 @@ def scan_detail(db: Database, scan_id: UUID) -> ScanDetail:
             raise ScanNotFound
         jobs = scan_reads.scan_jobs(tx.conn, scan_id)
         counts = {c.agent_id: c for c in results.host_counts(tx.conn, scan_id)}
-    return ScanDetail(scan=found.scan, target=found.target, hosts=_hosts(jobs, counts))
+        runs = scan_reads.cluster_runs(tx.conn, scan_id)
+    return ScanDetail(
+        scan=found.scan, target=found.target, hosts=_hosts(jobs, counts, runs)
+    )

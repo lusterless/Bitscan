@@ -4,6 +4,5 @@ bin/bitscan-capread usr/sbin
 debian/dbus/bitscan-runner.conf etc/dbus-1/system.d
 clustermax/usr/lib/clustermax usr/lib
 clustermax/usr/sbin/cmax-helper usr/sbin
-clustermax/usr/bin/cmax-trigger usr/bin
 clustermax/doc/LICENSE.clustermax usr/share/doc/bitscan-agent
 clustermax/doc/clustermax-SOURCE usr/share/doc/bitscan-agent

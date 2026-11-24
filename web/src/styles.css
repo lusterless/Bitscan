@@ -828,6 +828,23 @@ input[type="checkbox"] {
   margin-bottom: 0;
 }
 
+/* A group of fields inside a wide form, for example the ClusterMAX options. */
+.fieldset {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.fieldset > legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
 /* ------------------------------------------------------------ cards */
 
 .card {

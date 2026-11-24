@@ -2,8 +2,10 @@
 // mutation rows CHK-M10-380 and -381; PD-41. For linux/amd64 builds (the
 // only shipped target):
 //   - bitscan-agent links internal/runner/proto and no other runner package,
-//     no internal/redact, internal/capread or internal/sdsock, and not
-//     golang.org/x/sys (PD-41: runner, sdsock and capread only);
+//     and no internal/capread or internal/sdsock. Since 0.6.0 it links
+//     internal/redact (it redacts ClusterMAX results and files itself) and
+//     golang.org/x/sys/unix (the sealed kubeconfig memfd and its SCM_RIGHTS
+//     send in internal/agent/cmaxclient); TS §3.8, owner decision 2026-11-23;
 //   - bitscan-runner and bitscan-capread link no HTTP, TLS or agent
 //     transport code (they never talk to the manager).
 //
@@ -46,10 +48,10 @@ func TestImportBoundary(t *testing.T) {
 		switch {
 		case strings.HasPrefix(p, mod+"internal/runner") && p != mod+"internal/runner/proto":
 			t.Errorf("bitscan-agent links %s (REQ-251 (1), CHK-M10-380)", p)
-		case p == mod+"internal/redact", p == mod+"internal/capread", p == mod+"internal/sdsock":
+		case p == mod+"internal/capread", p == mod+"internal/sdsock":
 			t.Errorf("bitscan-agent links %s (REQ-251 (1), CHK-M10-380)", p)
-		case strings.HasPrefix(p, "golang.org/x/sys"):
-			t.Errorf("bitscan-agent links %s (PD-41)", p)
+		case strings.HasPrefix(p, "golang.org/x/sys") && p != "golang.org/x/sys/unix":
+			t.Errorf("bitscan-agent links %s (PD-41; only x/sys/unix for cmaxclient)", p)
 		}
 	}
 	for _, cmd := range []string{"./cmd/bitscan-runner", "./cmd/bitscan-capread"} {

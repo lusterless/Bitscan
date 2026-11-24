@@ -4,17 +4,18 @@ These apply to all code. Each line is a hard rule from the approved spec; breaki
 
 ## Never add
 
-- An endpoint, flag or code path that queues or runs an ad-hoc command. Jobs are built only from active plugins of enabled policies (TS §3.3).
+- An endpoint, flag or code path that queues or runs an ad-hoc command. Jobs are built only from active plugins of enabled policies (TS §3.3). **Owner exception (2026-11-23):** a ClusterMAX scan builds one fixed `cluster_audit` job whose only inputs are a target mode, a kubeconfig reference and allow-listed variables (TS §3.8, §4.4).
 - A push, wake-up, remote-shell channel or listening port on the agent, or any connection the manager opens to an agent. The agent opens every connection (TS §2.2, §3.3).
 - An endpoint, setting, role or agent option that disables inventory collection (TS §3.4, §6.2).
 - Cryptographic signing of `.bit` files or jobs, or a policy approval workflow. These are owner decisions (`.claude/CLAUDE.md`); the resulting risks are accepted in TS §3.7 and §8.1.
 - Agent client certificates. The only certificate is the manager's server certificate; agents authenticate with their `bsa_` token (TS §2.2).
-- A manager route or job that changes host settings, such as enabling the `bitscan-capread` helper (TS §3.7). **Owner exception (2026-11-14):** a scan of a ClusterMAX policy may ask `cmax-helper` (TS §3.8) to run its one fixed audit. The manager never installs, enables or configures the helper.
+- A manager route or job that changes host settings, such as enabling the `bitscan-capread` helper (TS §3.7). **Owner exception (2026-11-14, 2026-11-23):** a ClusterMAX scan may ask the scanner role (`cmax-helper`, TS §3.8) to run its one fixed audit, with a target mode, allow-listed variables and a kubeconfig. The manager never installs, enables or configures the helper.
 - Automatic remediation. BIT102 is a safety net; the runner sandbox is the real control, and both must exist (TS §1.2; SR §4.2).
 
 ## Accepted risks (TS §8.1) — document, never "mitigate" with signing
 
-- Anyone who controls the manager, or holds an admin session or admin API token, can make every agent host where `cmax-helper` is on (all hosts by default, owner decision 2026-11-15) run `cmax audit -vvv -y` as root (TS §3.8, §8.1).
+- Anyone who controls the manager, or holds an admin TOTP session, can make every agent host where the scanner role is on (all hosts by default, owner decisions 2026-11-15, 2026-11-23) run `cmax audit -vvv -y` as root (TS §3.8, §8.1).
+- Owner decision 2026-11-23: the manager stores uploaded cluster-admin kubeconfigs (vault-encrypted). Whoever controls the manager, its database together with the vault, or an admin TOTP session controls every uploaded cluster; root on a scanner can read a kubeconfig while its audit runs (TS §8.1). A kubeconfig is never logged, returned by the API, put in a payload, result or file, or written to disk on the scanner.
 - Jobs are not signed. Whoever controls the manager or its database, or holds a stolen admin session or admin API token, can make every host return any file. Mitigations are least-privilege DB roles, admin TOTP, the hash-chained and externally shipped audit log, and alerts on every import.
 - A compromised `bitscan-agent` can make its host's runner read any file there; treat it as a compromise of every secret on that host (TS §3.7). The agent and runner job checks catch mistakes, not attacks.
 - Without pinning, a holder of a publicly trusted certificate for the manager's hostname can impersonate the manager to that agent. Pinning stays optional.

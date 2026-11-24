@@ -23,8 +23,9 @@ import (
 // is enabled (#30; TS §3.7 L484). The agent never connects to it.
 const CapreadSock = "/run/bitscan/capread.sock"
 
-// CmaxSock is the ClusterMAX collector helper's socket (TS §3.8); while a
-// file exists there the heartbeat reports "cmax". The agent never connects.
+// CmaxSock is the ClusterMAX scanner helper's socket (TS §3.8); while a
+// file exists there the heartbeat reports "scanner". Only the cluster_audit
+// handler connects, through cmaxclient.
 const CmaxSock = "/run/clustermax/collect.sock"
 
 // maxLastError is HeartbeatRequest.last_error's bound (#78 (e)).

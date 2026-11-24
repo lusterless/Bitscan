@@ -1,0 +1,23 @@
+{
+  "jobs": [
+    {
+      "job_id": "d2b5f6a7-1829-43a4-b5c6-d7e8f9a0b1c2",
+      "agent_id": "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+      "kind": "cluster_audit",
+      "pickup_by": "2026-11-23T08:00:00Z",
+      "cmax": {
+        "target": "k8s",
+        "kubeconfig": true,
+        "vars": {
+          "CLUSTERMAX_K8S_GPU_DRA": "1",
+          "CLUSTERMAX_K8S_GPU_DRA_DEVICE_CLASS": null,
+          "CLUSTERMAX_K8S_GPU_DRA_DRIVER": null,
+          "CLUSTERMAX_AUDIT_K8S_NAMESPACE": "clustermax-audit",
+          "CLUSTERMAX_AUDIT_TENANT_NAMESPACE": null
+        },
+        "checks": []
+      },
+      "redaction_patterns": []
+    }
+  ]
+}

@@ -1052,11 +1052,10 @@ def r222(ctx: Ctx) -> tuple[str, str]:
         len(specs), len(sample_files(sdir, clustermax=False)), "done" if ok_job(res, len(specs)) else res["kinds"][-3:], bad, diff))
 
 
-# The ClusterMAX policy (TS §3.8) reads its report from the root cmax-helper,
-# which serves only bitscan-runner, so its plugins cannot equal root's output
-# outside the sandbox (CHK-M10-222). Owner decision 2026-11-14.
+# The ClusterMAX profile (TS §3.8, §4.4) is never run by the runner: its
+# plugins only name checks, and a scan runs one audit through cmax-helper
+# for bitscan-agent (owner decisions 2026-11-14, 2026-11-23).
 CLUSTERMAX_GLOB = "clustermax-*.bit"
-CMAX_TRIGGER = "/usr/bin/cmax-trigger"
 CMAX_SOCKET = "/run/clustermax/collect.sock"
 
 
@@ -1087,79 +1086,73 @@ def sample_plugins(files: list[Path]) -> list[tuple[str, str, int]]:
     return out
 
 
-def clustermax_job(ctx: Ctx) -> tuple[list[tuple[str, str, int]], dict] | tuple[str, str]:
-    """The clustermax-*.bit plugins run as one job, or a NOT RUN verdict."""
-    sdir = getattr(ctx, "samples", None)
-    if not sdir or not os.path.isdir(sdir):
-        return ("NOT RUN", "no samples directory given (--samples)")
-    try:
-        import defusedxml  # noqa: F401
-    except ImportError:
-        return ("NOT RUN", "defusedxml is not installed on this host (run_vm.sh --samples installs python3-defusedxml)")
-    files = sample_files(sdir, clustermax=True)
-    if not files:
-        return ("NOT RUN", "no %s in %s" % (CLUSTERMAX_GLOB, sdir))
-    if not os.path.exists(CMAX_TRIGGER):
-        return ("NOT RUN", "%s is not installed: the bitscan-agent package ships it (TS 3.1, 3.8)" % CMAX_TRIGGER)
-    plugins = sample_plugins(files)
-    return plugins, run_job(ctx, [plugin(e, t) for _, e, t in plugins], mpp=4, timeout=1800)
+# A minimal agent side of the TS §3.8 request: one JSON line, then the answer
+# header and the files. Run as a given user with runuser.
+_CMAX_CLIENT = r"""
+import json, socket, sys
+s = socket.socket(socket.AF_UNIX); s.settimeout(5 * 3600); s.connect(sys.argv[1])
+s.sendall(json.dumps({"job_id": "00000000-0000-4000-8000-000000000225", "target": sys.argv[2], "vars": {}}).encode() + b"\n")
+data = b""
+while True:
+    chunk = s.recv(1 << 20)
+    if not chunk:
+        break
+    data += chunk
+head, _, rest = data.partition(b"\n")
+print(head.decode("utf-8", "replace"))
+print(len(rest))
+"""
 
 
-@row("CHK-M10-224", "clustermax-*.bit under the sandbox with cmax-helper.socket stopped: every plugin exits 0, no error or timeout, stdout NOHELPER (TS §3.8)")
+def cmax_request(user: str, target: str, timeout: int) -> tuple[str, int]:
+    """(the helper's first line, bytes after it) for one request as user."""
+    out = subprocess.run(["runuser", "-u", user, "--", "python3", "-I", "-c", _CMAX_CLIENT, CMAX_SOCKET, target],
+                         capture_output=True, text=True, timeout=timeout)
+    lines = out.stdout.splitlines()
+    if out.returncode != 0 or len(lines) != 2:
+        return ("client failed rc %d: %s" % (out.returncode, mask(out.stderr)[-200:]), -1)
+    return (lines[0], int(lines[1]))
+
+
+@row("CHK-M10-224", "cmax-helper.socket as installed: root:bitscan 0660, refuses bitscan-runner, refuses a variable not in the TS §3.8 list (TS §3.8)")
 def r224(ctx: Ctx) -> tuple[str, str]:
-    # The package installs the helper on (owner decision 2026-11-15); this row
-    # stops it for the job and starts it again, as a host where root turned
-    # it off would see.
-    stop = subprocess.run(["systemctl", "stop", "cmax-helper.socket", "cmax-helper.service"],
-                          capture_output=True, text=True)
-    try:
-        got = clustermax_job(ctx)
-    finally:
-        subprocess.run(["systemctl", "start", "cmax-helper.socket"], capture_output=True, text=True)
-    if isinstance(got[0], str):
-        return got  # type: ignore[return-value]
-    plugins, res = got  # type: ignore[misc]
-    bad = []
-    for (name, _ex, _to), it in zip(plugins, res["results"]):
-        it = it or {}
-        out = norm(it.get("stdout", ""))
-        if it.get("error") or it.get("timed_out") or it.get("exit_code") != 0 or not out.startswith("NOHELPER "):
-            bad.append("%s: exit %s timed_out %s error %s stdout %r" % (name, it.get("exit_code"), it.get("timed_out"), it.get("error"), mask(out)[:120]))
-    return verdict([("socket stopped (rc %d)" % stop.returncode, stop.returncode == 0),
-                    ("job done", ok_job(res, len(plugins))),
-                    ("%d plugins print NOHELPER with exit 0" % len(plugins), not bad)],
-                   "failing %s" % bad[:5])
+    if not os.path.exists(CMAX_SOCKET):
+        return ("NOT RUN", "%s does not exist: the bitscan-agent package turns it on (TS 3.1, 3.8)" % CMAX_SOCKET)
+    st = os.stat(CMAX_SOCKET)
+    import grp
+
+    owner = "%s:%s %o" % (pwd.getpwuid(st.st_uid).pw_name, grp.getgrgid(st.st_gid).gr_name, st.st_mode & 0o777)
+    runner, _ = cmax_request("bitscan-runner", "standalone", 60)
+    bad_var = subprocess.run(["runuser", "-u", "bitscan", "--", "python3", "-I", "-c",
+                              "import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]);"
+                              " s.sendall(b'{\"job_id\": \"00000000-0000-4000-8000-000000000224\", \"target\": \"auto\","
+                              " \"vars\": {\"CLUSTERMAX_IMAGE\": \"x\"}}\\n'); print(s.recv(200).decode().strip())",
+                              CMAX_SOCKET], capture_output=True, text=True, timeout=60).stdout.strip()
+    return verdict([("socket %s" % owner, owner == "root:bitscan 660"),
+                    ("bitscan-runner refused (%s)" % runner[:80], runner.startswith("REFUSED ") or runner.startswith("client failed")),
+                    ("unknown variable refused (%s)" % bad_var[:80], bad_var == "REFUSED variable not allowed")])
 
 
-@row("CHK-M10-225", "clustermax-*.bit under the sandbox with cmax-helper on, as installed: one real ClusterMAX 0.3.0 audit; collect, header, status and every check line as the policy expects (TS §3.1, §3.8)")
+@row("CHK-M10-225", "cmax-helper on, as installed: one real ClusterMAX 0.3.0 standalone audit for uid bitscan; answer header and report.txt, run.log; /run/cmax-work empty after (TS §3.1, §3.8)")
 def r225(ctx: Ctx) -> tuple[str, str]:
     active = subprocess.run(["systemctl", "is-active", "cmax-helper.socket"], capture_output=True, text=True).stdout.strip()
     enabled = subprocess.run(["systemctl", "is-enabled", "cmax-helper.socket"], capture_output=True, text=True).stdout.strip()
-    got = clustermax_job(ctx)
-    if isinstance(got[0], str):
-        return got  # type: ignore[return-value]
-    plugins, res = got  # type: ignore[misc]
-    want = {
-        "collect": re.compile(r"^(started|running) [0-9a-f]{32}$"),
-        "header": re.compile(r"^Command: cmax audit; "),
-        "status": re.compile(r"^ok [0-9]+ 0\.3\.0$"),
-    }
-    verdict_line = re.compile(r"^(PASS|FAIL|WARNING|n/a)( |$)")
-    bad, counts = [], {}
-    for (name, _ex, _to), it in zip(plugins, res["results"]):
-        it = it or {}
-        out = norm(it.get("stdout", ""))
-        kind = name.split(" - ")[1] if " - " in name else name
-        rx = want.get(kind, verdict_line)
-        word = out.split(" ", 1)[0] if out else ""
-        if kind not in want:
-            counts[word] = counts.get(word, 0) + 1
-        if it.get("error") or it.get("timed_out") or it.get("exit_code") != 0 or not rx.search(out):
-            bad.append("%s: exit %s timed_out %s error %s stdout %r" % (name, it.get("exit_code"), it.get("timed_out"), it.get("error"), mask(out)[:120]))
+    if not os.path.exists(CMAX_SOCKET):
+        return ("NOT RUN", "%s does not exist: the bitscan-agent package turns it on (TS 3.1, 3.8)" % CMAX_SOCKET)
+    first, rest = cmax_request("bitscan", "standalone", 5 * 3600)
+    try:
+        head = json.loads(first)
+    except ValueError:
+        return verdict([("helper answered a JSON header (%s)" % mask(first)[:120], False)])
+    files = head.get("files") or []
+    names = [f.get("name") for f in files]
+    left = os.listdir("/run/cmax-work") if os.path.isdir("/run/cmax-work") else []
     return verdict([("cmax-helper.socket enabled and active after install (%s, %s)" % (enabled, active), enabled == "enabled" and active == "active"),
-                    ("job done", ok_job(res, len(plugins))),
-                    ("%d plugins print the expected collect, header, status and verdict lines" % len(plugins), not bad)],
-                   "check verdicts %s; failing %s" % (counts, bad[:5]))
+                    ("exit code 0 (%s)" % head.get("exit_code"), head.get("exit_code") == 0),
+                    ("cmax version 0.3.0 (%s)" % head.get("cmax_version"), head.get("cmax_version") == "0.3.0"),
+                    ("files start report.txt, run.log (%s)" % names, names[:2] == ["report.txt", "run.log"]),
+                    ("bytes after the header equal the sizes (%d)" % rest, rest == sum(int(f.get("size", 0)) for f in files)),
+                    ("/run/cmax-work empty after the run (%s)" % left[:5], not left)])
 
 
 def norm(s: str) -> str:
