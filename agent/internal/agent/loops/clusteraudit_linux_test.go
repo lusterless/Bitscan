@@ -24,7 +24,7 @@ import (
 	"bitscan.local/agent/internal/spool"
 )
 
-const kubeSecret = "token: kube-secret-canary"
+const kubeSecret = "token: kube-secret-canary" //nolint:gosec // a test canary, not a credential
 
 // auditManager answers results, the kubeconfig fetch and file uploads.
 type auditManager struct {

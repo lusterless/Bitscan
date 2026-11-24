@@ -379,9 +379,17 @@ func (c CmaxJob) check() error {
 	return oneOf(c.Target, "auto", "standalone", "slurm", "k8s")
 }
 
+func checkIDRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	}
+	return r == '_' || r == '.' || r == '-'
+}
+
 func (c CmaxCheck) check() error {
 	for _, r := range c.CheckID {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-') {
+		if !checkIDRune(r) {
 			return errors.New("check_id: [A-Za-z0-9_.-] only")
 		}
 	}
