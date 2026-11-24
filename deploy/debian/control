@@ -25,5 +25,6 @@ Description: Bitscan inventory and compliance agent
  It also holds the ClusterMAX scanner role: cmax-helper, which runs the
  one fixed audit "cmax audit -vvv -y" as root when the agent asks over
  /run/clustermax/collect.sock for an admin's ClusterMAX scan, and
- ClusterMAX 0.3.0 (Apache-2.0) under /usr/lib/clustermax. Its socket is on after install; a root user can
- turn it off with "systemctl disable --now cmax-helper.socket".
+ ClusterMAX 0.3.0 (Apache-2.0) under /usr/lib/clustermax. Its socket
+ is on after install; a root user can turn it off with
+ "systemctl disable --now cmax-helper.socket".
